@@ -5,45 +5,146 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CareLoop · __CARELOOP_TITLE__</title>
 <style>
-  :root { --bg:#ffffff; --fg:#14202b; --muted:#5b6b78; --card:#f3f6f8; --line:#d6dee4; --accent:#0b7a75; --warn:#a15c00; --danger:#b42318; }
-  :root[data-theme="dark"] { --bg:#0f1720; --fg:#e7eef3; --muted:#9db0bf; --card:#18232e; --line:#2a3946; --accent:#3cc4bd; --warn:#f0a645; --danger:#ff7a6e; }
+  /* Tokens. Ink is prescription-pad blue-black; highlighter marks source lines and anything awaiting review. */
+  :root {
+    --page:#f4f6f5; --surface:#ffffff; --ink:#1c2b45; --muted:#5b6475; --rule:#dadfe3; --rule-soft:#e9ecee;
+    --mark:#ffe873; --mark-ink:#5c4a00; --ok:#1f7a5a; --ok-soft:#e3f2eb; --warn:#9a6200; --warn-soft:#fff4d1;
+    --danger:#b42318; --danger-soft:#fdecea; --focus:#2f6fde;
+    --round: ui-rounded, "SF Pro Rounded", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --print: Charter, "Bitstream Charter", "Iowan Old Style", Georgia, serif;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --page:#10161f; --surface:#18212d; --ink:#e6ebf2; --muted:#9aa6b6; --rule:#2c3847; --rule-soft:#222c39;
+    --mark:#5a4e17; --mark-ink:#ffe873; --ok:#5ccf9f; --ok-soft:#163327; --warn:#f2b84b; --warn-soft:#3a2e12;
+    --danger:#ff8a7e; --danger-soft:#3b1d1b; --focus:#8fb4ff;
+    color-scheme: dark;
+  }
   * { box-sizing:border-box; }
-  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:16px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
-  header { display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:12px; }
-  h1 { font-size:1.25rem; margin:0; }
-  .badge { font-size:.75rem; color:var(--muted); border:1px solid var(--line); border-radius:999px; padding:2px 8px; white-space:nowrap; }
-  .note { color:var(--muted); font-size:.85rem; margin:0 0 12px; }
-  .list { display:grid; gap:10px; }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px 14px; }
-  .row { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
-  .title { font-weight:600; }
-  .meta { color:var(--muted); font-size:.85rem; }
-  .cite { margin-top:8px; padding-left:10px; border-left:3px solid var(--accent); color:var(--muted); font-size:.85rem; }
-  .status { font-size:.75rem; text-transform:uppercase; letter-spacing:.04em; color:var(--accent); }
-  .status.draft, .status.pending, .status.pending_review, .status.action_required { color:var(--warn); }
-  .status.revoked { color:var(--danger); }
-  button { font:inherit; font-weight:600; border:0; border-radius:999px; padding:8px 16px; cursor:pointer; background:var(--accent); color:var(--bg); min-height:40px; }
-  button.secondary { background:transparent; color:var(--danger); border:1px solid var(--danger); }
-  button:disabled { opacity:.5; cursor:default; }
-  svg { width:100%; height:auto; display:block; }
-  .empty, .error { color:var(--muted); padding:24px 0; text-align:center; }
-  h2 { font-size:1rem; margin:16px 0 8px; }
-  .instruction { margin:8px 0; font-weight:500; }
-  .fields { display:grid; grid-template-columns:max-content 1fr; gap:6px 10px; align-items:center; margin:10px 0; }
-  .fields input, .card input:not([type=checkbox]) { font:inherit; padding:6px 8px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--fg); }
-  .flags { border-left:3px solid var(--warn); padding:6px 10px; margin:8px 0; }
-  .flag { color:var(--warn); font-size:.85rem; margin:2px 0; }
-  .confirm { display:block; margin-top:6px; font-size:.85rem; }
-  .badge { font-size:.75rem; color:var(--muted); margin-left:6px; }
-  .badge.warn, .cite.low { color:var(--warn); }
-  .review .row:last-child { justify-content:flex-start; margin-top:8px; }
-  details summary { cursor:pointer; }
+  body { margin:0; padding:20px 20px 24px; background:var(--page); color:var(--ink); font:16px/1.5 var(--sans); -webkit-font-smoothing:antialiased; }
+  :focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
+
+  .bar { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:18px; }
+  .bar > div { flex:1; min-width:0; }
+  h1 { font:600 1.5rem/1.2 var(--round); letter-spacing:-.01em; margin:0; }
+  .note { display:flex; align-items:center; gap:6px; color:var(--muted); font-size:.875rem; margin:4px 0 0; }
+  .note svg { width:14px; height:14px; flex:none; }
+  .foot { margin-top:22px; color:var(--muted); font-size:.75rem; }
+
+  main { display:grid; gap:22px; }
+  h2 { font:600 1rem/1.3 var(--round); margin:0 0 8px; color:var(--ink); }
+  .sect { display:grid; gap:12px; }
+  .sect > h2 { margin:0; }
+  .sect > .sub { color:var(--muted); font-size:.875rem; margin:-8px 0 2px; }
+
+  /* Ruled list: one surface, rows divided by hairlines (not a stack of identical cards). */
+  .rows { background:var(--surface); border:1px solid var(--rule); border-radius:14px; overflow:hidden; }
+  .item { padding:14px 16px; border-top:1px solid var(--rule-soft); }
+  .item:first-child { border-top:0; }
+  .item-head { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+  .item-main { min-width:0; flex:1 1 220px; }
+  .item-side { display:flex; align-items:center; gap:10px; }
+  .title { font-weight:600; line-height:1.35; }
+  .meta { color:var(--muted); font-size:.875rem; margin-top:2px; }
+  .detail { font-size:.9375rem; margin-top:6px; }
+
+  /* Tasks read like a medication schedule: time first. */
+  .item.timed { display:grid; grid-template-columns:5.25rem 1fr; gap:14px; align-items:start; }
+  .when { font:600 1.0625rem/1.3 var(--round); font-variant-numeric:tabular-nums; padding-top:1px; }
+  .when span { display:block; }
+  .item.timed > .slip { grid-column:2; margin-top:-2px; }
+  .when.loose { font:500 .8125rem/1.3 var(--sans); color:var(--muted); padding-top:4px; }
+
+  /* Status: dot + sentence-case word. */
+  .status { display:inline-flex; align-items:center; gap:6px; font-size:.8125rem; font-weight:500; color:var(--muted); white-space:nowrap; }
+  .status::before { content:""; width:8px; height:8px; border-radius:50%; background:currentColor; }
+  .status.ok { color:var(--ok); } .status.warn { color:var(--warn); } .status.danger { color:var(--danger); }
+
+  /* The source slip: the original document line, in print type, highlighted. */
+  .slip { margin-top:12px; border:1px solid var(--rule); border-radius:4px 4px 10px 10px; background:var(--surface); font:1rem/1.5 var(--print); position:relative; }
+  .slip::before { content:""; position:absolute; inset:-1px -1px auto; height:5px; border-radius:4px 4px 0 0;
+    background:repeating-linear-gradient(90deg, var(--rule) 0 6px, transparent 6px 10px); }
+  .slip-from { font:500 .75rem/1 var(--sans); color:var(--muted); padding:12px 12px 4px 68px; }
+  .line { display:grid; grid-template-columns:56px 1fr; gap:12px; padding:4px 12px 4px 0; }
+  .line:last-child { padding-bottom:10px; }
+  .ln { font:500 .75rem/1.9 var(--sans); color:var(--muted); text-align:right; font-variant-numeric:tabular-nums; border-right:1px solid var(--rule); padding-right:8px; }
+  .tx mark { background:linear-gradient(transparent 12%, var(--mark) 12%, var(--mark) 88%, transparent 88%); color:inherit; padding:0 2px; -webkit-box-decoration-break:clone; box-decoration-break:clone; }
+  :root[data-theme="dark"] .tx mark { color:var(--mark-ink); }
+  .line.low .tx mark { background:none; text-decoration:underline wavy var(--danger); text-underline-offset:4px; }
+  .ocr { display:inline-block; margin-left:8px; font:500 .75rem/1.4 var(--sans); color:var(--muted); }
+  .line.low .ocr { color:var(--danger); }
+
+  /* Review: the one place a block stands alone, flagged with a highlighter tab. */
+  .review { background:var(--surface); border:1px solid var(--rule); border-radius:14px; padding:16px; position:relative; }
+  .review::before { content:""; position:absolute; left:-1px; top:16px; width:5px; height:28px; border-radius:0 4px 4px 0; background:var(--mark); }
+  :root[data-theme="dark"] .review::before { background:var(--mark-ink); }
+  .review .kind { font-size:.8125rem; color:var(--muted); }
+  .review h3 { font:600 1.1875rem/1.3 var(--round); margin:2px 0 0; }
+  .instruction { margin:10px 0 0; font-size:1rem; }
+  .facts { margin:8px 0 0; color:var(--muted); font-size:.875rem; }
+  .fields { display:grid; grid-template-columns:minmax(120px, max-content) 1fr; gap:10px 14px; align-items:center; margin:14px 0 0; padding-top:14px; border-top:1px solid var(--rule-soft); }
+  .fields label { font-size:.875rem; color:var(--muted); }
+  input:not([type=checkbox]) { font:inherit; width:100%; padding:9px 11px; border:1px solid var(--rule); border-radius:8px; background:var(--page); color:var(--ink); min-height:42px; }
+  input:not([type=checkbox]):focus-visible { outline:2px solid var(--focus); outline-offset:0; border-color:transparent; }
+  .flags { margin:14px 0 0; padding:12px 14px; border-radius:10px; background:var(--warn-soft); }
+  .flag { color:var(--warn); font-size:.9rem; margin:0 0 4px; display:flex; gap:8px; }
+  .flag svg { width:16px; height:16px; flex:none; margin-top:3px; }
+  .confirm { display:flex; gap:10px; align-items:center; margin-top:10px; font-size:.9rem; color:var(--ink); cursor:pointer; }
+  .confirm input { width:20px; height:20px; accent-color:var(--ink); }
+  .actions { display:flex; gap:10px; margin-top:16px; flex-wrap:wrap; }
+
+  button { font:600 .9375rem/1 var(--sans); border:1px solid transparent; border-radius:10px; padding:0 18px; min-height:44px; cursor:pointer; background:var(--ink); color:var(--surface); }
+  button:hover:not(:disabled) { filter:brightness(1.15); }
+  button.quiet { background:transparent; color:var(--ink); border-color:var(--rule); }
+  button.danger { background:transparent; color:var(--danger); border-color:transparent; }
+  button.danger:hover:not(:disabled) { background:var(--danger-soft); filter:none; }
+  button.small { min-height:36px; padding:0 14px; font-size:.875rem; }
+  button:disabled { opacity:.4; cursor:default; }
+
+  .doc { display:flex; gap:14px; align-items:flex-start; padding:14px 16px; background:var(--surface); border:1px solid var(--rule); border-radius:14px; }
+  .doc-icon { width:36px; height:44px; flex:none; border:1.5px solid var(--ink); border-radius:3px 10px 3px 3px; position:relative; opacity:.85; }
+  .doc-icon::after { content:""; position:absolute; left:6px; right:6px; top:12px; height:14px;
+    background:repeating-linear-gradient(var(--muted) 0 1.5px, transparent 1.5px 5px); }
+  .doc.busy .doc-icon::after { background:var(--mark); animation:read 1.4s ease-in-out infinite; }
+  @keyframes read { 0%,100% { transform:scaleY(.2); transform-origin:top; } 50% { transform:scaleY(1); } }
+
+  details.rows summary { padding:14px 16px; cursor:pointer; color:var(--muted); font-size:.9rem; }
+  details.rows .slip { margin:0 16px 16px; }
+
+  .tally { display:flex; flex-wrap:wrap; background:var(--surface); border:1px solid var(--rule); border-radius:14px; overflow:hidden; }
+  .tally div { flex:1 0 104px; padding:12px 14px; box-shadow:-1px 0 0 var(--rule-soft), 0 -1px 0 var(--rule-soft); }
+  .tally b { display:block; font:600 1.375rem/1.2 var(--round); font-variant-numeric:tabular-nums; }
+  .tally span { font-size:.8125rem; color:var(--muted); }
+  .tally .alert b { color:var(--danger); }
+
+  .chart { background:var(--surface); border:1px solid var(--rule); border-radius:14px; padding:12px 12px 8px; }
+  svg.plot { width:100%; height:auto; display:block; font:12px var(--sans); }
+  .legend { display:flex; gap:16px; color:var(--muted); font-size:.8125rem; padding:4px 6px 2px; flex-wrap:wrap; }
+  .legend i { display:inline-block; width:18px; height:0; border-top:2px dashed var(--warn); vertical-align:middle; margin-right:6px; }
+  .legend i.solid { border-top:3px solid var(--ink); }
+
+  .empty { padding:36px 20px; text-align:center; color:var(--muted); background:var(--surface); border:1px dashed var(--rule); border-radius:14px; }
+  .empty strong { display:block; color:var(--ink); font:600 1.0625rem/1.3 var(--round); margin-bottom:4px; }
+  .error { padding:16px; border-radius:12px; background:var(--danger-soft); color:var(--danger); }
+
+  @media (max-width:520px) {
+    body { padding:16px; }
+    .fields { grid-template-columns:1fr; gap:6px; }
+    .item.timed { grid-template-columns:4.25rem 1fr; gap:10px; }
+  }
+  @media (prefers-reduced-motion:reduce) { .doc.busy .doc-icon::after { animation:none; } }
 </style>
 </head>
 <body>
-<header><h1>__CARELOOP_TITLE__</h1><span class="badge">Synthetic demo · not medical advice</span></header>
-<p class="note" id="note">Loading your private CareLoop view…</p>
-<main id="root" class="list" aria-live="polite"></main>
+<header class="bar">
+  <div>
+    <h1>__CARELOOP_TITLE__</h1>
+    <p class="note" id="note">Loading your private CareLoop view…</p>
+  </div>
+</header>
+<main id="root" aria-live="polite"></main>
+<footer class="foot">Synthetic demo data. CareLoop is not medical advice or emergency monitoring.</footer>
 <script>
 (() => {
   "use strict";
@@ -107,226 +208,338 @@
       let payload = result.structuredContent;
       if (!payload) payload = JSON.parse(((result.content || [])[0] || {}).text || "{}");
       render(payload.data || {});
-      note.textContent = "Private view. Not read aloud.";
+      setNote("Private to this screen. Alexa won't read it aloud.");
     } catch (err) {
-      root.replaceChildren(el("div", "error", "This view is unavailable. Open CareLoop on your private screen."));
+      root.replaceChildren(el("div", "error", "This view isn't available here. Open CareLoop on your private screen."));
       note.textContent = "";
     }
     reportSize();
   }
 
   // ---- rendering (textContent only; record data is never parsed as HTML) ----
+  const NS = "http://www.w3.org/2000/svg";
   function el(tag, cls, text) { const n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = String(text); return n; }
+  function svgEl(tag, attrs) { const n = document.createElementNS(NS, tag); Object.entries(attrs || {}).forEach(([k, v]) => n.setAttribute(k, v)); return n; }
+  function icon(paths) {
+    const s = svgEl("svg", { viewBox: "0 0 16 16", fill: "none", stroke: "currentColor", "stroke-width": "1.6", "stroke-linecap": "round", "stroke-linejoin": "round", "aria-hidden": "true" });
+    paths.forEach((d) => s.append(svgEl("path", { d })));
+    return s;
+  }
+  const LOCK = ["M4 7V5a4 4 0 0 1 8 0v2", "M3 7h10v7H3z"];
+  const FLAG = ["M3 14V2", "M3 2h8l-1.5 3L11 8H3"];
+  function setNote(text) { note.replaceChildren(icon(LOCK), document.createTextNode(text)); }
   function when(epoch) { return epoch ? new Date(epoch * 1000).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "no expiry"; }
-  function status(s) { return el("span", "status " + (s || "active"), (s || "active").replace("_", " ")); }
+  function day(epoch) { return new Date(epoch * 1000).toLocaleDateString([], { month: "short", day: "numeric" }); }
+
+  const TONE = { active: "ok", approved: "ok", done: "ok", completed: "ok", acknowledged: "ok", accepted: "ok",
+    draft: "warn", needs_review: "warn", pending: "warn", pending_review: "warn", action_required: "warn", processing: "warn", correction: "warn",
+    revoked: "danger", rejected: "danger", failed: "danger", missed: "danger", expired: "danger" };
+  const STATUS_WORDS = { needs_review: "Needs review", action_required: "Needs action", pending_review: "Pending review" };
+  function status(s) {
+    const key = s || "active", word = STATUS_WORDS[key] || key.replaceAll("_", " ");
+    return el("span", "status " + (TONE[key] || ""), word.charAt(0).toUpperCase() + word.slice(1));
+  }
   function action(label, cls, fn) {
     const b = el("button", cls, label);
+    b.type = "button";
     b.addEventListener("click", async () => {
       b.disabled = true;
-      try { await fn(); await load(); } catch (e) { b.disabled = false; note.textContent = e.message; }
+      try { await fn(); await load(); } catch (e) { b.disabled = false; setNote(e.message); }
     });
     return b;
   }
+  // One row of a ruled list.
   function card(title, state, metaText, button) {
-    const c = el("div", "card"), r = el("div", "row"), left = el("div");
-    left.append(el("div", "title", title));
-    if (metaText) left.append(el("div", "meta", metaText));
-    r.append(left);
-    const right = el("div", "row");
-    if (state) right.append(status(state));
-    if (button) right.append(button);
-    r.append(right); c.append(r);
+    const c = el("div", "item"), head = el("div", "item-head"), main = el("div", "item-main");
+    main.append(el("div", "title", title));
+    if (metaText) main.append(el("div", "meta", metaText));
+    head.append(main);
+    if (state || button) {
+      const side = el("div", "item-side");
+      if (state) side.append(status(state));
+      if (button) side.append(button);
+      head.append(side);
+    }
+    c.append(head);
     return c;
   }
-  function empty(text) { root.replaceChildren(el("div", "empty", text)); }
+  function rows(items) { const r = el("div", "rows"); r.append(...items); return r; }
+  function section(title, items, sub) {
+    const s = el("section", "sect");
+    if (title) s.append(el("h2", "", title));
+    if (sub) s.append(el("p", "sub", sub));
+    s.append(...items);
+    return s;
+  }
+  function empty(title, text) {
+    const e = el("div", "empty"); e.append(el("strong", "", title));
+    if (text) e.append(document.createTextNode(text));
+    root.replaceChildren(e);
+  }
 
   const renderers = {
     "plan-review": renderPlan, "tasks": renderPlan,
     "plan-source": (d) => {
       const sources = d.sources || [];
-      if (!sources.length) return empty("No reviewed source is linked yet.");
+      if (!sources.length) return empty("No source linked yet", "Approved plan items will point back to the document they came from.");
       root.replaceChildren(...sources.map((s) => {
-        const c = card(s.title || "Approved source", null, "Clinician-provided source");
-        (s.page_excerpts || []).forEach((e) => c.append(el("div", "cite", "p." + e.page + " · " + e.excerpt)));
-        return c;
+        const sl = slip("From your clinician", (s.page_excerpts || []).map((e) => ({ ln: "p." + e.page, text: e.excerpt, hit: false })));
+        return section(s.title || "Approved source", [sl]);
       }));
     },
     "care-circle": (d) => {
       const grants = d.grants || [];
-      if (!grants.length) return empty("Nobody has access to your CareLoop yet.");
-      const parts = grants.map((g, i) => card(
+      const parts = [];
+      if (!grants.length) parts.push(section("People with access", [emptyRow("Only you can see your CareLoop right now.")]));
+      else parts.push(section("People with access", [rows(grants.map((g, i) => card(
         g.display_name || "Caregiver access " + (i + 1), g.status,
-        (g.scopes || []).join(", ").replaceAll("_", " ") + (g.expires_at ? " · expires " + when(g.expires_at) : " · no expiry"),
+        sentence((g.scopes || []).map((s) => s.replaceAll("_", " ")).join(", ")) + (g.expires_at ? ". Until " + when(g.expires_at) : ". No end date"),
         g.status === "active" || g.status === "pending"
-          ? action("Revoke", "secondary", () => callTool("revoke_caregiver", { invitation_id: g.id })) : null));
+          ? action("Remove", "danger small", () => callTool("revoke_caregiver", { invitation_id: g.id })) : null)))]));
       const access = d.access || [];
-      parts.push(el("h2", "", "Who accessed your care data (last 7 days)"));
-      if (!access.length) parts.push(card("No one else accessed your care data", null, ""));
-      access.forEach((p) => parts.push(card(p.name, null, (p.actions || []).join(" · "))));
+      parts.push(section("Who looked at your care data", [access.length
+        ? rows(access.map((p) => card(p.name, null, (p.actions || []).join(", "))))
+        : emptyRow("No one else opened your care data.")], "Last 7 days"));
       root.replaceChildren(...parts);
     },
     "notifications": (d) => {
       const updates = d.updates || [];
-      if (!updates.length) return empty("No new CareLoop updates.");
-      root.replaceChildren(...updates.map((u, i) => card("CareLoop update " + (i + 1), u.status, "Details stay in the patient's private record.",
-        action("Acknowledge", "", () => callTool("acknowledge_alert", { alert_id: u.case_id })))));
+      if (!updates.length) return empty("You're all caught up", "New CareLoop updates will show here.");
+      root.replaceChildren(section(null, [rows(updates.map((u, i) => card("Update " + (i + 1), u.status, "Details stay in the patient's private record.",
+        action("Mark as seen", "small", () => callTool("acknowledge_alert", { alert_id: u.case_id })))))]));
     },
     "check-in-trend": renderTrend,
     "visit-handoff": renderHandoff,
     "records": renderRecords, "history": renderRecords,
-    "export": (d) => { root.replaceChildren(card("Export ready", null, (d.count || 0) + " records · " + when(d.exported_at))); renderRecords(d, true); },
+    "export": (d) => {
+      root.replaceChildren(section(null, [rows([card("Export ready", null, (d.count || 0) + " records, exported " + when(d.exported_at))])]));
+      renderRecords(d, true);
+    },
   };
+  function emptyRow(text) { return rows([el("div", "item meta", text)]); }
+  function sentence(t) { return t ? t.charAt(0).toUpperCase() + t.slice(1) : "Access"; }
 
   function render(data) { (renderers[VIEW] || renderRecords)(data); }
 
   const KIND_NAMES = { medication_task: "Medicine", care_task: "Care task", appointment: "Appointment",
     warning_sign: "When to get help", rule_candidate: "Alert rule", note: "Note" };
   function kindOf(item) { return KIND_NAMES[item.item_kind] || (item.type === "PLAN_RULE" ? "Follow-up rule" : item.type === "PLAN_NOTE" ? "Note" : "Task"); }
+
+  // lines: [{ln, text, ocr?, confidence?}]
+  function slip(from, lines) {
+    const s = el("div", "slip");
+    s.append(el("div", "slip-from", from));
+    lines.forEach((l) => {
+      const low = l.ocr && l.confidence < 85;
+      const row = el("div", "line" + (low ? " low" : "")), tx = el("div", "tx");
+      tx.append(l.hit === false ? document.createTextNode(l.text) : el("mark", "", l.text));
+      if (l.ocr) tx.append(el("span", "ocr", low ? "Read by OCR, " + l.confidence + "% sure. Check this line." : "Read by OCR, " + l.confidence + "%"));
+      row.append(el("div", "ln", l.ln), tx);
+      s.append(row);
+    });
+    return s;
+  }
   function sourceLines(item, c) {
     if (!item.citation) return;
-    (item.citation.excerpts || []).forEach((e) => {
-      const ocr = e.method === "ocr", low = ocr && e.confidence_pct < 85;
-      const line = el("div", "cite" + (low ? " low" : ""), (e.line_id || "p." + e.page) + " · " + e.excerpt);
-      if (ocr) line.append(el("span", "badge" + (low ? " warn" : ""), " read by OCR " + e.confidence_pct + "%"));
-      c.append(line);
-    });
+    const ex = item.citation.excerpts || [];
+    if (!ex.length) return;
+    c.append(slip("From " + (item.citation.title || "your document"), ex.map((e) => ({
+      ln: e.line_id || "p." + e.page, text: e.excerpt, ocr: e.method === "ocr", confidence: e.confidence_pct }))));
   }
-  function input(value, placeholder, width) {
-    const i = document.createElement("input"); i.value = value || ""; i.placeholder = placeholder; if (width) i.style.width = width; return i;
+  function input(value, placeholder, id) {
+    const i = document.createElement("input"); i.value = value || ""; i.placeholder = placeholder; i.id = id; return i;
   }
 
+  let fieldSeq = 0;
   function reviewCard(item) {
     const isTask = item.type === "PLAN_TASK", reasons = item.review_reasons || [];
-    const c = el("div", "card review");
-    const head = el("div", "row"); const left = el("div");
-    left.append(el("div", "title", item.label || kindOf(item)), el("div", "meta", kindOf(item) + " · needs your approval"));
-    head.append(left, status(item.status)); c.append(head);
-    c.append(el("p", "instruction", item.text || ""));
+    const c = el("article", "review");
+    const head = el("div", "item-head"), left = el("div", "item-main");
+    left.append(el("div", "kind", kindOf(item)), el("h3", "", item.label || kindOf(item)));
+    head.append(left, status("needs_review")); c.append(head);
+    if (item.text) c.append(el("p", "instruction", item.text));
+    const facts = [];
     if (item.medication) {
       const m = item.medication, parts = [m.name, m.strength, m.dose, m.route].filter(Boolean);
-      if (parts.length) c.append(el("div", "meta", "As written: " + parts.join(" · ")));
+      if (parts.length) facts.push("As written: " + parts.join(", "));
     }
-    if (item.rule_spec) c.append(el("div", "meta", `Alert when pain score is ${item.rule_spec.threshold} or higher for ${item.rule_spec.consecutive_days} days in a row`));
+    if (item.rule_spec) facts.push(`Alert when pain is ${item.rule_spec.threshold} or higher for ${item.rule_spec.consecutive_days} days in a row`);
+    facts.forEach((f) => c.append(el("p", "facts", f)));
     sourceLines(item, c);
-    const label = input(item.label, "Name Alexa can say aloud");
-    const times = isTask && item.frequency !== "as_needed" ? input((item.times || []).join(", "), "Times, e.g. 08:00, 20:00") : null;
+    const n = ++fieldSeq;
+    const label = input(item.label, "A short name Alexa can say", "label-" + n);
+    const times = isTask && item.frequency !== "as_needed" ? input((item.times || []).join(", "), "e.g. 08:00, 20:00", "times-" + n) : null;
     const form = el("div", "fields");
-    form.append(el("label", "meta", "Spoken name"), label);
-    if (times) form.append(el("label", "meta", "Times (suggested from: " + (item.frequency || "unspecified").replaceAll("_", " ") + ")"), times);
-    else if (item.frequency === "as_needed") form.append(el("div", "meta", "As needed: no scheduled times"));
+    const lab = el("label", "", "Spoken name"); lab.htmlFor = label.id;
+    form.append(lab, label);
+    if (times) {
+      const tl = el("label", "", "Times"); tl.htmlFor = times.id;
+      tl.title = "Suggested from: " + (item.frequency || "unspecified").replaceAll("_", " ");
+      form.append(tl, times);
+    } else if (item.frequency === "as_needed") form.append(el("label", "", "Times"), el("div", "meta", "As needed, no set times"));
     c.append(form);
     let check = null;
     if (reasons.length) {
       const box = el("div", "flags");
-      reasons.forEach((r) => box.append(el("div", "flag", "⚑ " + r)));
-      const lab = el("label", "confirm"); check = document.createElement("input"); check.type = "checkbox";
-      lab.append(check, document.createTextNode(" I've checked these against the document"));
-      box.append(lab); c.append(box);
+      reasons.forEach((r) => { const f = el("p", "flag"); f.append(icon(FLAG), document.createTextNode(r)); box.append(f); });
+      const conf = el("label", "confirm"); check = document.createElement("input"); check.type = "checkbox";
+      conf.append(check, document.createTextNode("I've checked this against the document"));
+      box.append(conf); c.append(box);
     }
-    const buttons = el("div", "row");
-    const approve = action("Approve", "", () => {
+    const buttons = el("div", "actions");
+    const approve = action("Add to my plan", "", () => {
       const args = { record_id: item.id, action: "approve", confirmed: !reasons.length || check.checked, label: label.value };
       if (times) args.times = times.value.split(",").map((t) => t.trim()).filter(Boolean);
       return callTool("review_plan_item", args);
     });
     if (check) { approve.disabled = true; check.addEventListener("change", () => { approve.disabled = !check.checked; }); }
-    buttons.append(approve, action("Reject", "secondary", () => callTool("review_plan_item", { record_id: item.id, action: "reject" })));
+    buttons.append(approve, action("Leave it out", "quiet", () => callTool("review_plan_item", { record_id: item.id, action: "reject" })));
     c.append(buttons);
+    return c;
+  }
+
+  function docSummary(doc) {
+    const d = el("div", "doc" + (doc.status === "processing" ? " busy" : "")), body = el("div", "item-main");
+    d.append(el("div", "doc-icon"), body);
+    if (doc.status === "processing") {
+      body.append(el("div", "title", "Reading " + (doc.title || "your document") + "…"), el("div", "meta", "This usually takes a few seconds."));
+      setTimeout(load, 2000);
+    } else if (doc.status === "failed") {
+      body.append(el("div", "title", "This document couldn't be read"), el("div", "meta", doc.error || "Try a clearer photo or the original PDF."));
+    } else {
+      const methods = Object.values(doc.pages || {}), ocr = methods.filter((m) => m === "ocr").length;
+      const how = (ocr ? `${ocr} page${ocr > 1 ? "s" : ""} read by OCR` : "Read from the PDF text") + (doc.engine ? ", organised by " + doc.engine : "");
+      body.append(el("div", "title", doc.title || "Uploaded document"), el("div", "meta", how));
+      if (doc.follow_up_date) body.append(el("div", "detail", "Follow-up in the document: " + doc.follow_up_date));
+      (doc.notes || []).forEach((n) => { const f = el("p", "flag"); f.append(icon(FLAG), document.createTextNode(n)); body.append(f); });
+    }
+    return d;
+  }
+
+  function timesCell(item) {
+    const t = item.times || [];
+    if (t.length) { const w = el("div", "when"); t.forEach((x) => w.append(el("span", "", x))); return w; }
+    return el("div", "when loose", item.frequency === "as_needed" ? "As needed" : item.schedule || "Any time");
+  }
+
+  function planRow(item) {
+    const state = item.status || "active", isTask = item.type === "PLAN_TASK";
+    const button = isTask && state === "active" && VIEW === "tasks"
+      ? action("Mark done", "small", () => callTool("record_task_completion", { task_id: item.id })) : null;
+    const who = isTask && state === "active" && item.assignee_name ? item.assignee_name + " handles this" : null;
+    const metaText = [kindOf(item), who, !isTask && (item.times || []).length ? item.times.join(", ") : !isTask ? item.schedule : null].filter(Boolean).join(". ");
+    const c = card(item.label || item.text || kindOf(item), state, metaText, button);
+    if (item.label && item.text) c.querySelector(".item-main").append(el("div", "detail", item.text));
+    if (isTask) {
+      c.classList.add("timed");
+      c.prepend(timesCell(item));
+    }
+    sourceLines(item, c);
     return c;
   }
 
   function renderPlan(d) {
     const items = d.items || [], doc = d.document, parts = [];
-    if (doc && VIEW === "plan-review") {
-      if (doc.status === "processing") { parts.push(card("Reading your document…", "processing", doc.title || "")); setTimeout(load, 2000); }
-      else if (doc.status === "failed") parts.push(card("This document couldn't be read", "failed", doc.error || ""));
-      else {
-        const methods = Object.values(doc.pages || {}), ocr = methods.filter((m) => m === "ocr").length;
-        const how = (ocr ? `${ocr} page(s) read by OCR` : "read from the PDF text") + (doc.engine ? " · structured by " + doc.engine : "");
-        const c = card(doc.title || "Uploaded document", null, how);
-        (doc.notes || []).forEach((n) => c.append(el("div", "flag", "⚑ " + n)));
-        if (doc.follow_up_date) c.append(el("div", "meta", "Follow-up date in the document: " + doc.follow_up_date));
-        parts.push(c);
-      }
-    }
-    const pending = items.filter((i) => i.status === "draft" || i.status === "needs_review");
-    const done = items.filter((i) => !(i.status === "draft" || i.status === "needs_review"));
-    if (VIEW === "plan-review") parts.push(...pending.map(reviewCard));
+    if (doc && VIEW === "plan-review") parts.push(docSummary(doc));
+    const isPending = (i) => i.status === "draft" || i.status === "needs_review";
+    const pendingItems = items.filter(isPending);
+    const done = items.filter((i) => !isPending(i));
+    if (VIEW === "plan-review" && pendingItems.length)
+      parts.push(section(pendingItems.length + (pendingItems.length === 1 ? " item to check" : " items to check"), pendingItems.map(reviewCard),
+        "Each one shows the line it came from. Nothing reaches your plan until you add it."));
     const shown = VIEW === "plan-review" ? done : items;
     if (shown.length) {
-      if (VIEW === "plan-review" && pending.length) parts.push(el("h2", "", "Already in your plan"));
-      parts.push(...shown.map((item) => {
-        const state = item.status || "active", isTask = item.type === "PLAN_TASK";
-        const button = isTask && state === "active" && VIEW === "tasks"
-          ? action("Mark done", "", () => callTool("record_task_completion", { task_id: item.id })) : null;
-        const c = card(item.label || item.text || kindOf(item), state,
-          kindOf(item) + ((item.times || []).length ? " · " + item.times.join(", ") : item.schedule ? " · " + item.schedule : "")
-          + (isTask && state === "active" ? " · " + (item.assignee_name ? "assigned to " + item.assignee_name : "you") : ""), button);
-        if (item.label && item.text) c.append(el("div", "meta", item.text));
-        sourceLines(item, c);
-        return c;
-      }));
+      const sorted = VIEW === "tasks" ? shown.slice().sort((a, b) => ((a.times || [])[0] || "99").localeCompare((b.times || [])[0] || "99")) : shown;
+      parts.push(section(VIEW === "plan-review" && pendingItems.length ? "Already in your plan" : null, [rows(sorted.map(planRow))]));
     }
     if (doc && (doc.unused_lines || []).length && VIEW === "plan-review") {
-      const details = document.createElement("details"); details.className = "card";
-      details.append(el("summary", "meta", `${doc.unused_lines.length} lines not turned into items`));
-      doc.unused_lines.forEach((l) => details.append(el("div", "cite", l.id + " · " + l.text)));
+      const details = document.createElement("details"); details.className = "rows";
+      const n = doc.unused_lines.length;
+      details.append(el("summary", "", `${n} line${n > 1 ? "s" : ""} didn't become plan items`));
+      details.append(slip("Not used", doc.unused_lines.map((l) => ({ ln: l.id, text: l.text }))));
       parts.push(details);
     }
-    if (!parts.length) return empty("No plan items yet. Share a document from your clinician to start.");
+    if (!parts.length) return empty("No plan items yet", "Share a prescription or discharge plan from your clinician to start.");
     root.replaceChildren(...parts);
   }
 
   function renderTrend(d) {
     const obs = d.observations || [];
-    if (!obs.length) return empty("No check-ins recorded yet. Missing days are not assumed to be normal.");
-    const W = 640, H = 220, P = 32, ns = "http://www.w3.org/2000/svg";
-    const svg = document.createElementNS(ns, "svg"); svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
-    svg.setAttribute("role", "img"); svg.setAttribute("aria-label", "Recorded pain scores over time");
-    const x = (i) => P + (obs.length === 1 ? (W - 2 * P) / 2 : i * (W - 2 * P) / (obs.length - 1));
-    const y = (v) => H - P - v * (H - 2 * P) / 10;
-    const line = (x1, y1, x2, y2, color, dash) => { const l = document.createElementNS(ns, "line");
-      Object.entries({ x1, y1, x2, y2, stroke: color, "stroke-width": 1.5, "stroke-dasharray": dash || "" }).forEach(([k, v]) => l.setAttribute(k, v)); svg.append(l); };
-    const css = getComputedStyle(document.documentElement);
-    line(P, y(0), W - P, y(0), css.getPropertyValue("--line"));
-    (d.thresholds || []).forEach((t) => line(P, y(t), W - P, y(t), css.getPropertyValue("--warn"), "6 4"));
-    const path = document.createElementNS(ns, "polyline");
-    path.setAttribute("points", obs.map((o, i) => `${x(i)},${y(o.pain_score)}`).join(" "));
-    path.setAttribute("fill", "none"); path.setAttribute("stroke", css.getPropertyValue("--accent")); path.setAttribute("stroke-width", 3);
-    svg.append(path);
-    obs.forEach((o, i) => { const c = document.createElementNS(ns, "circle");
-      c.setAttribute("cx", x(i)); c.setAttribute("cy", y(o.pain_score)); c.setAttribute("r", 5); c.setAttribute("fill", css.getPropertyValue("--accent")); svg.append(c); });
-    const chart = el("div", "card"); chart.append(svg);
-    if ((d.thresholds || []).length) chart.append(el("div", "meta", "Dashed line: threshold from your approved plan rule."));
-    root.replaceChildren(chart, ...obs.slice().reverse().map((o) =>
-      card("Pain score " + o.pain_score + " / 10", o.corrects_id ? "correction" : null, when(o.observed_at))));
+    if (!obs.length) return empty("No check-ins yet", "Missing days are never assumed to be normal.");
+    const css = getComputedStyle(document.documentElement), v = (n) => css.getPropertyValue(n).trim();
+    const W = 640, H = 230, L = 34, R = 16, T = 14, B = 30;
+    const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, class: "plot", role: "img", "aria-label": "Recorded pain scores over time" });
+    const x = (i) => L + (obs.length === 1 ? (W - L - R) / 2 : i * (W - L - R) / (obs.length - 1));
+    const y = (s) => H - B - s * (H - T - B) / 10;
+    [0, 5, 10].forEach((g) => {
+      svg.append(svgEl("line", { x1: L, x2: W - R, y1: y(g), y2: y(g), stroke: v("--rule"), "stroke-width": 1 }));
+      const t = svgEl("text", { x: L - 10, y: y(g) + 4, "text-anchor": "end", fill: v("--muted") }); t.textContent = g; svg.append(t);
+    });
+    (d.thresholds || []).forEach((th) => svg.append(svgEl("line", { x1: L, x2: W - R, y1: y(th), y2: y(th), stroke: v("--warn"), "stroke-width": 2, "stroke-dasharray": "6 5" })));
+    const pts = obs.map((o, i) => `${x(i)},${y(o.pain_score)}`).join(" ");
+    if (obs.length > 1) svg.append(svgEl("polygon", { points: `${x(0)},${y(0)} ${pts} ${x(obs.length - 1)},${y(0)}`, fill: v("--ink"), opacity: .06 }));
+    svg.append(svgEl("polyline", { points: pts, fill: "none", stroke: v("--ink"), "stroke-width": 2.5, "stroke-linejoin": "round" }));
+    const step = Math.max(1, Math.ceil(obs.length / 6));
+    obs.forEach((o, i) => {
+      const over = (d.thresholds || []).some((th) => o.pain_score >= th);
+      svg.append(svgEl("circle", { cx: x(i), cy: y(o.pain_score), r: 5, fill: over ? v("--danger") : v("--surface"), stroke: over ? v("--danger") : v("--ink"), "stroke-width": 2 }));
+      if (i % step === 0 || i === obs.length - 1) {
+        const anchor = obs.length > 1 && i === 0 ? "start" : obs.length > 1 && i === obs.length - 1 ? "end" : "middle";
+        const t = svgEl("text", { x: x(i), y: H - 8, "text-anchor": anchor, fill: v("--muted") }); t.textContent = day(o.observed_at); svg.append(t);
+      }
+    });
+    const chart = el("div", "chart"); chart.append(svg);
+    const legend = el("div", "legend"), a = el("span"), b = el("span");
+    a.append(el("i", "solid"), document.createTextNode("Pain, 0 to 10")); legend.append(a);
+    if ((d.thresholds || []).length) { b.append(el("i"), document.createTextNode("Alert line from your plan")); legend.append(b); }
+    chart.append(legend);
+    root.replaceChildren(chart, section("Check-ins", [rows(obs.slice().reverse().map((o) =>
+      card("Pain " + o.pain_score + " out of 10", o.corrects_id ? "correction" : null, when(o.observed_at))))]));
   }
 
   function renderHandoff(d) {
     const h = (d.handoff || {}).data || d.handoff || {};
     const t = h.totals || {};
-    const parts = [card(h.label || "Visit handoff", null, when(h.from_date) + " → " + when(h.to_date))];
-    parts.push(card("Totals", null, `${t.plan_items || 0} plan items · ${t.task_events || 0} completed tasks · ${t.missed_tasks || 0} missed · ${t.observations || 0} check-ins · ${t.alerts || 0} alerts · ${t.questions || 0} questions · ${t.corrections || 0} corrections`));
-    const section = (title, rows, fn) => { if (!rows || !rows.length) return; parts.push(el("h2", "", title)); rows.forEach((r) => parts.push(fn(r))); };
-    section("Questions for your clinician", h.questions, (q) => card(q.text, null, "asked " + when(q.asked_at)));
-    section("Plan items", h.plan_items, (p) => { const c = card(p.text, p.status, (p.type === "PLAN_RULE" ? "Follow-up rule" : "Task")
-      + ((p.times || []).length ? " · " + p.times.join(", ") : "") + (p.type === "PLAN_TASK" ? " · " + (p.assignee === "patient" ? "patient" : p.assignee) : ""));
-      ((p.source_citation || {}).page_excerpts || []).forEach((e) => c.append(el("div", "cite", "p." + e.page + " · " + e.excerpt))); return c; });
-    section("Completed tasks", h.task_events, (e) => card("Task completed", null, when(e.completed_at) + " · by " + (e.completed_by_name || "the patient")));
-    section("Check-ins", h.observations, (o) => card("Pain score " + o.pain_score + " / 10", null, when(o.observed_at)));
-    section("Alerts", h.alerts, (a) => a.kind === "missed_task"
-      ? card("Missed: " + (a.task_label || "task"), a.status, "due " + when(a.due_at) + (a.assignee_name ? " · assigned to " + a.assignee_name : ""))
-      : card("Follow-up rule episode", a.status, (a.acknowledgements || []).length + " caregiver acknowledgement(s)"));
-    section("Notes", h.uncertainties, (u) => card(u));
+    const parts = [section(h.label || "Visit handoff", [tally([
+      [t.plan_items, "plan items"], [t.task_events, "tasks done"], [t.missed_tasks, "missed", true], [t.observations, "check-ins"],
+      [t.alerts, "alerts", true], [t.questions, "questions"], [t.corrections, "corrections"]])],
+      when(h.from_date) + " to " + when(h.to_date))];
+    const group = (title, list, fn) => { if (list && list.length) parts.push(section(title, [rows(list.map(fn))])); };
+    group("Questions for your clinician", h.questions, (q) => card(sentence(q.text), null, "Asked " + when(q.asked_at)));
+    group("Plan", h.plan_items, (p) => {
+      const c = card(p.text, p.status, [p.type === "PLAN_RULE" ? "Follow-up rule" : "Task", (p.times || []).join(", "),
+        p.type === "PLAN_TASK" ? (p.assignee === "patient" ? "Patient" : p.assignee) : null].filter(Boolean).join(". "));
+      const ex = matching((p.source_citation || {}).page_excerpts || [], p.text);
+      if (ex.length) c.append(slip("From the source", ex.map((e) => ({ ln: "p." + e.page, text: e.excerpt }))));
+      return c;
+    });
+    group("Completed tasks", h.task_events, (e) => card("Task completed", null, when(e.completed_at) + ", by " + (e.completed_by_name || "the patient")));
+    group("Check-ins", h.observations, (o) => card("Pain " + o.pain_score + " out of 10", null, when(o.observed_at)));
+    group("Alerts", h.alerts, (a) => a.kind === "missed_task"
+      ? card("Missed: " + (a.task_label || "task"), a.status, "Due " + when(a.due_at) + (a.assignee_name ? ". Assigned to " + a.assignee_name : ""))
+      : card("Follow-up rule triggered", a.status, (a.acknowledgements || []).length + " caregiver acknowledgement(s)"));
+    group("Notes", h.uncertainties, (u) => card(u));
     root.replaceChildren(...parts);
+  }
+  // A citation may carry the whole page; keep only the lines this item came from.
+  function matching(excerpts, text) {
+    const norm = (t) => String(t || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+    const want = norm(text);
+    if (!want) return [];
+    return excerpts.filter((e) => { const got = norm(e.excerpt); return got && (want.includes(got) || got.includes(want)); });
+  }
+  function tally(pairs) {
+    const g = el("div", "tally");
+    pairs.forEach(([n, label, alert]) => { const c = el("div", alert && n ? "alert" : ""); c.append(el("b", "", n || 0), el("span", "", label)); g.append(c); });
+    return g;
   }
 
   function renderRecords(d, append) {
     const records = d.records || [];
-    const cards = records.map((r) => card(r.type.toLowerCase().replaceAll("_", " "), r.status, when(r.observed_at || r.created_at)));
-    if (append) root.append(...cards);
-    else if (!records.length) empty("No matching records.");
-    else root.replaceChildren(...cards);
+    const list = rows(records.map((r) => card(sentence(r.type.toLowerCase().replaceAll("_", " ")), r.status, when(r.observed_at || r.created_at))));
+    if (append) { if (records.length) root.append(section("Included records", [list])); }
+    else if (!records.length) empty("No matching records", "Try a wider date range.");
+    else root.replaceChildren(section(null, [list]));
   }
 
   // ---- handshake -----------------------------------------------------------

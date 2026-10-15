@@ -4,105 +4,123 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>CareLoop Assistant Simulator</title>
-<link rel="icon" href="data:,">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M26 16a10 10 0 1 1-4-8' fill='none' stroke='%231c2b45' stroke-width='4' stroke-linecap='round'/%3E%3Ccircle cx='25' cy='8' r='3' fill='%23e0b400'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Mono:wght@400;500&family=Atkinson+Hyperlegible+Next:wght@400;500;700&display=swap">
 <link rel="stylesheet" href="/static/sim.css">
 </head>
 <body>
 <main class="shell">
   <header class="top">
-    <div>
-      <h1>CareLoop <span class="muted">assistant simulator</span></h1>
-      <p class="note">Alexa+ behavior simulator for a hackathon demo. Not an Amazon product. Synthetic data only.</p>
+    <div class="brand">
+      <svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><path d="M26 16a10 10 0 1 1-4-8" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"/><circle cx="25" cy="8" r="3" class="mark-dot"/></svg>
+      <div>
+        <h1>CareLoop</h1>
+        <p class="sub">Alexa+ behavior simulator. Not an Amazon product. Synthetic data only.</p>
+      </div>
     </div>
     <div class="voicebar">
-      <label class="toggle"><input type="checkbox" id="wake"> Hands-free “Alexa…”</label>
-      <label class="muted small">Hears:
+      <label class="switch"><input type="checkbox" id="wake"><span class="track" aria-hidden="true"></span> Hands-free “Alexa”</label>
+      <label class="small">Heard by
         <select id="wake-target"><option value="show">Maya’s Show</option><option value="dot">Sam’s Dot</option></select>
       </label>
       <span id="voice-engines" class="small muted"></span>
-      <span id="voice-status" class="small muted"></span>
+      <span id="voice-status" class="small muted" aria-live="polite"></span>
     </div>
   </header>
 
   <section class="stage">
-    <article class="device show" id="device-show" data-state="idle">
-      <div class="device-head"><strong>Maya’s Echo Show</strong><span class="state" id="show-state">idle</span></div>
-      <div class="screen" id="screen">
-        <div class="home" id="home">
-          <div class="clock" id="clock"></div>
-          <p>Link CareLoop in the Alexa app, then say “Alexa, …” or tap a prompt below.</p>
+    <article class="device show" id="device-show" data-state="idle" aria-label="Maya’s Echo Show">
+      <div class="device-head"><h2>Maya’s Echo Show</h2><span class="state" id="show-state">idle</span></div>
+      <div class="bezel">
+        <span class="camera" aria-hidden="true"></span>
+        <div class="screen" id="screen">
+          <div class="home" id="home">
+            <div class="clock" id="clock"></div>
+            <div class="date" id="date"></div>
+            <p>Enable CareLoop in the Alexa app, then say “Alexa, …” or pick a prompt below.</p>
+          </div>
+          <div class="convo" id="convo" hidden></div>
+          <div class="app-slot" id="app-slot"></div>
         </div>
-        <div class="convo" id="convo" hidden></div>
-        <div class="app-slot" id="app-slot"></div>
+        <div class="lightbar" aria-hidden="true"><span></span></div>
       </div>
-      <div class="lightbar" aria-hidden="true"><span></span></div>
       <form class="composer" data-device="show">
-        <button type="button" class="mic" data-mic="show" aria-label="Talk to Maya’s Show">🎤</button>
-        <input aria-label="Say something to Maya’s Show" placeholder="“Alexa, show my tasks”">
-        <button>Send</button>
+        <button type="button" class="mic" data-mic="show" aria-label="Talk to Maya’s Show"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="7" y="2" width="6" height="11" rx="3"/><path d="M4 10a6 6 0 0 0 12 0M10 16v2"/></svg></button>
+        <input aria-label="Say something to Maya’s Show" placeholder="Say to Maya’s Show…">
+        <button class="send">Send</button>
       </form>
-      <div class="chips" id="show-chips"></div>
+      <div class="chips" id="show-chips" aria-label="Things Maya can say"></div>
     </article>
 
-    <article class="device dot" id="device-dot" data-state="idle">
-      <div class="device-head"><strong>Sam’s Echo Dot</strong><span class="state" id="dot-state">idle</span></div>
-      <div class="ring-wrap"><div class="ring" id="ring" role="img" aria-label="Light ring"></div></div>
-      <p class="caption" id="dot-caption">Voice only. Audience caption shows exactly what is spoken.</p>
-      <div class="chips" id="dot-chips"></div>
-      <form class="composer" data-device="dot">
-        <button type="button" class="mic" data-mic="dot" aria-label="Talk to Sam’s Dot">🎤</button>
-        <input aria-label="Say something to Sam’s Dot" placeholder="“Alexa, any CareLoop updates?”">
-        <button>Send</button>
-      </form>
-    </article>
+    <div class="middle">
+      <article class="device dot" id="device-dot" data-state="idle" aria-label="Sam’s Echo Dot">
+        <div class="device-head"><h2>Sam’s Echo Dot</h2><span class="state" id="dot-state">idle</span></div>
+        <div class="ring-wrap"><div class="ring" id="ring" role="img" aria-label="Light ring"></div></div>
+        <p class="caption" id="dot-caption" aria-live="polite">Voice only. This caption shows exactly what Sam hears.</p>
+        <form class="composer" data-device="dot">
+          <button type="button" class="mic" data-mic="dot" aria-label="Talk to Sam’s Dot"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="7" y="2" width="6" height="11" rx="3"/><path d="M4 10a6 6 0 0 0 12 0M10 16v2"/></svg></button>
+          <input aria-label="Say something to Sam’s Dot" placeholder="Say to Sam’s Dot…">
+          <button class="send">Send</button>
+        </form>
+        <div class="chips" id="dot-chips" aria-label="Things Sam can say"></div>
+      </article>
 
-    <aside class="side">
-      <section class="panel">
-        <h2>Alexa app <span class="muted small">(simulated)</span></h2>
+    </div>
+
+    <div class="right">
+      <section class="phone" aria-label="Alexa app, simulated">
+        <div class="phone-head"><h2>Alexa app</h2><span class="tag">Simulated</span></div>
         <div class="account" data-account="maya">
-          <div><strong>Maya</strong> <span class="muted small">patient · Echo Show</span></div>
+          <div><strong>Maya</strong><span class="who">Patient, Echo Show</span></div>
           <button data-link="maya">Enable CareLoop</button>
         </div>
         <div class="account" data-account="sam">
-          <div><strong>Sam</strong> <span class="muted small">caregiver · Echo Dot</span></div>
+          <div><strong>Sam</strong><span class="who">Caregiver, Echo Dot</span></div>
           <button data-link="sam">Enable CareLoop</button>
         </div>
-        <button id="open-invite" class="secondary" disabled>Sam opens Maya’s invitation link</button>
+        <button id="open-invite" class="quiet wide" disabled>Open Maya’s invitation as Sam</button>
         <div class="share">
           <h3>Share a document with CareLoop</h3>
-          <div class="row">
-            <label class="small">As <select id="share-as"><option value="maya">Maya</option><option value="sam">Sam</option></select></label>
+          <div class="pair">
+            <label class="small">From <select id="share-as"><option value="maya">Maya</option><option value="sam">Sam</option></select></label>
             <label class="small">Type <select id="share-type"><option value="prescription">Prescription</option><option value="discharge_plan">Discharge plan</option></select></label>
           </div>
-          <input type="file" id="share-file" accept="application/pdf,image/png,image/jpeg" aria-label="Document file">
-          <div class="row">
-            <button id="share-upload">Share file</button>
-            <select id="share-sample" aria-label="Sample document"><option value="typed">Sample: typed PDF</option><option value="scanned">Sample: scanned PDF (OCR)</option><option value="photo">Sample: photo (OCR)</option><option value="injection">Sample: prompt injection</option></select>
-            <button id="share-sample-go" class="secondary">Share sample</button>
+          <label class="file"><input type="file" id="share-file" accept="application/pdf,image/png,image/jpeg" aria-label="Document file"><span>Choose a PDF or photo</span></label>
+          <button id="share-upload" class="wide">Share file</button>
+          <div class="or"><span>or use a sample</span></div>
+          <div class="pair">
+            <select id="share-sample" aria-label="Sample document"><option value="typed">Typed PDF</option><option value="scanned">Scanned PDF (OCR)</option><option value="photo">Phone photo (OCR)</option><option value="injection">Prompt-injection test</option></select>
+            <button id="share-sample-go" class="quiet">Share sample</button>
           </div>
-          <p id="share-status" class="small muted"></p>
+          <p id="share-status" class="small muted" aria-live="polite"></p>
         </div>
-        <p class="small muted">Linking uses synthetic credentials held by this host; they never reach the browser or the app views.</p>
+        <p class="fine">Linking uses synthetic credentials held by this host. They never reach the browser or the app views.</p>
       </section>
-      <section class="panel">
-        <h2>Director</h2>
-        <div class="row">
-          <label class="small">Planner
-            <select id="planner"><option value="ollama">Local LLM (Ollama)</option><option value="mock">Mock replay</option></select>
-          </label>
-          <button id="reset" class="secondary">Reset conversation</button>
+    <aside class="backstage" aria-label="Demo controls">
+      <div class="bs-head">
+        <h2>Backstage</h2>
+        <p>Demo controls. Not part of the product.</p>
+      </div>
+      <section class="bs-block">
+        <label class="bs-label" for="planner">Planner</label>
+        <div class="bs-row">
+          <select id="planner"><option value="ollama">Local LLM (Ollama)</option><option value="mock">Mock replay</option></select>
+          <button id="reset" class="ghost">Reset conversation</button>
         </div>
-        <div class="row">
-          <button id="ring" class="secondary" disabled>Ring next reminder</button>
-          <span id="reminder-count" class="small muted">No reminders set</span>
+        <div class="bs-row">
+          <button id="ring-reminder" class="ghost" disabled>Ring next reminder</button>
+          <span id="reminder-count" class="small">No reminders set</span>
         </div>
-        <label class="toggle small"><input type="checkbox" id="show-inspector" checked> Show MCP inspector</label>
+        <label class="switch small"><input type="checkbox" id="show-inspector" checked><span class="track" aria-hidden="true"></span> Show MCP inspector</label>
       </section>
-      <section class="panel inspector" id="inspector">
-        <h2>MCP inspector</h2>
+      <section class="bs-block inspector" id="inspector">
+        <h3>MCP inspector</h3>
         <ol class="trace" id="trace"></ol>
       </section>
     </aside>
+    </div>
   </section>
 </main>
 <script src="/static/sim.js"></script>

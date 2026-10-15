@@ -48,11 +48,17 @@
     $("#home").hidden = true;
     const convo = $("#convo"); convo.hidden = false;
     const b = document.createElement("div"); b.className = "bubble " + who; b.textContent = text;
+    // Like an Echo Show, keep only the latest exchange on screen.
+    if (who === "user") convo.replaceChildren();
     convo.append(b);
-    while (convo.children.length > 6) convo.firstChild.remove();
+    while (convo.children.length > 3) convo.firstChild.remove();
     $("#screen").scrollTop = 0;
   }
-  function tick() { $("#clock").textContent = new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }); }
+  function tick() {
+    const now = new Date();
+    $("#clock").textContent = now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    $("#date").textContent = now.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" });
+  }
   setInterval(tick, 15000); tick();
 
   // ---- voice engines: Kokoro/Whisper on the host when ready, browser speech otherwise ----
@@ -60,7 +66,7 @@
   const engineLabel = { kokoro: "Kokoro", whisper: "Whisper", browser: "browser", loading: "loading…" };
   async function loadVoice() {
     try { voiceCfg = await api("/api/voice"); } catch { /* keep browser defaults */ }
-    $("#voice-engines").textContent = `Voice: ${engineLabel[voiceCfg.tts] || voiceCfg.tts} · Listening: ${engineLabel[voiceCfg.stt] || voiceCfg.stt}`;
+    $("#voice-engines").textContent = `Speaks with ${engineLabel[voiceCfg.tts] || voiceCfg.tts}, listens with ${engineLabel[voiceCfg.stt] || voiceCfg.stt}`;
     if (voiceCfg.tts === "loading" || voiceCfg.stt === "loading") setTimeout(loadVoice, 2000);
   }
   const useKokoro = () => voiceCfg.tts === "kokoro";
@@ -160,7 +166,7 @@
   }));
   function chips(container, list, id) {
     list.forEach((text) => {
-      const b = document.createElement("button"); b.type = "button"; b.className = "chip"; b.textContent = text.replace(/^Alexa, /, "");
+      const b = document.createElement("button"); b.type = "button"; b.className = "chip"; const said = text.replace(/^Alexa, /, ""); b.textContent = said.charAt(0).toUpperCase() + said.slice(1);
       b.addEventListener("click", () => say(id, text)); container.append(b);
     });
   }
@@ -387,9 +393,9 @@
     $("#open-invite").disabled = !s.invitation_pending || !s.devices.find((d) => d.id === "dot").account;
     $("#planner").value = s.planner;
     const reminders = s.reminders || [];
-    $("#ring").disabled = !reminders.length;
+    $("#ring-reminder").disabled = !reminders.length;
     $("#reminder-count").textContent = reminders.length
-      ? `${reminders.length} reminder(s) set · next: ${reminders[0].label} for ${reminders[0].to === "patient" ? "Maya" : reminders[0].to}`
+      ? `${reminders.length} set. Next: ${reminders[0].label} for ${reminders[0].to === "patient" ? "Maya" : reminders[0].to}`
       : "No reminders set";
   }
   $$("[data-link]").forEach((b) => b.addEventListener("click", async () => {
@@ -405,7 +411,7 @@
     catch (e) { traceLine({ type: "error", text: e.message }); }
     refresh();
   });
-  $("#ring").addEventListener("click", () => api("/api/reminders/ring", {}).then(refresh).catch(() => {}));
+  $("#ring-reminder").addEventListener("click", () => api("/api/reminders/ring", {}).then(refresh).catch(() => {}));
   $("#planner").addEventListener("change", (e) => api("/api/planner", { mode: e.target.value }).then(refresh));
   $("#reset").addEventListener("click", () => api("/api/conversation/reset", {}).then(() => { $("#convo").replaceChildren(); $("#app-slot").replaceChildren(); }));
   $("#show-inspector").addEventListener("change", (e) => { $("#inspector").hidden = !e.target.checked; });
@@ -452,6 +458,9 @@
     const file = $("#share-file").files[0];
     if (!file) { $("#share-status").textContent = "Choose a PDF, PNG or JPEG first."; return; }
     share(file);
+  });
+  $("#share-file").addEventListener("change", (e) => {
+    $(".file span").textContent = e.target.files[0]?.name || "Choose a PDF or photo";
   });
   $("#share-sample-go").addEventListener("click", () => share(null, $("#share-sample").value));
 
