@@ -38,6 +38,7 @@ class AlexaSimSettings:
     kokoro_speed: float = 1.0
     whisper_model: str = "mlx-community/whisper-small.en-mlx"
     voice_models_dir: Path | None = None
+    idle_reset_minutes: float = 0  # shared demo: wipe and reseed after this long without use (0 = never)
 
     @classmethod
     def from_env(cls) -> "AlexaSimSettings":
@@ -62,6 +63,7 @@ class AlexaSimSettings:
             kokoro_speed=float(env.get("KOKORO_SPEED", "1.0") or 1.0),
             whisper_model=env.get("WHISPER_MODEL", cls.whisper_model) or cls.whisper_model,
             voice_models_dir=Path(env["CARELOOP_VOICE_MODELS_DIR"]).expanduser() if env.get("CARELOOP_VOICE_MODELS_DIR") else None,
+            idle_reset_minutes=max(0.0, float(env.get("CARELOOP_DEMO_IDLE_RESET_MINUTES", "0") or 0)),
         )
 
     @property

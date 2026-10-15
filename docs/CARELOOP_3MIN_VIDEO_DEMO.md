@@ -1,114 +1,57 @@
-# CareLoop: three-minute end-to-end video demo
+# CareLoop: three-minute video demo
 
-> This script records the original voice simulator (`care_sim`, port 8020). For the Alexa+-style two-device demo with the MCP inspector, use `scripts/run_alexa_demo.sh` (port 8021) and the story in the README section "Alexa+ behavior simulator" and `docs/CARELOOP_ALEXA_SIM_DEMO_PLAN.md`.
+The video uses the Alexa+ behavior simulator (`scripts/run_alexa_demo.sh`) on **seeded synthetic data**. Every reply quoted below came from a dry run on seeded data on Oct 16, 2026, using the mock planner and local Ollama intake. With the Ollama planner the same tools run, but the wording can vary slightly. Task names such as "Evening dressing change" come from the local intake model, so they can differ too.
 
-This is a local, synthetic demonstration. Do not use real patient information, show `.env`, or display tokens, database paths, raw MCP inspector data, or model logs in the recording.
+Never show `.env`, tokens or database paths on screen. All people and documents are fictional.
 
-## What the video proves
+## The seeded starting day
 
-1. A patient controls plan approval, care-circle access, and revocation.
-2. CareLoop records a structured check-in but gives no medical interpretation.
-3. A caregiver sees only a generic update, not clinical details.
-4. CareLoop creates a factual, date-bounded handoff with source attribution.
-5. Voice is conversational, but CareLoop keeps authorization and data boundaries deterministic.
+`scripts/run_alexa_demo.sh --reset` (or **Reset demo data** in Backstage) puts the demo patient in this state:
 
-## One-time preflight
+| What | Seeded value | Why it's there |
+|---|---|---|
+| Maya | Has accepted data use; spoken name "Maya" | The video skips the one-time disclosure |
+| Sam | In Maya's care circle: see tasks, do tasks, get and acknowledge updates | The video skips the invite steps |
+| Pain check-ins | 3, 4 and 7 on the three days before today | Today's 8 is the second day at 7 or higher, so the prescription's rule fires on camera |
+| Question for the clinician | "When can I go back to work?" | The handoff has more than one question |
+| Prescription | **Not loaded** | Sharing and reviewing it is the opening of the video |
 
-From the CareLoop project root, install the project and make sure the configured Ollama model is available:
+The check-in dates are relative to the day you reset. **Reset on the day you record.**
 
-```bash
-uv sync --extra dev
-ollama list
-# Only if qwen3.5:4b-mlx is not listed:
-ollama pull qwen3.5:4b-mlx
-```
-
-Use the existing `.env` with these voice settings:
-
-```dotenv
-CARELOOP_AGENT_LLM=ollama
-LLM_MODEL=qwen3.5:4b-mlx
-VOICE=browser
-STT=browser
-```
-
-`VOICE=browser` and `STT=browser` are the most reliable recording setup. They use browser speech output/input when available, while typed input remains the stage-safe fallback.
-
-## Recording setup
-
-Use a fresh, clearly named synthetic database for the recording. The seed creates a fictional recovery-coordination journey with completed and active routine tasks, four changing check-ins, one generic threshold update, and a visit handoff. These commands remove only the specified demo database files if they already exist.
-
-If another CareLoop or voice-simulator process already uses ports `8010` or `8020`, stop it with `Ctrl-C` before starting this clean recording setup.
-
-### Terminal 1 — Ollama
+## Before recording
 
 ```bash
-ollama serve
+ollama list                                   # gemma4:e4b-mlx should be listed
+scripts/run_alexa_demo.sh --reset             # seeds the starting day, starts both servers
 ```
 
-If Ollama is already running as a desktop service, leave it running and skip this terminal.
+1. Open the printed URL (usually http://127.0.0.1:8021) in Chrome at 1440×900.
+2. Press **Reset demo data** twice in Backstage. Both devices are linked and the screens are clear.
+3. Do a full practice run if you like. Then press **Reset demo data** again just before you record.
+4. Keep **Show MCP inspector** on. It shows judges the real MCP traffic.
 
-### Terminal 2 — seed and run CareLoop
+## Shot list
 
-```bash
-cd /Users/imtiaz/Projects/CareLoop
-export CARELOOP_DB_PATH="$PWD/.careloop-video-demo.db"
-rm -f "$CARELOOP_DB_PATH" "$CARELOOP_DB_PATH-shm" "$CARELOOP_DB_PATH-wal"
-uv run python scripts/seed_careloop_demo.py
-uv run careloop
-```
+| Time | Do | You'll see and hear | Say (voice-over) |
+|---|---|---|---|
+| 0:00–0:15 | Start on the simulator with both devices idle | Maya's Echo Show and Sam's Echo Dot | "Alexa+ can remember a prescription. CareLoop makes every instruction Alexa says traceable to the line it came from, approved by the patient." |
+| 0:15–0:40 | Alexa app panel: **Share a document**, from Maya, **Typed PDF**, **Share sample** | About 10 s later the Show says: "Your document is ready. 8 items need your approval, and 2 are flagged for a closer look. Medicine items are approved on your screen. Want to go through them now?" The **Plan review** opens with the cited source lines | "The PDF is read on CareLoop's own server: text first, OCR for scans, then a local model proposes items. Code checks every number against the page." |
+| 0:40–1:10 | Show: "Alexa, go through them" → "make it 9" → "give it to Sam" → "approve" → "approve" | "Item 1 of 4: Take a short walk every morning, at 8 AM. Approve, change the time, give it to someone, skip, or stop?" … then "Done: 4 approved. 4 items are waiting on your screen." | "Everyday tasks can be reviewed by voice. Sam now owns the evening dressing change." |
+| 1:10–1:30 | On the Show's screen, approve the medicine items. On the pain rule, tick its flags, then approve | Each card shows the medicine as written and its source line | "Medicines and flagged items can only be approved on Maya's own screen, never by voice." |
+| 1:30–1:50 | Backstage: **Ring next reminder** twice. Then Dot: "Alexa, what was Maya's pain score?" | Dot: "Reminder for Sam: Maya's Evening dressing change." Then "CareLoop records are unavailable." | "Alexa+ sets the reminders natively, for whoever the task belongs to. Sam's shared speaker never hears a symptom or a dose." |
+| 1:50–2:15 | Show: "Alexa, my pain is 8 today". Point at Sam's ring. Dot: "Alexa, any CareLoop updates?" → "Alexa, mark it seen" | "Check-in recorded." **Sam's ring lights up.** "You have 1 new CareLoop update." "CareLoop update acknowledged." | "Yesterday was a 7. Two days at 7 or higher is the rule Maya approved from line 11 of her prescription, so Sam is told there's an update, and nothing more." |
+| 2:15–2:30 | Show: "Alexa, should I double my ibuprofen?" | "I can't give medical advice. Please contact your clinician, or emergency services in an emergency." The inspector shows **no tool call** | "CareLoop coordinates care. It never gives medical advice." |
+| 2:30–2:50 | Show: "Alexa, add a question for my doctor: can I shower with the dressing on" → "Alexa, get me ready for my appointment" | "Saved. You have 2 questions ready for your next appointment." Then "Your visit handoff is ready on your private screen. It includes 2 questions for your clinician." The **Handoff** card opens | "Before the visit, Maya gets a dated summary for her clinician: source lines, who did what, the check-ins and her questions." |
+| 2:50–3:00 | Show: "Alexa, who has seen my care data this week?" | "In the last 7 days, Sam accepted your invitation and acknowledged an update." | "Alexa+ remembers. CareLoop proves." |
 
-### Terminal 3 — start the voice surface
+The first **Ring next reminder** is Maya's own morning walk ("Reminder: Morning activity."). The second is Sam's.
 
-```bash
-cd /Users/imtiaz/Projects/CareLoop
-export CARELOOP_DB_PATH="$PWD/.careloop-video-demo.db"
-scripts/run_careloop_voice_demo.sh
-```
+## If something goes wrong
 
-Open these two tabs before recording:
+- **Wrong state:** press **Reset demo data** in Backstage. It wipes only the demo patient and reseeds the starting day.
+- **A model reply is off:** switch the Planner to **Mock replay** and repeat the line. It's deterministic, and the replies above come from it.
+- **Ollama is unavailable for intake:** start with `CARELOOP_INTAKE_LLM=none`. Pattern matching still produces cited items, and every item then needs review.
 
-- Patient workspace: [http://127.0.0.1:8010/care](http://127.0.0.1:8010/care)
-- Voice experience: [http://127.0.0.1:8020](http://127.0.0.1:8020)
+## For testers and judges
 
-In the patient workspace, sign in with the local synthetic demo token from your own `.env`; never put the token on screen. Confirm that the seeded plan, check-ins, and handoff are visible.
-
-## Three-minute shot list
-
-| Time | Screen and action | Say |
-| --- | --- | --- |
-| 0:00–0:15 | Start on **Today** in the patient workspace. Show the synthetic-demo and not-medical-advice notices. | “CareLoop turns a clinician-provided plan into a patient-controlled coordination loop. This demo uses only synthetic data.” |
-| 0:15–0:38 | Open **Plan review**. Point out patient-approved tasks and source-aware review. | “Nothing becomes active simply because it was imported. The patient reviews and explicitly approves plan items, preserving source attribution.” |
-| 0:38–0:58 | Open **Track**. Show the existing check-ins, then switch to the voice tab and type: `record the pain score as 8 out of 10`. | “A patient can record a bounded check-in by voice. CareLoop stores the structured value; it does not diagnose, interpret, or recommend treatment.” |
-| 0:58–1:18 | Stay on the voice tab and type: `show my tasks`. Let the Ollama-generated response play/read. | “Ollama makes the response conversational, but it receives only CareLoop’s approved safe summary. The MCP server remains the authorization authority.” |
-| 1:18–1:42 | Return to **Sharing**. Show the caregiver permissions UI. | “Sharing is granular and patient-controlled. Caregivers get only the scopes the patient grants; sensitive history is not automatically shared.” |
-| 1:42–2:04 | Use the terminal briefly to run the verified E2E proof below; show only the `PASS` lines. | “The same workflow is verified end to end: scoped caregiver access, generic notification acknowledgement, and immediate denial after revocation.” |
-| 2:04–2:30 | Open **Handoff**. In a terminal, obtain a two-day range with the command below, enter the two values, then select **Generate handoff**. | “For an appointment, CareLoop creates a factual handoff from approved plan items, observations, alerts, and source citations. It is patient-generated and date-bounded.” |
-| 2:30–2:48 | Back on the voice tab, type: `what should I take for pain?` | “CareLoop declines diagnosis and medication guidance. It stays in the coordination lane and directs clinical decisions to qualified care.” |
-| 2:48–3:00 | End on Today or the CareLoop title/notice. | “CareLoop makes care coordination visible and consent-driven across private screens and conversational entry points—without treating voice as permission to expose private care data.” |
-
-## Verified end-to-end proof (show only `PASS` lines)
-
-Run this in a fourth terminal while recording the 1:42–2:04 segment:
-
-```bash
-cd /Users/imtiaz/Projects/CareLoop
-scripts/run_careloop_demo.sh
-```
-
-This uses a separate temporary database and proves the complete synthetic journey without changing the database shown in the browser: intake and approval, scoped caregiver access, observations and a rule episode, generic notification acknowledgement, date-bounded handoff, and denied requests after revocation.
-
-## Handoff date inputs
-
-For the Handoff shot, run this in a terminal and enter the two printed values as **From** and **To** respectively. This uses macOS's UTC `date` command:
-
-```bash
-date -u -v-2d +%s
-date -u +%s
-```
-
-## Stage fallback
-
-If Ollama or browser audio is unavailable, keep the same typed prompts in the voice page and say: “This recording uses typed input as the device-independent fallback; the same authenticated CareLoop workflow is running underneath.” Do not claim a model response when the voice model is offline.
-
-After recording, stop the terminals with `Ctrl-C`. The scoped `.careloop-video-demo.db` files may be removed when no longer needed.
+Anyone running the repo gets the same starting day from `scripts/run_alexa_demo.sh` (it seeds an empty demo patient automatically). The prompt chips under each device cover the shot list. **Reset demo data** restores the starting day at any time. For a shared machine, set `CARELOOP_DEMO_IDLE_RESET_MINUTES=15` so the demo restores itself after 15 minutes without use.

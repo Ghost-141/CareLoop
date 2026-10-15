@@ -28,9 +28,12 @@ Rules:
 - If the person states a pain score directly, use record_pain_observation with that integer 0-10 and a fresh unique idempotency_key.
 - "Add a question for my doctor: ..." → add_question_for_clinician with the question text. Never answer the question yourself.
 - To give a task to a family member, call assign_task with task = the task's name as they said it (e.g. "the dressing") and assignee = the person's name (e.g. "Sam"). For update_task_time, task = the name too. Only use an id for "it" / "that one".
-- A family member asking about their own tasks → list_my_assigned_tasks; when they say they did one → record_task_completion with its id.
+- The patient asking about their tasks → list_care_tasks. A family member asking about tasks they help with → list_my_assigned_tasks; when they say they did one → record_task_completion with its id.
 - "Go through them" / "continue my review" → review_plan_by_voice. "Move it to 8 pm" → update_task_time on the task just mentioned.
+- If someone mentions self-harm or a medical emergency, call no tool: tell them to call their local emergency number (988 in the US).
+- "Call me Maya" / "my time zone is …" → set_my_details.
 - Never give medical advice, diagnosis, dosage or emergency guidance. For those, do not call a tool; say CareLoop can't advise on that and to contact their clinician (or emergency services in an emergency).
+- If someone says they got a care plan or prescription but doesn't give its text, don't import anything: ask them to share the document in the Alexa app.
 - Act when you have what a tool requires. Don't ask about optional details (like an expiry date); leave them out.
 - When you have the result you need, stop calling tools and answer in one short spoken sentence."""
 
@@ -98,6 +101,9 @@ class MockReplay:
             return Action("update_task_time", {"task": context["task"]["id"], "new_time": spoken}) if first else Action()
         if refers and re.search(r"\b(give|assign|hand)\b.*\bto\b", text) and context.get("task"):
             return self._give(text, steps, context)
+        named = re.search(r"\b(?:call me|my name is)\s+([a-z][a-z' -]{0,30})", text)
+        if named:
+            return Action("set_my_details", {"name": named.group(1).strip().title()}) if first else Action()
         question = re.search(r"\b(?:question|ask)\b.*?\b(?:doctor|clinician|nurse|care team)\b[:,]?\s*(.*)$", text)
         if question:
             asked = question.group(1).strip(" .?!") or text
@@ -163,7 +169,7 @@ class MockReplay:
             return Action("list_care_records", {"record_type": "OBSERVATION"}) if first else Action()
         if re.search(r"\b(handoff|appointment|visit|doctor)\b", text):
             return Action("create_visit_handoff", {"from_date": "last_7_days"}) if first else Action()
-        if re.search(r"\b(notification|update)s?\b", text):
+        if re.search(r"\b(notification|update)s?\b|\bwhat'?s new\b", text):
             return Action("list_generic_notifications", {}) if first else Action()
         if "export" in text:
             return Action("export_care_data", {}) if first else Action()
@@ -212,6 +218,13 @@ class MockReplay:
             return Action(say="There's no active task to assign yet.")
         if not people:
             return Action(say="No family member can be assigned tasks yet. Invite them to help with tasks first.")
+        # Refs carry no task text, so a task named in the request ("the dressing") goes to
+        # CareLoop as words and the server resolves it; otherwise pick by time of day.
+        phrase = re.search(r"\b(?:assign|give|hand)\s+(?:the\s+|my\s+)?(.+?)\s+to\s+\w+|"
+                           r"\b(?:handles?|takes? care of|will do|is doing)\s+(?:the\s+|my\s+)?(.+?)$", text)
+        named = next((g for g in (phrase.groups() if phrase else ()) if g), "").strip(" .?!")
+        if named and named not in {"it", "that", "that one", "this", "evening task", "morning task", "task"}:
+            return Action("assign_task", {"task": named, "assignee": people[0]["id"]})
         return Action("assign_task", {"task": tasks[0]["id"], "assignee": people[0]["id"]})
 
     @staticmethod
@@ -252,7 +265,8 @@ class OllamaPlanner:
 
     async def next(self, utterance: str, tools: list[dict[str, Any]], history: list[dict[str, str]],
                    steps: list[Step], context: dict[str, Any] | None = None) -> Action:
-        messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}, *history]
+        today = time.strftime("%A %Y-%m-%d", time.localtime())
+        messages: list[dict[str, Any]] = [{"role": "system", "content": f"{SYSTEM_PROMPT}\nToday is {today}."}, *history]
         note = _context_note(context or {})
         if note:
             messages.append({"role": "system", "content": note})

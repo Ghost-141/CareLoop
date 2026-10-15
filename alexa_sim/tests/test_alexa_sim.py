@@ -258,14 +258,27 @@ def _free_port() -> int:
 
 
 @pytest.fixture
+def careloop_server_with_consent(tmp_path, monkeypatch):
+    monkeypatch.setenv("CARELOOP_TEST_REQUIRE_CONSENT", "true")
+    yield from _careloop_server(tmp_path)
+
+
+@pytest.fixture
 def careloop_server(tmp_path):
+    yield from _careloop_server(tmp_path)
+
+
+def _careloop_server(tmp_path):
     port = _free_port()
     env = {**os.environ, "CARELOOP_DB_PATH": str(tmp_path / "e2e.db"), "CARELOOP_PORT": str(port),
            "CARELOOP_API_TOKEN": "careloop-local-demo-token", "CARELOOP_DEMO_PATIENT": "demo-patient",
            "PYTHONPATH": str(ROOT / "server")}
     env.pop("CARELOOP_CAREGIVER_TOKEN", None)
     # Deterministic intake for tests: pattern fallback, no OCR or model downloads.
-    env |= {"CARELOOP_INTAKE_LLM": "none", "CARELOOP_INTAKE_OCR": "none"}
+    env |= {"CARELOOP_INTAKE_LLM": "none", "CARELOOP_INTAKE_OCR": "none",
+            # Feature tests start past the one-time data-use consent; it has its own live test below.
+            "CARELOOP_REQUIRE_CONSENT": os.environ.get("CARELOOP_TEST_REQUIRE_CONSENT", "false"),
+            "CARELOOP_DEMO_RESET": "true"}
     process = subprocess.Popen([sys.executable, "-m", "care_loop"], cwd=ROOT, env=env,
                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
@@ -309,8 +322,11 @@ def test_full_demo_story_against_live_careloop(careloop_server) -> None:
         assert "Take a short walk" in view["content"][0]["text"]
         assert client.post("/api/apps/call", json={"device_id": "dot", "name": "get_private_view", "arguments": {"view": "tasks"}}).status_code == 403
 
-        invited = say("show", "Alexa, let my brother Sam see my tasks and get updates for two weeks")
-        assert invited["reply"].startswith("Invitation created with 3 permissions")
+        asked = say("show", "Alexa, let my brother Sam see my tasks and get updates for two weeks")
+        assert asked["reply"] == ("Sam will be able to see your tasks, get update alerts and mark updates as seen. "
+                                  "Is that right?") and asked["expects_reply"]
+        invited = say("show", "yes")
+        assert invited["reply"].startswith("Invitation created: Sam can see your tasks, get update alerts and mark updates as seen.")
         accepted = client.post("/api/invite/open").json()
         assert accepted["accepted"] is True
 
@@ -341,7 +357,7 @@ def test_full_demo_story_against_live_careloop(careloop_server) -> None:
 
         assert say("show", "Alexa, remove Sam")["needs_confirmation"] is True
         assert say("show", "confirm")["reply"].startswith("Caregiver access revoked.")
-        assert "unavailable" in say("dot", "Alexa, any CareLoop updates?")["reply"].lower()
+        assert say("dot", "Alexa, any CareLoop updates?")["reply"].startswith("You don't have access to the patient's CareLoop")
 
         # Every turn's spoken output on the Dot stayed within the voice-safe contract.
         dot_turns = [e for e in client.get("/api/state").json()["trace"] if e.get("type") == "turn" and e["device_id"] == "dot"]
@@ -397,8 +413,9 @@ def test_family_member_shares_a_document_and_patient_is_told(careloop_server) ->
         refused = client.post("/api/documents/share", params={"account": "sam", "sample": "typed"})
         assert refused.status_code == 403  # no upload permission yet
 
-        invited = say("show", "Alexa, let my brother Sam see my tasks and upload documents")
-        assert invited["reply"].startswith("Invitation created with 2 permissions")
+        say("show", "Alexa, let my brother Sam see my tasks and upload documents")
+        invited = say("show", "yes")
+        assert invited["reply"].startswith("Invitation created: Sam can see your tasks and share documents with you.")
         assert client.post("/api/invite/open").json()["accepted"] is True
 
         shared = client.post("/api/documents/share", params={"account": "sam", "sample": "typed", "doc_type": "prescription"})
@@ -427,12 +444,13 @@ def test_family_tasks_reminders_questions_and_access_log_live(careloop_server) -
 
         say("show", "Alexa, I got a new care plan from my clinic")
         say("show", "Alexa, approve my plan")
-        assert say("show", "Alexa, let Sam help with my tasks")["reply"].startswith("Invitation created with 2 permissions")
+        assert say("show", "Alexa, let Sam help with my tasks")["reply"].endswith("Is that right?")
+        assert say("show", "yes")["reply"].startswith("Invitation created: Sam can see your tasks and be given tasks to do.")
         assert client.post("/api/invite/open").json()["accepted"] is True
 
         assigned = say("show", "Alexa, Sam handles my evening task")
         assert assigned["tools"] == ["list_care_tasks", "list_care_circle", "assign_task"]
-        assert assigned["reply"].startswith("Done. Sam will handle Complete the evening check-in at 19:00.")
+        assert assigned["reply"].startswith("Done. Sam will handle Complete the evening check-in at 7 PM.")
         reminders = client.get("/api/state").json()["reminders"]
         assert any(r["to"] == "Sam" and r["times"] == ["19:00"] for r in reminders)
         while client.get("/api/state").json()["reminders"]:
@@ -443,7 +461,7 @@ def test_family_tasks_reminders_questions_and_access_log_live(careloop_server) -
         assert dot_turns[-1]["reply"] == "Reminder for Sam: Maya's Complete the evening check-in."
 
         assert say("dot", "Alexa, what are my tasks for Maya?")["reply"] == \
-            "You have 1 task to help with: Complete the evening check-in at 19:00."
+            "You have 1 task to help Maya with: Complete the evening check-in at 7 PM."
         assert say("dot", "Alexa, I've done Maya's evening task")["reply"] == "Thanks. I've recorded that you did it."
 
         saved = say("show", "Alexa, add a question for my doctor: can I stop my medicine early")
@@ -478,7 +496,7 @@ async def test_offer_runs_on_yes_and_is_dropped_on_no() -> None:
              "arguments": {"task": "t1", "assignee": "g1"}}
     pool = FakePool(TOOLS + [{"name": "assign_task", "annotations": {}}], {
         "list_care_tasks": ok("You have 1 active task. Want Sam to handle Change the dressing?", next_step=offer),
-        "assign_task": lambda args: ok("Done. Sam will handle Change the dressing at 19:00.",
+        "assign_task": lambda args: ok("Done. Sam will handle Change the dressing at 7 PM.",
                                        refs=[{"id": "t1", "kind": "task", "status": "active", "label": "active task 1",
                                               "title": "Change the dressing", "assignee": "Sam", "assignee_id": "g1"}]),
     })
@@ -497,15 +515,27 @@ async def test_offer_runs_on_yes_and_is_dropped_on_no() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(("text", "task"), [("assign the dressing to Sam", "dressing"),
+                                            ("Sam will do the evening walk", "evening walk"),
+                                            ("Sam handles it", "t1")])
+async def test_mock_assigns_a_named_task_by_its_words(text, task) -> None:
+    tasks = {"refs": [{"id": "t1", "kind": "task", "status": "active", "label": "task 1", "times": ["08:00"]}]}
+    circle = {"refs": [{"id": "g1", "status": "active", "scopes": ["perform_tasks"]}]}
+    steps = [("list_care_tasks", {}, {"structuredContent": tasks}), ("list_care_circle", {}, {"structuredContent": circle})]
+    action = await MockReplay().next(text, [{"name": "assign_task"}], [], steps)
+    assert (action.tool, action.arguments) == ("assign_task", {"task": task, "assignee": "g1"})
+
+
+@pytest.mark.asyncio
 async def test_it_refers_to_the_last_task_mentioned() -> None:
     pool = FakePool(TOOLS + [{"name": "update_task_time", "annotations": {}}], {
-        "update_task_time": lambda args: ok(f"Done. Change the dressing is now at 20:00."),
+        "update_task_time": lambda args: ok(f"Done. Change the dressing is now at 8 PM."),
     })
     device = Device("show", DeviceKind.SHOW, "maya", account="maya",
                     context={"task": {"id": "t1", "title": "Change the dressing", "times": ["19:00"]}})
     turn = await Orchestrator(pool).respond(device, "Alexa, move it to 8 pm")
     assert pool.calls == [("update_task_time", {"task": "t1", "new_time": "8 pm"})]
-    assert turn.reply.startswith("Done. Change the dressing is now at 20:00.")
+    assert turn.reply.startswith("Done. Change the dressing is now at 8 PM.")
 
 
 def test_multiturn_conversation_end_to_end_live(careloop_server) -> None:
@@ -517,16 +547,17 @@ def test_multiturn_conversation_end_to_end_live(careloop_server) -> None:
         say = lambda device, text: client.post("/api/utterance", json={"device_id": device, "text": text}).json()
 
         say("show", "Alexa, let Sam help with my tasks")
+        say("show", "yes")
         assert client.post("/api/invite/open").json()["accepted"] is True
 
         imported = say("show", "Alexa, I got a new care plan from my clinic")
         assert imported["reply"].endswith("Want to go through them now?") and imported["expects_reply"]
 
         item1 = say("show", "yes")
-        assert item1["reply"] == ("Item 1 of 3: Take a short walk, at 08:00. Approve, change the time, "
+        assert item1["reply"] == ("Item 1 of 3: Take a short walk, at 8 AM. Approve, change the time, "
                                   "give it to someone, skip, or stop?") and item1["expects_reply"]
         item2 = say("show", "make it 9")
-        assert item2["reply"].startswith("Item 2 of 3: Complete the evening check-in, at 19:00.")
+        assert item2["reply"].startswith("Item 2 of 3: Complete the evening check-in, at 7 PM.")
         item3 = say("show", "give it to Sam")
         assert item3["reply"].startswith("Item 3 of 3: Alert rule:") and item3["reply"].endswith("Approve, skip, or stop?")
         paused = say("show", "stop")
@@ -538,19 +569,19 @@ def test_multiturn_conversation_end_to_end_live(careloop_server) -> None:
         assert done["reply"].startswith("Done: 3 approved.")
 
         mine = say("dot", "Alexa, what are my tasks for Maya?")
-        assert mine["reply"] == "You have 1 task to help with: Complete the evening check-in at 19:00."
+        assert mine["reply"] == "You have 1 task to help Maya with: Complete the evening check-in at 7 PM."
 
         say("show", "Alexa, Sam handles my evening task")  # one task in the reply → "it" now means this task
         moved = say("show", "Alexa, move it to 8 pm")
         assert moved["tools"] == ["update_task_time"]
-        assert moved["reply"].startswith("Done. Complete the evening check-in is now at 20:00.")
+        assert moved["reply"].startswith("Done. Complete the evening check-in is now at 8 PM.")
 
         asked = say("show", "Alexa, do my check-in")
         assert asked["reply"].startswith("On a scale from 0 to 10")
         follow = say("show", "four")
         assert follow["reply"] == "Did you do Take a short walk today?"
         summary = say("show", "yes")
-        assert summary["reply"].startswith("Check-in recorded. You did 1 of 1 task. Sam has Complete the evening check-in at 20:00.")
+        assert summary["reply"].startswith("Check-in recorded. You did 1 of 1 task. Sam has Complete the evening check-in at 8 PM.")
 
         methods = [e.get("method") for e in client.get("/api/state").json()["trace"]]
         assert methods.count("elicitation/create") >= 4
@@ -579,3 +610,102 @@ async def test_new_alexa_request_interrupts_a_waiting_workflow() -> None:
     await orchestrator.respond(device, "Alexa, do my check-in")
     still = await orchestrator.respond(device, "seven")
     assert pool.answers[-1] == {"action": "accept", "content": {"pain_score": 7}} and still.reply.startswith("Check-in recorded.")
+
+
+
+def test_wrong_permissions_can_be_refused_before_anything_is_created(careloop_server) -> None:
+    settings = AlexaSimSettings(mcp_url=careloop_server, planner="mock")
+    with TestClient(create_alexa_sim_app(settings, planner=MockReplay())) as client:
+        client.post("/api/link", json={"account": "maya"})
+        say = lambda text: client.post("/api/utterance", json={"device_id": "show", "text": text}).json()
+        say("Alexa, let Sam help with my tasks")
+        refused = say("no")
+        assert refused["reply"].startswith("Okay, no invitation was created.")
+        assert client.get("/api/state").json()["invitation_pending"] is False
+
+
+
+def test_sam_hears_about_the_invitation_on_his_dot(careloop_server) -> None:
+    settings = AlexaSimSettings(mcp_url=careloop_server, planner="mock")
+    with TestClient(create_alexa_sim_app(settings, planner=MockReplay())) as client:
+        client.post("/api/link", json={"account": "maya"})
+        client.post("/api/link", json={"account": "sam"})
+        say = lambda text: client.post("/api/utterance", json={"device_id": "show", "text": text}).json()
+        dot_says = lambda: [e["reply"] for e in client.get("/api/state").json()["trace"]
+                            if e.get("type") == "turn" and e["device_id"] == "dot"]
+
+        say("Alexa, let Sam help with my tasks")
+        assert dot_says() == []  # nothing until Maya confirms the permissions
+        say("yes")
+        notice = "Maya invited you to help with her care in CareLoop. Open the invitation in your Alexa app to accept."
+        assert dot_says() == [notice]
+        assert "task" not in notice.lower()  # who invited him, never what or why
+
+        accepted = client.post("/api/invite/open").json()  # the page speaks this reply on Sam's Dot
+        assert accepted["reply"] == "Invitation accepted. You now have the access the patient chose."
+
+
+def test_sam_hears_a_pending_invitation_when_he_links_later(careloop_server) -> None:
+    settings = AlexaSimSettings(mcp_url=careloop_server, planner="mock")
+    with TestClient(create_alexa_sim_app(settings, planner=MockReplay())) as client:
+        client.post("/api/link", json={"account": "maya"})
+        say = lambda text: client.post("/api/utterance", json={"device_id": "show", "text": text}).json()
+        say("Alexa, let Sam help with my tasks")
+        say("yes")
+        client.post("/api/link", json={"account": "sam"})
+        replies = [e["reply"] for e in client.get("/api/state").json()["trace"]
+                   if e.get("type") == "turn" and e["device_id"] == "dot"]
+        assert replies == ["Maya invited you to help with her care in CareLoop. Open the invitation in your Alexa app to accept."]
+
+
+
+@pytest.mark.asyncio
+async def test_crisis_words_get_emergency_guidance_and_no_tool() -> None:
+    pool = FakePool(TOOLS, {})
+    turn = await Orchestrator(pool).respond(Device("show", DeviceKind.SHOW, "maya", account="maya"),
+                                            "Alexa, I don't want to live anymore")
+    assert pool.calls == [] and "988" in turn.reply and "local emergency number" in turn.reply
+
+
+def test_first_use_consent_then_the_original_request_runs_live(careloop_server_with_consent) -> None:
+    settings = AlexaSimSettings(mcp_url=careloop_server_with_consent, planner="mock")
+    with TestClient(create_alexa_sim_app(settings, planner=MockReplay())) as client:
+        client.post("/api/link", json={"account": "maya"})
+        say = lambda text: client.post("/api/utterance", json={"device_id": "show", "text": text}).json()
+        first = say("Alexa, show my tasks")
+        assert first["reply"].startswith("Before I save anything: CareLoop keeps your care plan")
+        assert first["reply"].endswith("Is that okay?") and first["expects_reply"]
+        agreed = say("yes")
+        assert agreed["tools"] == ["accept_data_use", "list_care_tasks"]
+        assert agreed["reply"].startswith("Thanks, you're all set. You have no CareLoop plan items yet.")
+        assert say("Alexa, show my tasks")["reply"].startswith("You have no CareLoop plan items yet.")  # asked once
+        named = say("Alexa, call me Maya")
+        assert named["tools"] == ["set_my_details"] and named["reply"] == "Done. I'll call you Maya."
+
+
+def test_demo_reset_restores_the_seeded_day_and_links_both_devices(careloop_server) -> None:
+    settings = AlexaSimSettings(mcp_url=careloop_server, planner="mock")
+    with TestClient(create_alexa_sim_app(settings, planner=MockReplay())) as client:
+        client.post("/api/link", json={"account": "maya"})
+        say = lambda text: client.post("/api/utterance", json={"device_id": "show", "text": text}).json()
+        say("Alexa, remove Sam")  # leaves a confirmation waiting
+        out = client.post("/api/demo/reset").json()
+        assert out["seeded"]["care_circle"] == ["Sam"]
+        state = client.get("/api/state").json()
+        assert {d["id"]: d["account"] for d in state["devices"]} == {"show": "maya", "dot": "sam"}
+        assert not any(d["pending"] for d in state["devices"])
+        assert [e["text"] for e in state["trace"] if e.get("type") == "host"][-1].startswith("Demo reset")
+        reply = say("Alexa, who has access to my care?")["reply"]
+        assert "1 active caregiver" in reply  # Sam, from the seed
+
+
+def test_idle_demo_resets_itself(careloop_server) -> None:
+    settings = AlexaSimSettings(mcp_url=careloop_server, planner="mock", idle_reset_minutes=0.01)
+    with TestClient(create_alexa_sim_app(settings, planner=MockReplay())) as client:
+        client.post("/api/link", json={"account": "maya"})
+        for _ in range(50):
+            if any(str(e.get("text", "")).startswith("Demo reset") for e in client.get("/api/state").json()["trace"]):
+                break
+            time.sleep(0.2)
+        else:
+            pytest.fail("the idle demo did not reset")

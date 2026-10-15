@@ -52,8 +52,15 @@ def compose_reply(results: list[tuple[str, dict[str, Any], bool]], *, disclaimer
         if line not in lines:
             lines.append(line)
     reply = " ".join(lines)
-    if disclaimer and any(structured(r).get("surface") == "private_screen" for _, r, _ in results) and DISCLAIMER not in reply:
-        reply = f"{reply} {DISCLAIMER}"
+    if (disclaimer and any(structured(r).get("surface") == "private_screen" for _, r, _ in results)
+            and DISCLAIMER not in reply and "not medical advice" not in reply.lower()):
+        # Keep an offered question last, so it's clear what a "yes" answers.
+        question = next((structured(r)["next_step"]["say"] for _, r, _ in reversed(results)
+                         if (structured(r).get("next_step") or {}).get("say")), None)
+        if question and reply.endswith(question):
+            reply = f"{reply[:-len(question)].rstrip()} {DISCLAIMER} {question}"
+        else:
+            reply = f"{reply} {DISCLAIMER}"
     return reply
 
 

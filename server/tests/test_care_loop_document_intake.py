@@ -290,7 +290,7 @@ def test_unreadable_document_fails_the_job_with_a_safe_message() -> None:
 # ---- portal upload + MCP tools + review view ---------------------------------------------------------------
 @pytest.fixture
 def app_client(tmp_path):
-    settings = Settings(db_path=str(tmp_path / "intake.db"), intake_llm="none", intake_ocr="none")
+    settings = Settings(db_path=str(tmp_path / "intake.db"), intake_llm="none", intake_ocr="none", require_consent=False)
     deps = build_deps(settings, auth=TokenAuth({"p": PATIENT, "c": CAREGIVER}))
     deps.service.intake = Engines(FakeModel(good_extraction()), None)
     with TestClient(create_app(deps)) as client:

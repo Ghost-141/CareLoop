@@ -107,7 +107,7 @@ def _extract_pdf_text(data: bytes) -> str:
     return "\f".join(pages)
 
 
-def build_router(service: CareLoopService, auth: TokenAuth) -> APIRouter:
+def build_router(service: CareLoopService, auth: TokenAuth, *, demo_caregiver: str | None = None) -> APIRouter:
     router = APIRouter()
 
     def current_identity(authorization: Annotated[str | None, Header()] = None) -> Identity:
@@ -123,9 +123,29 @@ def build_router(service: CareLoopService, auth: TokenAuth) -> APIRouter:
             # Never include potentially sensitive identifiers or record details in an HTTP error.
             raise HTTPException(403, "CareLoop access denied") from exc
 
+    @router.get("/privacy", include_in_schema=False, response_class=HTMLResponse)
+    def privacy() -> str:
+        from .legal import PRIVACY_HTML
+        return PRIVACY_HTML
+
+    @router.get("/terms", include_in_schema=False, response_class=HTMLResponse)
+    def terms() -> str:
+        from .legal import TERMS_HTML
+        return TERMS_HTML
+
     @router.get("/care", include_in_schema=False, response_class=HTMLResponse)
     def portal() -> str:
         return PORTAL_HTML
+
+    @router.post("/api/care/demo/reset")
+    def reset_demo(identity: Identity = Depends(current_identity)) -> dict[str, Any]:
+        """Wipe and reseed the synthetic demo patient. Off unless CARELOOP_DEMO_RESET=true."""
+        if demo_caregiver is None:
+            raise HTTPException(404, "Not found")
+        if identity.role != "patient":
+            raise HTTPException(403, "CareLoop access denied")
+        from .demo import reset_demo as reset
+        return {"seeded": reset(service, identity.patient, demo_caregiver)}
 
     @router.get("/api/care/me")
     def me(identity: Identity = Depends(current_identity)) -> dict[str, str]:

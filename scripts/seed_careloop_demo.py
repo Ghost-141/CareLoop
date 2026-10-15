@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
-"""Seed a clearly labelled, synthetic CareLoop demo journey.
+"""Seed the synthetic starting state for the Alexa+ demo (see care_loop/demo.py).
 
-This never deletes or changes existing records. It is idempotent: after the
-synthetic plan has been seeded once for a patient, a second run reports that
-fact and makes no changes.
+Maya has accepted data use, Sam is in her care circle, and three days of pain
+check-ins are logged (yesterday's was 7). Her prescription is not loaded yet.
 
-    uv run python scripts/seed_careloop_demo.py
-    uv run python scripts/seed_careloop_demo.py --db /tmp/careloop-demo.db
+    uv run python scripts/seed_careloop_demo.py            # only into an empty demo patient
+    uv run python scripts/seed_careloop_demo.py --reset    # wipe the demo patient, then seed
+    uv run python scripts/seed_careloop_demo.py --empty    # wipe the demo patient, seed nothing
+    uv run python scripts/seed_careloop_demo.py --db /tmp/careloop-video.db --reset
+
+--reset and --empty delete only the configured demo patient's records, never other patients.
 """
 from __future__ import annotations
 
@@ -18,74 +21,38 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT / "server") not in sys.path:
     sys.path.insert(0, str(ROOT / "server"))
 
-from care_loop.auth import Identity
 from care_loop.config import Settings
-from care_loop.core import CareLoopService
-from care_loop.storage import CareLoopStorage
-
-TITLE = "CareLoop fictional recovery-coordination plan — synthetic demo only"
-SCENARIO = "Fictional adult recovery-coordination journey; not medical advice"
-DAY = 86_400
-PLAN = "\n".join((
-    "TASK: Complete a morning mobility check-in | schedule: morning",
-    "TASK: Review today's support plan | schedule: lunchtime",
-    "TASK: Prepare questions for the next care-team visit | schedule: afternoon",
-    "TASK: Confirm the next support reminder | schedule: evening",
-    "RULE: PAIN_SCORE_AT_OR_ABOVE threshold=7 consecutive_days=2",
-))
-
-
-def seed(db_path: Path, patient_id: str) -> dict[str, int | bool]:
-    """Create a compact, fully-approved synthetic story in one patient scope."""
-    storage = CareLoopStorage(db_path)
-    try:
-        if any(row.get("title") == TITLE for row in storage.list(patient_id, "DOCUMENT")):
-            return {"seeded": False, "tasks": 0, "observations": 0, "alerts": 0}
-
-        patient = Identity(patient_id, "patient", patient_id, "synthetic-demo")
-        service = CareLoopService(storage, storage.clock, retention_days=365)
-        intake = service.intake_text_document(patient, TITLE, PLAN)
-        drafts = intake["drafts"]
-        for item in drafts:
-            service.approve_plan_item(patient, item["id"])
-
-        active_tasks = [row for row in service.list_care_tasks(patient) if row["type"] == "PLAN_TASK"]
-        # Show believable progress: two items completed and two still active.
-        # These are synthetic coordination events, not clinical instructions.
-        for index, task in enumerate(active_tasks[:2], start=1):
-            service.record_task_completion(patient, task["id"], completed_at=storage.clock() - index * 3_600)
-
-        # A small change over four fictional daily check-ins reaches the one
-        # explicitly approved threshold. It creates a generic caregiver update,
-        # never a diagnosis, recommendation, or disclosed symptom narrative.
-        now = int(storage.clock()) - 60
-        observations = ((now - 3 * DAY, 2), (now - 2 * DAY, 4), (now - DAY, 7), (now, 8))
-        for index, (when, score) in enumerate(observations, start=1):
-            service.record_observation(patient, pain_score=score, observed_at=when,
-                                       idempotency_key=f"careloop-demo-checkin-{index}")
-        alerts = storage.list(patient_id, "ALERT")
-        service.create_visit_handoff(patient, now - 2 * DAY, now)
-        return {"seeded": True, "tasks": len(active_tasks), "observations": len(observations), "alerts": len(alerts)}
-    finally:
-        storage.close()
+from care_loop.demo import has_records, is_seeded, reset_demo, seed_demo
+from care_loop.server import build_deps
 
 
 def main(argv: list[str] | None = None) -> int:
     settings = Settings.from_env()
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--db", type=Path, default=Path(settings.db_path), help="SQLite database to seed")
-    parser.add_argument("--patient", default=settings.patient_id, help="synthetic patient identifier")
+    parser.add_argument("--reset", action="store_true", help="delete the demo patient's records first")
+    parser.add_argument("--empty", action="store_true", help="delete the demo patient's records and seed nothing")
     args = parser.parse_args(argv)
-    result = seed(args.db, args.patient)
-    if not result["seeded"]:
-        print("CareLoop synthetic demo data is already present; no records were changed.")
-        return 0
-    print("Seeded synthetic CareLoop demo data:")
-    print(f"  scenario: {SCENARIO}")
-    print(f"  approved tasks: {result['tasks']}")
-    print(f"  synthetic check-ins: {result['observations']}")
-    print(f"  generic action-required alerts: {result['alerts']}")
-    print("No real patient information was created or imported.")
+
+    from dataclasses import replace
+    deps = build_deps(replace(settings, db_path=str(args.db)))
+    service, patient = deps.service, settings.patient_id
+    try:
+        if args.empty:
+            deps.storage.wipe_patient(patient)
+            print("The demo patient is empty: no consent, no care circle, no records.")
+            return 0
+        if not args.reset and has_records(service, patient):
+            state = "the demo data" if is_seeded(service, patient) else "records"
+            print(f"The demo patient already has {state}; nothing changed. Use --reset to start over.")
+            return 0
+        summary = (reset_demo if args.reset else seed_demo)(service, patient, settings.caregiver_id)
+    finally:
+        deps.storage.close()
+    print(f"Seeded synthetic demo data in {args.db}:")
+    print(f"  {summary['patient_name']} has accepted data use; care circle: {', '.join(summary['care_circle'])}")
+    print(f"  pain check-ins for the last {len(summary['pain_history'])} days: {summary['pain_history']}")
+    print("  1 question saved for the clinician; prescription not loaded (share it in the demo)")
     return 0
 
 

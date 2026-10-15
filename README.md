@@ -4,6 +4,8 @@
 
 > Built for the **Amazon Developer Hackathon 2026 ("Build, Ship, Shape"), Alexa+ track.** It includes an Alexa+ *behavior simulator* web app (`alexa_sim/`), which is **not an Amazon product**. All data is synthetic.
 
+**Product page:** [ghost-141.github.io/CareLoop](https://ghost-141.github.io/CareLoop/) (source in `site/`, published by `.github/workflows/pages.yml` once the repository is public).
+
 CareLoop is intentionally bounded. It does **not** diagnose, prescribe, adjust medication, interpret missing data as normal, promise emergency monitoring, or use real patient data.
 
 | | |
@@ -16,7 +18,7 @@ CareLoop is intentionally bounded. It does **not** diagnose, prescribe, adjust m
 | Identity | Credential-derived patient/caregiver identities; no caller-supplied patient scope |
 | Privacy | Voice-safe tool results, patient-owned expiring grants, generic caregiver notifications, deletion and purge |
 | Document intake | Prescription/plan upload: PDF text first, PaddleOCR fallback, local LLM proposes items, deterministic checks, patient approves each item |
-| Tests | 164 tests, including live end-to-end runs against a real server; an intake eval against the local model |
+| Tests | 187 tests, including live end-to-end runs against a real server; an intake eval against the local model |
 
 ## Contents
 
@@ -109,7 +111,7 @@ Skip this and set `CARELOOP_AGENT_LLM=mock` in `.env` to use the deterministic p
 
 ```bash
 uv run pytest -q
-# 164 passed
+# 187 passed
 ```
 
 ## Run the Alexa+ demo
@@ -118,13 +120,24 @@ uv run pytest -q
 scripts/run_alexa_demo.sh
 ```
 
-This starts the CareLoop MCP server on `:8010`, waits until it is healthy, then starts the simulator on `:8021`. Open **http://127.0.0.1:8021** in Chrome.
+This starts the CareLoop MCP server on `:8010`, waits until it is healthy, then starts the simulator on `:8021`. Open **http://127.0.0.1:8021** in Chrome. If either port is already taken (by another app or an old run), the script uses the next free port and prints the URL to open.
+
+**Demo data.** If the demo patient has no records, the script seeds a synthetic starting day:
+- Maya has accepted data use.
+- Sam is in her care circle.
+- Pain check-ins of 3, 4 and 7 are logged for the last three days.
+- One question is saved for her clinician.
+
+Her prescription is *not* loaded: share it from the Alexa app panel. Because yesterday was a 7, a check-in of 7 or more today fires her approved rule. In Backstage, **Reset demo data** (click twice) restores this starting day at any time, with both devices linked. The video script is in [docs/CARELOOP_3MIN_VIDEO_DEMO.md](docs/CARELOOP_3MIN_VIDEO_DEMO.md).
 
 | Variant | Command |
 | --- | --- |
 | Deterministic planner (stage-safe, exact replies below) | `CARELOOP_AGENT_LLM=mock scripts/run_alexa_demo.sh` |
 | Browser speech instead of Kokoro/Whisper | `VOICE=browser STT=browser scripts/run_alexa_demo.sh` |
-| Separate demo database (delete it to start fresh) | `CARELOOP_DB_PATH=/tmp/careloop-demo.db scripts/run_alexa_demo.sh` |
+| Restore the seeded starting day | `scripts/run_alexa_demo.sh --reset` |
+| Start with nothing (for the walkthrough tables below) | `scripts/run_alexa_demo.sh --empty` |
+| Separate demo database | `CARELOOP_DB_PATH=/tmp/careloop-demo.db scripts/run_alexa_demo.sh` |
+| Shared machine: restore the demo after 15 idle minutes | `CARELOOP_DEMO_IDLE_RESET_MINUTES=15 scripts/run_alexa_demo.sh` |
 
 **First run:** Kokoro downloads its model (about 115 MB) to `~/.cache/careloop/voice`, which takes a minute or two. The top bar shows `Voice: Kokoro · Listening: Whisper` once both engines are ready; until then the page uses browser speech.
 
@@ -133,20 +146,22 @@ This starts the CareLoop MCP server on `:8010`, waits until it is healthy, then 
 - **Devices:** *Maya's Echo Show* (patient, with a screen) and *Sam's Echo Dot* (caregiver, voice only).
 - **Talk:** tap the 🎤 on a device and speak, or tick **Hands-free "Alexa…"** and pick which device hears you. Saying "stop" interrupts speech. Typing in a device's box, or tapping a prompt chip, does the same as speaking.
 - **Alexa app panel:** **Enable CareLoop** links an account (synthetic credentials stay on the server). **Sam opens Maya's invitation link** simulates Sam accepting her invite.
-- **Director panel:** switch planner (Ollama ↔ mock) and reset the conversation.
+- **Backstage panel:** switch planner (Ollama ↔ mock), reset the conversation, ring the next simulated reminder, and **Reset demo data** (wipes only the demo patient and reseeds the starting day).
 - **MCP inspector:** every `tools/list`, `tools/call`, `resources/read` and `elicitation/create` message, live.
 
 ## Demo walkthrough (with expected replies)
 
-Start with a fresh database and the mock planner for exact replies (`CARELOOP_AGENT_LLM=mock`). With Ollama, the same tools run but wording may vary slightly. The Show also speaks the care disclaimer once per session.
+These tables start from an **empty** demo patient: `CARELOOP_AGENT_LLM=mock scripts/run_alexa_demo.sh --empty` (mock planner for exact replies). "Start fresh" below means stopping the script and running it with `--empty` again. With Ollama, the same tools run but wording may vary slightly. The Show also speaks the care disclaimer once per session.
 
 **Link the accounts:** in the Alexa app panel, click **Enable CareLoop** for **Maya**, then for **Sam**.
+
+**First use:** Maya's first request gets a short data-use disclosure ("Before I save anything: CareLoop keeps your care plan… Is that okay?"). Say **"yes"** and CareLoop carries on with the original request. This happens once. Optionally: "Alexa, call me Maya".
 
 | # | Device | Say | Expected reply / what you'll see | Shows |
 |---|---|---|---|---|
 | 1 | Show | "Alexa, I got a new care plan from my clinic" | "Imported 3 plan items for your review. Approve each item on your screen to activate it." **Plan review** card with citations appears | Approval with citations |
 | 2 | Show | Tap **Approve** on a card, then "Alexa, approve my plan" | "Plan task approved and now active. …" The card refreshes | MCP Apps → tool call |
-| 3 | Show | "Alexa, let my brother Sam see my tasks and get updates for two weeks" | "Invitation created with 3 permissions." | Scoped, expiring consent |
+| 3 | Show | "Alexa, let my brother Sam see my tasks and get updates for two weeks" | Alexa reads back exactly what Sam will be able to do and asks "Is that right?"; say "yes". Sam's Dot: "Maya invited you…" | Scoped, expiring consent |
 | 4 | Alexa app | Click **Sam opens Maya's invitation link** | Dot: "Invitation accepted. You now have the access the patient chose." | Caregiver consent |
 | 5 | Show | "Alexa, my pain is 8 yesterday" | "Check-in recorded." | Structured observation |
 | 6 | Show | "Alexa, do my check-in" | "On a scale from 0 to 10, what's your pain score today?" The mic reopens | MCP elicitation |
@@ -167,10 +182,10 @@ Steps 6–8 also work by voice end to end: answer the question out loud when the
 
 | # | Device | Say / action | Expected |
 |---|---|---|---|
-| G | Show | "Alexa, let Sam help with my tasks", then **Sam opens Maya's invitation link** | "Invitation created with 2 permissions." Sam can see tasks and do tasks |
-| H | Show | "Alexa, Sam handles my evening task" | "Done. Sam will handle Complete the evening check-in at 19:00." The Director panel shows the simulated Alexa+ reminder |
+| G | Show | "Alexa, let Sam help with my tasks", then **Sam opens Maya's invitation link** | Alexa reads the permissions back ("Sam will be able to see your tasks and be given tasks to do. Is that right?"); say "yes". Sam's Dot hears that he was invited |
+| H | Show | "Alexa, Sam handles my evening task" | "Done. Sam will handle Complete the evening check-in at 7 PM." The Director panel shows the simulated Alexa+ reminder |
 | I | Director | **Ring next reminder** | Sam's Dot: "Reminder for Sam: Maya's Complete the evening check-in." |
-| J | Dot | "Alexa, what are my tasks for Maya?" then "Alexa, I've done Maya's evening task" | "You have 1 task to help with: … at 19:00." then "Thanks. I've recorded that you did it." |
+| J | Dot | "Alexa, what are my tasks for Maya?" then "Alexa, I've done Maya's evening task" | "You have 1 task to help Maya with: … at 7 PM." then "Thanks. I've recorded that you did it." |
 | K | Show | "Alexa, add a question for my doctor: can I stop my medicine early" | "Saved. You have 1 question ready for your next appointment." Saved, not refused, and never read back |
 | L | Show | "Alexa, get me ready for my appointment" | "…It includes 1 question for your clinician." The handoff shows who completed each task and any missed tasks |
 | M | Show | "Alexa, who has seen my care data this week?" | "In the last 7 days, Sam …", listing what Sam viewed or did, never the content |
@@ -182,12 +197,12 @@ If an assigned task isn't marked done within an hour of its time, Sam's ring lig
 | # | Say | Expected |
 |---|---|---|
 | N | "Alexa, I got a new care plan from my clinic" | "…Want to go through them now?" The mic stays open |
-| O | "yes" | "Item 1 of 3: Take a short walk, at 08:00. Approve, change the time, give it to someone, skip, or stop?" |
+| O | "yes" | "Item 1 of 3: Take a short walk, at 8 AM. Approve, change the time, give it to someone, skip, or stop?" |
 | P | "make it 9" → "give it to Sam" | The walk moves to 09:00 and is approved; the evening task goes to Sam; item 3 (the alert rule) is asked |
 | Q | "Alexa, show my tasks" | A new request **pauses** the review: "Okay, I've saved your place. 1 item left…" followed by the task summary |
 | R | "Alexa, continue my review" → "approve" | Resumes at item 3: "Done: 3 approved." |
-| S | "Alexa, Sam handles my evening task" → "Alexa, move it to 8 pm" | "it" = the task just mentioned: "Done. Complete the evening check-in is now at 20:00." |
-| T | "Alexa, do my check-in" → "four" → "yes" | Asks pain, then "Did you do Take a short walk today?", then "Check-in recorded. You did 1 of 1 task. Sam has Complete the evening check-in at 20:00." |
+| S | "Alexa, Sam handles my evening task" → "Alexa, move it to 8 pm" | "it" = the task just mentioned: "Done. Complete the evening check-in is now at 8 PM." |
+| T | "Alexa, do my check-in" → "four" → "yes" | Asks pain, then "Did you do Take a short walk today?", then "Check-in recorded. You did 1 of 1 task. Sam has Complete the evening check-in at 8 PM." |
 
 Design: [docs/CARELOOP_MULTITURN_PLAN.md](docs/CARELOOP_MULTITURN_PLAN.md).
 
@@ -202,16 +217,12 @@ Design: [docs/CARELOOP_MULTITURN_PLAN.md](docs/CARELOOP_MULTITURN_PLAN.md).
 | E | Alexa app | Share as **Sam** before and after Maya says "let Sam see my tasks and upload documents" | Refused, then accepted; Sam's Dot: "Thanks. I've sent it to Maya to review." |
 | F | Alexa app | Share **Sample: prompt injection** | The planted "ignore all previous instructions…" line never becomes an item; nothing is activated |
 
-**Reset for another run:** stop the script (`Ctrl-C`), then delete the local synthetic database:
-
-```bash
-rm -f data/careloop.db data/careloop.db-wal data/careloop.db-shm
-```
+**Reset for another run:** press **Reset demo data** in Backstage (seeded starting day), or restart with `scripts/run_alexa_demo.sh --empty` (nothing at all). Both remove only the demo patient's records.
 
 ## Testing
 
 ```bash
-uv run pytest -q                       # all 164 tests
+uv run pytest -q                       # all 187 tests
 uv run pytest -q server/tests          # MCP server, tools, consent, MCP Apps views, elicitation
 uv run pytest -q alexa_sim/tests       # simulator host, incl. a live run of the demo story above
 uv run pytest -q care_sim/tests        # evaluator and original voice simulator
@@ -237,7 +248,7 @@ uv run careloop
 # open http://127.0.0.1:8010/care and sign in with: careloop-local-demo-token
 ```
 
-**Seed a complete synthetic story** (approved plan, check-ins, one alert, one handoff; idempotent):
+**Seed the demo starting day** without running the servers (only into an empty demo patient; `--reset` wipes it first, `--empty` only wipes):
 
 ```bash
 uv run python scripts/seed_careloop_demo.py
@@ -262,6 +273,8 @@ Endpoint `http://127.0.0.1:8010/mcp` (Streamable HTTP, bearer token required). `
 | `add_question_for_clinician` | Save a question for the next handoff; CareLoop never answers it |
 | `review_plan_by_voice` | Guided, resumable review of draft items by voice (MCP elicitation per item); medicine and flagged items stay on screen |
 | `update_task_time` | Move a task to a new spoken time ("8 pm", "9"), by name or id |
+| `accept_data_use` | The patient accepts the one-time data-use disclosure; voice tools ask for it before first use |
+| `set_my_details` | The patient's spoken name (used in family members' messages) and time zone |
 | `who_accessed_my_care_data` | Who else viewed or acted on the patient's data (default: last 7 days) |
 | `list_generic_notifications` / `acknowledge_alert` | Generic caregiver updates; no private alert detail |
 | `create_visit_handoff` | Date-bounded, cited handoff (ISO dates, epochs, or `last_7_days`) |
@@ -364,6 +377,11 @@ Settings come from environment variables; `.env` is loaded automatically and she
 | `WHISPER_MODEL` | `mlx-community/whisper-small.en-mlx` | Whisper model |
 | `CARELOOP_VOICE_MODELS_DIR` | `~/.cache/careloop/voice` | Kokoro model cache |
 | `CARELOOP_SIM_PORT` | `8020` | Original `care_sim` port |
+| `CARELOOP_REQUIRE_CONSENT` | `true` | Ask patients to accept data use before voice tools store or read anything |
+| `CARELOOP_DEMO_PATIENT_NAME` | `Maya` | The demo patient's spoken name until they set their own |
+| `CARELOOP_DEMO_RESET` | `false` (`run_alexa_demo.sh`: `true`) | Enables `POST /api/care/demo/reset`, which wipes and reseeds the demo patient. Keep off anywhere real |
+| `CARELOOP_DEMO_IDLE_RESET_MINUTES` | `0` (off) | The simulator restores the seeded demo after this many minutes without use |
+| `CARELOOP_TIMEZONE` | this machine's zone | IANA zone for task times, reminders and missed-task checks (a patient's own setting wins) |
 | `CARELOOP_INTAKE_LLM` | `ollama` | Document intake model provider, or `none` for pattern matching only |
 | `CARELOOP_INTAKE_MODEL` | `LLM_MODEL` (`.env.example`: `gemma4:e4b-mlx`) | Local model that structures uploaded documents |
 | `CARELOOP_INTAKE_OCR` | `paddle` | OCR for scanned pages and photos (`none` sends them to manual review) |
@@ -406,6 +424,9 @@ Key documents:
 - [Evals](docs/CARELOOP_EVALS.md)
 
 ## Safety and privacy boundaries
+
+- Public [privacy policy](http://127.0.0.1:8010/privacy) and [terms of use](http://127.0.0.1:8010/terms) pages are served by the CareLoop server (`/privacy`, `/terms`).
+- Self-harm or medical-emergency words get emergency guidance (local emergency number; 988 in the US) and never reach a tool or model.
 
 - Synthetic adult data only; no real patient records.
 - CareLoop is not medical advice and does not replace a clinician.

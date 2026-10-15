@@ -27,7 +27,19 @@ AUDIT_ACTIONS = frozenset({"access_invited", "access_granted", "access_revoked",
                            "document_uploaded", "plan_item_approved", "plan_item_rejected",
                            # Access transparency: what a family member looked at or did (never the content).
                            "tasks_viewed", "observations_viewed", "records_viewed", "source_viewed", "history_searched",
-                           "task_assigned", "task_completed", "question_added", "task_rescheduled"})
+                           "task_assigned", "task_completed", "question_added", "task_rescheduled",
+                           "data_use_accepted", "profile_updated"})
+DATA_USE_VERSION = 1
+# Self-harm or a medical emergency: CareLoop never tries to help; it points to people who can.
+CRISIS = re.compile(r"\b(kill(ing)? myself|suicid\w*|end (my|it all)|end my life|hurt(ing)? myself|self[- ]harm|"
+                    r"want to die|don'?t want to (live|be here)|overdos\w*|can'?t breathe|chest pain)\b", re.IGNORECASE)
+CRISIS_REPLY = ("I'm really sorry you're going through this. If you might be in danger, call your local emergency "
+                "number now. In the US, you can call or text 988 for the Suicide and Crisis Lifeline. "
+                "CareLoop can't help in an emergency.")
+
+
+class ConsentRequired(PermissionError):
+    """The patient hasn't accepted CareLoop's data use yet."""
 ACCESS_PHRASES = {"tasks_viewed": "viewed your tasks", "observations_viewed": "viewed your check-ins",
                   "records_viewed": "viewed your records", "source_viewed": "viewed a plan source",
                   "history_searched": "searched your history", "alert_acknowledged": "acknowledged an update",
@@ -69,6 +81,12 @@ _CLOCK_TIME = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 AUDIT_OUTCOMES = frozenset({"success", "denied", "failed"})
 
 class AccessDenied(PermissionError): pass
+class PastExpiry(ValueError):
+    """An invitation expiry that has already passed."""
+
+
+class NoCareAccess(AccessDenied):
+    """A family member has no current grant for this (or any) part of the patient's care data."""
 
 @dataclass
 class CareLoopService:
@@ -78,7 +96,10 @@ class CareLoopService:
     # Document intake engines (OCR + local model); see intake_engines.py. None = fixtures only.
     intake: Any = None
     # Local time zone for task times ("20:00") and the missed-task check; None = this machine's zone.
+    # A patient's own profile time zone (set_my_details) takes precedence.
     timezone: str | None = None
+    require_consent: bool = False  # the server turns this on; library use and tests opt in
+    default_patient_name: str = "the patient"
     def __post_init__(self) -> None:
         # Re-evaluate durable approved rules after a restart. Alert episode
         # keys make this safe to run repeatedly.
@@ -113,9 +134,12 @@ class CareLoopService:
         patient=identity.patient
         if identity.role == "patient" and identity.subject_id == patient: return patient
         if identity.role != "caregiver": raise AccessDenied("CareLoop identity has no patient access")
-        grants=self.storage.list(patient,"CONSENT")
-        valid=any(g.get("accepted_at") and g.get("caregiver_id")==identity.subject_id and not g.get("revoked_at") and (not g.get("expires_at") or g["expires_at"]>self._now()) and (required_scope is None or required_scope in g.get("scopes",[])) for g in grants)
-        if not valid: raise AccessDenied("Caregiver access is revoked, expired, or not granted")
+        grants=[g for g in self.storage.list(patient,"CONSENT")
+                if g.get("accepted_at") and g.get("caregiver_id")==identity.subject_id and not g.get("revoked_at")
+                and (not g.get("expires_at") or g["expires_at"]>self._now())]
+        if not grants: raise NoCareAccess("Caregiver access is revoked, expired, or not granted")
+        if required_scope is not None and not any(required_scope in g.get("scopes",[]) for g in grants):
+            raise AccessDenied("Caregiver access does not include this")
         return patient
     def write(self, identity: Identity, record_type: str, data: dict[str, Any], *, source_id: str | None=None, expires_at: int | None=None, reviewed: bool=True) -> dict[str, Any]:
         if record_type not in CORE_TYPES - {"SEARCH_ENTRY", "AUDIT"}: raise ValueError("unsupported CareLoop record type")
@@ -558,13 +582,59 @@ class CareLoopService:
                  "for": t.get("assignee_name") or "patient"}
                 for t in tasks if t.get("type", "PLAN_TASK") == "PLAN_TASK" and t.get("status") == "active" and t.get("times")]
 
-    def _zone(self):
+    def _zone(self, patient: str | None = None):
         from zoneinfo import ZoneInfo
-        return ZoneInfo(self.timezone) if self.timezone else datetime.now().astimezone().tzinfo
+        zone = (self.profile(patient).get("timezone") if patient else None) or self.timezone
+        return ZoneInfo(zone) if zone else datetime.now().astimezone().tzinfo
+
+    # ---- patient profile and data-use consent -------------------------------------------
+    def profile(self, patient: str) -> dict[str, Any]:
+        return self.storage.get(patient, "profile") or {}
+
+    def patient_name(self, patient: str) -> str:
+        return self.profile(patient).get("display_name") or self.default_patient_name
+
+    def has_consented(self, patient: str) -> bool:
+        return self.profile(patient).get("data_use_version") == DATA_USE_VERSION
+
+    def require_data_use_consent(self, identity: Identity) -> None:
+        """Patients accept data use once, before CareLoop stores or reads anything by voice."""
+        if self.require_consent and identity.role == "patient" and not self.has_consented(identity.patient):
+            raise ConsentRequired("data use consent needed")
+
+    def accept_data_use(self, identity: Identity) -> dict[str, Any]:
+        patient = self._require_patient(identity)
+        profile = self.profile(patient) | {"data_use_version": DATA_USE_VERSION, "data_use_accepted_at": self._now(),
+                                           "created_at": self.profile(patient).get("created_at", self._now()),
+                                           "updated_at": self._now()}
+        saved = self.storage.put(patient, "profile", "PATIENT", profile)
+        self.audit(identity, "data_use_accepted", "success")
+        return saved
+
+    def update_profile(self, identity: Identity, *, name: str | None = None, timezone: str | None = None) -> dict[str, Any]:
+        """The patient's spoken name (used in family members' messages) and local time zone."""
+        from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+        patient = self._require_patient(identity)
+        profile = dict(self.profile(patient))
+        if name is not None:
+            name = " ".join(str(name).split())
+            if not name or len(name) > 40 or not re.fullmatch(r"[\w' .-]+", name):
+                raise ValueError("invalid name")
+            profile["display_name"] = name
+        if timezone is not None:
+            try:
+                ZoneInfo(timezone)
+            except (ZoneInfoNotFoundError, ValueError) as exc:
+                raise ValueError("unknown time zone") from exc
+            profile["timezone"] = timezone
+        profile |= {"created_at": profile.get("created_at", self._now()), "updated_at": self._now()}
+        saved = self.storage.put(patient, "profile", "PATIENT", profile)
+        self.audit(identity, "profile_updated", "success")
+        return saved
 
     def evaluate_missed_tasks(self, patient: str) -> list[dict[str, Any]]:
         """A generic update when an assigned task isn't done within an hour of a scheduled time today."""
-        zone, now = self._zone(), self._now()
+        zone, now = self._zone(patient), self._now()
         today = datetime.fromtimestamp(now, zone).date()
         events = self.storage.list(patient, "TASK_EVENT")
         existing = {a.get("episode_key") for a in self.storage.list(patient, "ALERT")}
@@ -631,7 +701,7 @@ class CareLoopService:
     def checkin_tasks(self, identity: Identity, limit: int = 3) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         """(the patient's own active tasks not yet done today, family-assigned tasks not yet done today)."""
         patient = self._require_patient(identity)
-        zone = self._zone()
+        zone = self._zone(patient)
         today = datetime.fromtimestamp(self._now(), zone).date()
         done_today = {e["task_id"] for e in self.storage.list(patient, "TASK_EVENT")
                       if datetime.fromtimestamp(e.get("completed_at", 0), zone).date() == today}
@@ -874,7 +944,7 @@ class CareLoopService:
             if not name or len(name) > 40 or not re.fullmatch(r"[\w' .-]+", name):
                 raise ValueError("invalid caregiver name")
         if expires_at is not None and expires_at <= self._now():
-            raise ValueError("invitation expiry must be in the future")
+            raise PastExpiry("invitation expiry must be in the future")
         # The storage record ID becomes the opaque invitation identifier.
         saved = self.write(identity, "CONSENT", {
             "scopes": sorted(set(scopes)), "expires_at": expires_at,

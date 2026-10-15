@@ -27,7 +27,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel, Field, create_model
 
-from ..core import AccessDenied
+from ..core import CRISIS, CRISIS_REPLY, AccessDenied, ConsentRequired, NoCareAccess, PastExpiry
 
 
 Surface = Literal["glance", "private_screen"]
@@ -62,6 +62,7 @@ class NextStep(TypedDict):
     say: str
     tool: str
     arguments: dict[str, Any]
+    retry: NotRequired[bool]  # after the offered tool succeeds, repeat the person's original request
 
 
 class VoiceResult(TypedDict):
@@ -95,8 +96,63 @@ def _join(parts: list[str]) -> str:
     return parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + " and " + parts[-1]
 
 
+def _say_time(value: str) -> str:
+    """ "19:00" → "7 PM", "08:30" → "8:30 AM", "12:00" → "noon" — what a speaker should say."""
+    try:
+        hour, minute = (int(part) for part in value.split(":"))
+    except ValueError:
+        return value
+    if (hour, minute) == (12, 0):
+        return "noon"
+    if (hour, minute) == (0, 0):
+        return "midnight"
+    clock = f"{hour % 12 or 12}" + (f":{minute:02d}" if minute else "")
+    return f"{clock} {'AM' if hour < 12 else 'PM'}"
+
+
+def _say_times(times: list[str]) -> str:
+    return _join([_say_time(t) for t in times])
+
+
+DATA_USE_PROMPT = ("Before I save anything: CareLoop keeps your care plan, your check-ins, and who you share them "
+                   "with, so you and the people you choose can coordinate your care. It's not medical advice, and "
+                   "you can export or delete your data anytime. The privacy policy is in the CareLoop app. "
+                   "Is that okay?")
+
+
 def _plural(count: int, noun: str) -> str:
     return f"{count} {noun}{'' if count == 1 else 's'}"
+
+
+NO_ACCESS = ("You don't have access to the patient's CareLoop right now. "
+             "If they invited you, open the invitation link in your Alexa app.")
+PERMISSION_WORDS = {"read_tasks": "see your tasks", "read_observations": "see your check-ins",
+                    "write_observations": "record check-ins for you", "receive_alerts": "get update alerts",
+                    "acknowledge_alerts": "mark updates as seen", "upload_documents": "share documents with you",
+                    "perform_tasks": "be given tasks to do"}
+
+
+class ConfirmInvite(BaseModel):
+    """Elicitation schema: the patient confirms exactly what a family member will be able to do."""
+    confirm: bool = Field(description="yes if these permissions are right")
+
+
+def _explain(exc: Exception, message: str) -> str:
+    """Generic by default; specific only where the reason reveals nothing private."""
+    if isinstance(exc, ToolError) and exc.__cause__ is None:
+        return str(exc)  # a message the tool chose deliberately
+    cause = exc.__cause__ if isinstance(exc, ToolError) else exc
+    if isinstance(cause, NoCareAccess):
+        return NO_ACCESS
+    if isinstance(cause, PastExpiry):
+        return "That expiry date is in the past. Say how many days the access should last."
+    return message
+
+
+def _consent_prompt() -> VoiceResult:
+    """Shown instead of a result until the patient accepts data use; "yes" accepts and repeats the request."""
+    return _result(DATA_USE_PROMPT.removesuffix(" Is that okay?"), view="care-circle",
+                   next_step={"say": "Is that okay?", "tool": "accept_data_use", "arguments": {}, "retry": True})
 
 
 def _safe_tool(message: str):
@@ -112,16 +168,20 @@ def _safe_tool(message: str):
             async def safe_async(*args, **kwargs):
                 try:
                     return await function(*args, **kwargs)
+                except ConsentRequired:
+                    return _consent_prompt()
                 except (ToolError, AccessDenied, ValueError, OverflowError) as exc:
-                    raise ToolError(message) from exc
+                    raise ToolError(_explain(exc, message)) from exc
             return safe_async
 
         @wraps(function)
         def safe(*args, **kwargs):
             try:
                 return function(*args, **kwargs)
+            except ConsentRequired:
+                return _consent_prompt()
             except (ToolError, AccessDenied, ValueError, OverflowError) as exc:
-                raise ToolError(message) from exc
+                raise ToolError(_explain(exc, message)) from exc
         return safe
     return decorate
 
@@ -163,9 +223,10 @@ def _describe(service, item: dict[str, Any]) -> str:
             return (f"Alert rule: contact your clinic when your pain score is {spec['threshold']} or higher "
                     f"for {spec['consecutive_days']} days in a row")
         return "Follow-up rule"
-    text = item.get("text") or item.get("label") or "Care item"
+    # Document lines end in their own full stop; the prompt adds its own punctuation.
+    text = (item.get("text") or item.get("label") or "Care item").rstrip(" .")
     if item["type"] == "PLAN_TASK" and item.get("times"):
-        text += f", at {_join(item['times'])}"
+        text += f", at {_say_times(item['times'])}"
     return text
 
 
@@ -263,11 +324,14 @@ def _grant_refs(grants: list[dict[str, Any]]) -> list[Ref]:
     return refs
 
 
-def _patient(deps, ctx):
+def _patient(deps, ctx, *, consent: bool = True):
     try:
-        return deps.identity(ctx)
+        identity = deps.identity(ctx)
     except AccessDenied as exc:
         raise ToolError("Not authorized for this CareLoop patient.") from exc
+    if consent:
+        deps.service.require_data_use_consent(identity)
+    return identity
 
 
 _READ = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False)
@@ -291,12 +355,21 @@ def register(mcp: MCPServer, deps) -> None:
     @tool("import_care_plan_text", "plan-review", _WRITE)
     @_safe_tool("Care plan import is unavailable.")
     def import_care_plan_text(title: str, text: str, ctx: Context) -> VoiceResult:
-        """Import bounded synthetic plan text as patient-owned drafts for review.
+        """Import plan text the person actually provided (pasted or dictated "TASK: …" lines).
 
-        The original text is not retained; only extracted, source-cited
-        directives become drafts and still require explicit patient approval
-        (``approve_plan_item`` with a returned ref id).
+        Never invent or summarise plan text. If someone says they got a plan or prescription
+        without giving its text, don't call this: ask them to share the document in the Alexa
+        app, then use get_intake_status. Extracted directives become drafts that still need
+        explicit patient approval.
         """
+        from ..intake import extract_text_fixture
+        try:
+            found = extract_text_fixture(text).drafts
+        except ValueError:
+            found = []
+        if not found:
+            raise ToolError("I couldn't find plan instructions in that. Share the document in the "
+                            "Alexa app, and I'll read it for you.")
         intake = deps.service.intake_text_document(_patient(deps, ctx), title, text)
         drafts = intake["drafts"]
         reviewable = sum(1 for draft in drafts if draft.get("status") == "draft")
@@ -416,6 +489,27 @@ def register(mcp: MCPServer, deps) -> None:
         return _result("Approved. It's now part of your plan.", view="plan-review", refs=_plan_refs([item]),
                        reminders=deps.service.reminder_suggestions([item]))
 
+    # ---- data-use consent and the patient's own details -------------------------------
+    @tool("accept_data_use", "care-circle", _IDEMPOTENT_WRITE)
+    @_safe_tool("That couldn't be saved.")
+    def accept_data_use(ctx: Context) -> VoiceResult:
+        """Patient accepts CareLoop's data use (the disclosure CareLoop read to them). Call only after a clear yes."""
+        identity = _patient(deps, ctx, consent=False)
+        deps.service.accept_data_use(identity)
+        return _result("Thanks, you're all set.", view="care-circle")
+
+    @tool("set_my_details", "care-circle", _IDEMPOTENT_WRITE)
+    @_safe_tool("Those details couldn't be saved.")
+    def set_my_details(ctx: Context, name: str | None = None, timezone: str | None = None) -> VoiceResult:
+        """Patient sets the name family members hear ("Maya") and/or their IANA time zone ("Asia/Dhaka")."""
+        profile = deps.service.update_profile(_patient(deps, ctx), name=name, timezone=timezone)
+        parts = []
+        if name:
+            parts.append(f"I'll call you {profile['display_name']}")
+        if timezone:
+            parts.append(f"times now follow {profile['timezone'].replace('_', ' ')}")
+        return _result(("Done. " + " and ".join(parts) + ".") if parts else "Nothing changed.", view="care-circle")
+
     # ---- guided, resumable voice review ---------------------------------------------
     @tool("review_plan_by_voice", "plan-review", _WRITE)
     @_safe_tool("Voice review isn't available here. Review the items on your screen.")
@@ -511,7 +605,7 @@ def register(mcp: MCPServer, deps) -> None:
         ``task`` = the task's name as the person said it ("the walk"); a ref id also works.
         """
         task = deps.service.update_task_time(_patient(deps, ctx), task, new_time)
-        return _result(f"Done. {task.get('label') or 'That task'} is now at {_join(task['times'])}.", view="tasks",
+        return _result(f"Done. {task.get('label') or 'That task'} is now at {_say_times(task['times'])}.", view="tasks",
                        refs=_plan_refs([task]), reminders=deps.service.reminder_suggestions([task]))
 
     # ---- family task assignment -------------------------------------------------
@@ -527,7 +621,7 @@ def register(mcp: MCPServer, deps) -> None:
         """
         task = deps.service.assign_task(_patient(deps, ctx), task, assignee)
         who = task.get("assignee_name")
-        when = f" at {_join(task['times'])}" if task.get("times") else ""
+        when = f" at {_say_times(task['times'])}" if task.get("times") else ""
         speakable = (f"Done. {who} will handle {task.get('label') or 'that task'}{when}." if who
                      else f"Done. You'll handle {task.get('label') or 'that task'} yourself.")
         return _result(speakable, view="tasks", refs=_plan_refs([task]),
@@ -536,13 +630,21 @@ def register(mcp: MCPServer, deps) -> None:
     @tool("list_my_assigned_tasks", "tasks", _READ)
     @_safe_tool("Your assigned tasks are unavailable.")
     def list_my_assigned_tasks(ctx: Context) -> VoiceResult:
-        """Family member: the patient's tasks assigned to you, with their times (never the cited instructions)."""
-        tasks = deps.service.assigned_tasks(_patient(deps, ctx))
+        """FAMILY MEMBERS ONLY: the patient's tasks assigned to you, with their times.
+
+        The patient asking about their own tasks should use list_care_tasks.
+        """
+        identity = _patient(deps, ctx)
+        if identity.role == "patient":
+            return list_care_tasks(ctx)  # a patient asking "my tasks" means their own plan
+        tasks = deps.service.assigned_tasks(identity)
         if not tasks:
-            return _result("You don't have any CareLoop tasks assigned to you.", view="tasks", surface="glance")
-        described = [f"{t.get('label') or 'a care task'}" + (f" at {_join(t['times'])}" if t.get("times") else "")
+            return _result(f"You don't have any CareLoop tasks to help {deps.service.patient_name(identity.patient)} with.",
+                           view="tasks", surface="glance")
+        described = [f"{t.get('label') or 'a care task'}" + (f" at {_say_times(t['times'])}" if t.get("times") else "")
                      for t in tasks]
-        speakable = f"You have {_plural(len(tasks), 'task')} to help with: {_join(described)}."
+        speakable = (f"You have {_plural(len(tasks), 'task')} to help {deps.service.patient_name(identity.patient)} "
+                     f"with: {_join(described)}.")
         return _result(speakable, view="tasks", surface="glance", refs=_plan_refs(tasks),
                        reminders=deps.service.reminder_suggestions(tasks))
 
@@ -554,6 +656,8 @@ def register(mcp: MCPServer, deps) -> None:
 
         CareLoop never answers it, and the reply never repeats the question aloud.
         """
+        if CRISIS.search(question):
+            return _result(CRISIS_REPLY, view="visit-handoff")  # never filed away for later
         deps.service.add_clinician_question(_patient(deps, ctx), question)
         total = sum(q.get("status", "open") == "open" for q in deps.service.clinician_questions(_patient(deps, ctx)))
         return _result(f"Saved. You have {_plural(total, 'question')} ready for your next appointment.", view="visit-handoff")
@@ -590,19 +694,43 @@ def register(mcp: MCPServer, deps) -> None:
 
     @tool("invite_caregiver", "care-circle", _WRITE)
     @_safe_tool("Caregiver invitation is unavailable.")
-    def invite_caregiver(scopes: list[str], ctx: Context, expires_at: int | str | None = None,
-                         name: str | None = None) -> VoiceResult:
+    async def invite_caregiver(scopes: list[str], ctx: Context, expires_at: int | str | None = None,
+                               name: str | None = None, expires_in_days: int | None = None) -> VoiceResult:
         """Create a patient-controlled caregiver invitation for a family member.
 
         ``scopes`` ⊆ read_tasks, read_observations, write_observations, receive_alerts,
         acknowledge_alerts, upload_documents, perform_tasks (can be assigned tasks and mark them
-        done). ``name`` is the patient's short name for them ("Sam", "Mom"). ``expires_at``
-        accepts epoch or ISO-8601. Share the returned invitation ref id with the caregiver.
+        done). ``name`` is the patient's short name for them ("Sam", "Mom"). For "for two weeks"
+        use ``expires_in_days`` (14); ``expires_at`` (epoch or ISO-8601) is for an exact date.
+        Omit both for no expiry. Grant ONLY what the patient asked for, using this mapping:
+        "see my tasks" → read_tasks; "get updates" / "alerts" → receive_alerts and
+        acknowledge_alerts; "see my check-ins" → read_observations; "log check-ins for me" →
+        write_observations; "upload documents" → upload_documents; "help with" / "do tasks" →
+        perform_tasks. CareLoop reads the permissions back and creates nothing unless confirmed.
         """
-        expiry = None if expires_at is None else _date_bound(expires_at, end_of_day=True)
-        invitation = deps.service.invite(_patient(deps, ctx), scopes, expiry, name)
-        return _result(f"Invitation created with {_plural(len(invitation['scopes']), 'permission')}.",
-                       view="care-circle", refs=_grant_refs([invitation]))
+        if expires_in_days is not None:
+            if isinstance(expires_in_days, bool) or not 1 <= int(expires_in_days) <= 366:
+                raise ValueError("expiry must be 1-366 days")
+            expiry = int(deps.service.clock()) + int(expires_in_days) * 86_400
+        else:
+            expiry = None if expires_at is None else _date_bound(expires_at, end_of_day=True)
+        identity = _patient(deps, ctx)
+        if not scopes or any(scope not in PERMISSION_WORDS for scope in scopes):
+            raise ValueError("invalid caregiver scope")
+        who = name or "This person"
+        abilities = _join([PERMISSION_WORDS[scope] for scope in sorted(set(scopes), key=list(PERMISSION_WORDS).index)])
+        until = f", for {expires_in_days} days" if expires_in_days else ""
+        if hasattr(ctx, "elicit"):
+            try:
+                answer = await ctx.elicit(f"{who} will be able to {abilities}{until}. Is that right?", ConfirmInvite)
+            except Exception:
+                answer = None  # no elicitation support: the spoken result still lists the permissions
+            if answer is not None and (answer.action != "accept" or not answer.data.confirm):
+                return _result("Okay, no invitation was created. Tell me exactly what they should be able to do.",
+                               view="care-circle")
+        invitation = deps.service.invite(identity, scopes, expiry, name)
+        return _result(f"Invitation created: {who} can {abilities}{until}.", view="care-circle",
+                       refs=_grant_refs([invitation]))
 
     @tool("accept_caregiver_invitation", "care-circle", _IDEMPOTENT_WRITE)
     @_safe_tool("That invitation is unavailable.")
@@ -693,7 +821,7 @@ def register(mcp: MCPServer, deps) -> None:
         by_person: dict[str, list[str]] = {}
         for t in family[:4]:
             by_person.setdefault(t.get("assignee_name") or "A family member", []).append(
-                (t.get("label") or "a task") + (f" at {_join(t['times'])}" if t.get("times") else ""))
+                (t.get("label") or "a task") + (f" at {_say_times(t['times'])}" if t.get("times") else ""))
         if by_person:
             speakable += " " + " ".join(f"{who} has {_join(items)}." for who, items in by_person.items())
         return _result(speakable, view="check-in-trend", refs=refs)

@@ -38,6 +38,8 @@ Status: **Resolved**, **Workaround** (we went around it), **Open** (still a prob
 | F-22 | Alexa+ policy, dosage | Medium | Open | Unclear whether storing a prescriber's own instruction counts as "drug dosage content" |
 | F-23 | Document intake | Medium | Resolved | Small local models mislabelled the pain rule and frequencies; a fixed-pattern safety net was needed |
 | F-25 | Local LLM planner | Medium | Resolved | A 4B model picked the wrong task ID in multi-turn chats; tools now accept names, and gemma4 replaced qwen as planner |
+| F-26 | Local LLM planner | High | Resolved | The model invented plan text, a past expiry date, and extra permissions; the server now refuses or reads back |
+| F-27 | Alexa+ policy | Medium | Resolved | Policy requirements (disclosure before first use, crisis redirect, privacy/terms URLs) had to be built as product features |
 | F-24 | PDF/OCR tooling | Low | Resolved | `pypdf` can't render pages for OCR; PaddleOCR's first run downloads models; storage rejects floats |
 
 ---
@@ -200,6 +202,27 @@ Status: **Resolved**, **Workaround** (we went around it), **Open** (still a prob
   - The prompt says to pass names, and not to ask about optional details.
   - `gemma4:e4b-mlx` is now the recommended planner: right task in 3 of 3 runs.
 - **Takeaway for Alexa+ add-ons:** let tools accept the user's own words for things, and have the server resolve them unambiguously. Opaque IDs passed through a model across turns are fragile.
+
+### F-26: The planner model invents inputs · High · Resolved
+- **Got** (a live demo session, logged in the simulator trace):
+  - "I got a new care plan from my clinic" became `import_care_plan_text` with invented text ("User's new care plan text from their clinic visit").
+  - "for two weeks" became `expires_at` = Jan 1, 2025, a date in the past, because the model didn't know today's date. The invitation was refused, so Sam never got access.
+  - Sam's later requests said only "…unavailable", which hid the real reason.
+  - `gemma4:e4b` also granted 7 permissions for "see my tasks and get updates".
+- **Resolution:**
+  - Import refuses text with no plan instructions, and the model is told to ask for the document instead.
+  - The planner gets today's date; invitations take `expires_in_days`; a past date gets a clear error.
+  - A family member with no current access is told so, and pointed to the invitation link. Missing a single permission still gets the generic refusal.
+  - **`invite_caregiver` reads the exact permissions back** ("Sam will be able to see your tasks and get update alerts, for 14 days. Is that right?") and creates nothing without a yes. The tool description maps phrases to permissions; gemma4 then granted the right 2 permissions in 3 of 3 runs.
+- **Takeaway:** consent must never depend on the model getting it right. Read it back and require a yes.
+
+### F-27: Turning policy text into features · Medium · Resolved
+- **Got:** the policy says add-ons must disclose data use *before* first interaction ("one-time permission prompt"), must redirect crisis references to emergency services or hotlines, and must list privacy-policy and terms URLs. None of these has an MCP-level mechanism or example.
+- **Resolution:**
+  - **Consent:** a server-side consent gate returns the disclosure as an offer (`next_step` → `accept_data_use`, with `retry`), so the host asks "Is that okay?" and then completes the original request.
+  - **Crisis:** a deterministic crisis check runs in the host before any model sees the words, and in the question tool so nothing is filed away.
+  - **Pages:** `/privacy` and `/terms` describe what this server actually stores, and for how long.
+- **Suggestion:** a toolkit pattern for "first-use consent" and a standard crisis-handling hook would save every health add-on from reinventing them.
 
 ---
 

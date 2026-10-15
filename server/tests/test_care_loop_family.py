@@ -2,6 +2,7 @@
 questions for the clinician, and who-accessed-my-data."""
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 
 import pytest
@@ -84,14 +85,14 @@ def test_patient_assigns_a_task_and_alexa_gets_reminder_suggestions() -> None:
     assert circle["refs"][0]["name"] == "Sam" and "perform_tasks" in circle["refs"][0]["scopes"]
 
     result = tools["assign_task"](tasks["evening"]["id"], Ctx(), invitation["id"])
-    assert result["speakable"] == "Done. Sam will handle Change the dressing at 19:00."
+    assert result["speakable"] == "Done. Sam will handle Change the dressing at 7 PM."
     assert result["reminders"] == [{"task_id": tasks["evening"]["id"], "label": "Change the dressing",
                                     "times": ["19:00"], "to": "Sam"}]
     assert result["refs"][0]["assignee"] == "Sam"
 
     deps.local_identity = SAM
     mine = tools["list_my_assigned_tasks"](Ctx())
-    assert mine["speakable"] == "You have 1 task to help with: Change the dressing at 19:00."
+    assert mine["speakable"] == "You have 1 task to help the patient with: Change the dressing at 7 PM."
     assert "text" not in service.assigned_tasks(SAM)[0]  # never the cited instruction
 
     with pytest.raises(ToolError):  # not assigned to Sam
@@ -117,7 +118,7 @@ def test_assignment_needs_the_perform_tasks_permission() -> None:
 
 def test_missed_assigned_task_raises_one_generic_update_and_survives_rule_cleanup() -> None:
     clock, service, _deps, tools, invitation, tasks = setup()
-    tools["assign_task"](tasks["morning"]["id"], Ctx(), invitation["id"])  # assigned at 07:00 for 08:00
+    tools["assign_task"](tasks["morning"]["id"], Ctx(), invitation["id"])  # assigned at 7 AM for 08:00
     clock[0] = at(8, 30)
     assert service.notifications(SAM) == []  # still inside the one-hour grace period
     clock[0] = at(9, 5)
@@ -179,3 +180,38 @@ def test_nobody_else_and_custom_range() -> None:
     mcp = FakeMCP()
     register(mcp, Deps(service))
     assert mcp.tools["who_accessed_my_care_data"](Ctx())["speakable"] == "No one else accessed your care data in the last 7 days."
+
+
+# ---- clearer refusals (from a live session where the model invented inputs) ---------------------
+def test_family_member_without_access_is_told_why() -> None:
+    clock = [at(7)]
+    service = CareLoopService(CareLoopStorage(":memory:", clock=lambda: clock[0]), clock=lambda: clock[0], timezone="UTC")
+    deps = Deps(service)
+    deps.local_identity = SAM
+    mcp = FakeMCP()
+    register(mcp, deps)
+    for name in ("list_my_assigned_tasks", "list_generic_notifications"):
+        with pytest.raises(ToolError, match="You don't have access to the patient's CareLoop right now"):
+            mcp.tools[name](Ctx())
+
+
+def test_invitation_by_number_of_days_and_past_dates_are_explained() -> None:
+    clock = [at(7)]
+    service = CareLoopService(CareLoopStorage(":memory:", clock=lambda: clock[0]), clock=lambda: clock[0], timezone="UTC")
+    mcp = FakeMCP()
+    register(mcp, Deps(service))
+    invited = asyncio.run(mcp.tools["invite_caregiver"](["read_tasks"], Ctx(), name="Sam", expires_in_days=14))
+    assert invited["speakable"] == "Invitation created: Sam can see your tasks, for 14 days."
+    assert invited["refs"][0]["expires_at"] == at(7) + 14 * 86_400
+    with pytest.raises(ToolError, match="That expiry date is in the past"):
+        asyncio.run(mcp.tools["invite_caregiver"](["read_tasks"], Ctx(), 1735689600))  # 2025-01-01
+
+
+def test_import_refuses_text_without_plan_instructions() -> None:
+    clock = [at(7)]
+    service = CareLoopService(CareLoopStorage(":memory:", clock=lambda: clock[0]), clock=lambda: clock[0], timezone="UTC")
+    mcp = FakeMCP()
+    register(mcp, Deps(service))
+    with pytest.raises(ToolError, match="Share the document in the Alexa app"):
+        mcp.tools["import_care_plan_text"]("New Care Plan from Clinic", "User's new care plan text from their clinic visit", Ctx())
+    assert service.storage.list("demo-patient", "DOCUMENT") == []

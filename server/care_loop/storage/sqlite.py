@@ -79,4 +79,10 @@ class CareLoopStorage:
             result=self._db.execute("DELETE FROM items WHERE (deleted_at IS NOT NULL OR (expires_at IS NOT NULL AND expires_at <= ?))" + scope_sql,(now, *scope_args))
             self._db.execute("DELETE FROM search_entries WHERE (patient_id,source_id) NOT IN (SELECT patient_id,record_id FROM items WHERE deleted_at IS NULL AND (expires_at IS NULL OR expires_at > ?))" + (" AND patient_id=?" if patient_id is not None else ""),(now, *scope_args))
         return result.rowcount
+    def wipe_patient(self, patient_id: str) -> int:
+        """Remove every record for one patient (demo reset only)."""
+        with self._lock, self._db:
+            self._db.execute("DELETE FROM search_entries WHERE patient_id=?", (patient_id,))
+            self._db.execute("DELETE FROM idempotency_keys WHERE patient_id=?", (patient_id,))
+            return self._db.execute("DELETE FROM items WHERE patient_id=?", (patient_id,)).rowcount
     def close(self) -> None: self._db.close()

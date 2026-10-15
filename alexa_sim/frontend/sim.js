@@ -400,6 +400,9 @@
     }
     $("#open-invite").disabled = !s.invitation_pending || !s.devices.find((d) => d.id === "dot").account;
     $("#planner").value = s.planner;
+    if (s.idle_reset_minutes && $("#demo-reset-note").textContent === "Back to Maya's starting day")
+      $("#demo-reset-note").textContent = `Back to Maya's starting day. Also resets itself after ${s.idle_reset_minutes} idle minutes.`;
+    if (s.privacy_url) { $("#privacy-link").href = s.privacy_url; $("#terms-link").href = s.terms_url; }
     const reminders = s.reminders || [];
     $("#ring-reminder").disabled = !reminders.length;
     $("#reminder-count").textContent = reminders.length
@@ -422,6 +425,26 @@
   $("#ring-reminder").addEventListener("click", () => api("/api/reminders/ring", {}).then(refresh).catch(() => {}));
   $("#planner").addEventListener("change", (e) => api("/api/planner", { mode: e.target.value }).then(refresh));
   $("#reset").addEventListener("click", () => api("/api/conversation/reset", {}).then(() => { $("#convo").replaceChildren(); $("#app-slot").replaceChildren(); }));
+  // Two clicks, so a stray one never wipes someone's demo.
+  let resetArmed = null;
+  $("#demo-reset").addEventListener("click", async () => {
+    const button = $("#demo-reset"), note = $("#demo-reset-note");
+    if (!resetArmed) {
+      button.textContent = "Click again to reset";
+      resetArmed = setTimeout(() => { resetArmed = null; button.textContent = "Reset demo data"; }, 4000);
+      return;
+    }
+    clearTimeout(resetArmed); resetArmed = null;
+    button.disabled = true; button.textContent = "Resetting…";
+    try { await api("/api/demo/reset", {}); note.textContent = "Reset. Maya and Sam are linked and ready."; }
+    catch (e) { note.textContent = e.message; }
+    button.disabled = false; button.textContent = "Reset demo data";
+  });
+  function clearDevices() {
+    $("#convo").replaceChildren(); $("#convo").hidden = true; $("#home").hidden = false; $("#app-slot").replaceChildren();
+    $("#dot-caption").textContent = "Voice only. This caption shows exactly what Sam hears.";
+    $("#trace").replaceChildren();
+  }
   $("#show-inspector").addEventListener("change", (e) => { $("#inspector").hidden = !e.target.checked; });
 
   function traceLine(entry) {
@@ -490,6 +513,7 @@
       const msg = JSON.parse(e.data);
       if (msg.type === "trace") traceLine(msg.entry);
       else if (msg.type === "announce") announced(msg);
+      else if (msg.type === "reset") { clearDevices(); refresh().catch(() => {}); }
       else if (msg.type === "device") {
         if (msg.device_id === "dot") devices.dot.classList.toggle("notify", !!msg.notification);
         if (msg.state === "thinking" && speakingDevice !== msg.device_id) setState(msg.device_id, "thinking");

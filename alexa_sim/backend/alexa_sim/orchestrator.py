@@ -26,6 +26,12 @@ _DECLINE = re.compile(r"^(no|nope|not now|no thanks|later|maybe later)\b", re.IG
 _MEDICAL = re.compile(r"\b(dose|dosage|medication|medicine|diagnos\w*|prescri\w*|should i take|emergency|double my)\b", re.IGNORECASE)
 # A question saved for the clinician is not a request for advice: CareLoop stores it and never answers.
 _CLINICIAN_QUESTION = re.compile(r"\b(question|ask)\b.*\b(doctor|clinician|nurse|care team)\b", re.IGNORECASE)
+# Self-harm or a medical emergency: never routed to a tool or a model.
+_CRISIS = re.compile(r"\b(kill(ing)? myself|suicid\w*|end (my|it all)|end my life|hurt(ing)? myself|self[- ]harm|"
+                     r"want to die|don'?t want to (live|be here)|overdos\w*|can'?t breathe|chest pain)\b", re.IGNORECASE)
+CRISIS_REPLY = ("I'm really sorry you're going through this. If you might be in danger, call your local emergency "
+                "number now. In the US, you can call or text 988 for the Suicide and Crisis Lifeline. "
+                "CareLoop can't help in an emergency.")
 REFUSAL = "I can't give medical advice. Please contact your clinician, or emergency services in an emergency."
 _CANCEL = re.compile(r"^(cancel|no|stop|never ?mind|don'?t)\b", re.IGNORECASE)
 
@@ -210,7 +216,10 @@ class Orchestrator:
         if re.fullmatch(r"(yes|yeah|yep|no|nope|ok(ay)?|sure|thanks?( you)?)[.!]?", text, re.IGNORECASE):
             return Turn("Okay.")  # nothing is waiting on a yes or no
 
-        # Deterministic safety refusal wins before any planner or model sees the request.
+        # Deterministic safety responses win before any planner or model sees the request.
+        if _CRISIS.search(text):
+            device.remember(text, CRISIS_REPLY)
+            return Turn(CRISIS_REPLY, planner="policy")
         if _MEDICAL.search(text) and not _CLINICIAN_QUESTION.search(text):
             device.remember(text, REFUSAL)
             return Turn(REFUSAL, planner="policy")
@@ -265,7 +274,14 @@ class Orchestrator:
             return self._ask(device, Awaiting(step, self._inflight.pop(id(step)), offer["tool"], offer["arguments"],
                                               bool((tool.get("annotations") or {}).get("readOnlyHint")),
                                               text, [], "offer"), remember=text)
-        return await self._finish(device, text, [step], account.tools, "offer")
+        turn = await self._finish(device, text, [step], account.tools, "offer")
+        if offer.get("retry_text") and not step[2].get("isError"):
+            # e.g. data-use consent accepted: now do what the person originally asked.
+            follow = await self._respond_fresh(device, account, offer["retry_text"])
+            follow.reply = f"{turn.reply} {follow.reply}".strip()
+            follow.tools = turn.tools + follow.tools
+            return follow
+        return turn
 
     async def _call(self, device: Device, account, name: str, arguments: dict[str, Any]):
         """Call a tool; if the server asks a question first, return that Question instead."""
@@ -329,7 +345,7 @@ class Orchestrator:
 
     async def _finish(self, device: Device, text: str, steps, tools: list[dict[str, Any]], planner: str) -> Turn:
         reply = compose_reply(self._screen(steps), disclaimer=not device.disclaimed)
-        device.disclaimed = device.disclaimed or DISCLAIMER in reply
+        device.disclaimed = device.disclaimed or DISCLAIMER in reply or "not medical advice" in reply.lower()
         device.remember(text, reply, tool_messages(steps))
         screen = screen_payload(self._screen(steps), device)
         if screen:
@@ -340,7 +356,8 @@ class Orchestrator:
         results = [(name, structured(result)) for name, _args, result, _ in steps if not result.get("isError")]
         self._remember_context(device, results)
         offer = next((data.get("next_step") for _name, data in reversed(results) if data.get("next_step")), None)
-        device.offer = {"tool": offer["tool"], "arguments": offer.get("arguments") or {}} if offer else None
+        device.offer = ({"tool": offer["tool"], "arguments": offer.get("arguments") or {},
+                         "retry_text": text if offer.get("retry") else None} if offer else None)
         return Turn(reply, [name for name, *_ in steps], screen, planner=planner, results=results,
                     expects_reply=device.offer is not None)
 

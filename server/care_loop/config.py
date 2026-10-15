@@ -36,6 +36,10 @@ class Settings:
     intake_model: str = ""
     intake_ocr: str = "paddle"  # paddle | none
     llm_base_url: str = "http://127.0.0.1:11434"
+    timezone: str = ""  # IANA zone for the demo patient's local times; empty = this machine's zone
+    patient_name: str = "Maya"  # the synthetic demo patient's spoken name
+    require_consent: bool = True  # voice tools ask for data-use consent before first use
+    demo_reset: bool = False  # allow POST /api/care/demo/reset to wipe and reseed the demo patient
 
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> "Settings":
@@ -59,6 +63,10 @@ class Settings:
                 intake_model=(source.get("CARELOOP_INTAKE_MODEL") or source.get("LLM_MODEL") or "").strip(),
                 intake_ocr=value("CARELOOP_INTAKE_OCR", "paddle").lower(),
                 llm_base_url=value("LLM_BASE_URL", "http://127.0.0.1:11434"),
+                timezone=(source.get("CARELOOP_TIMEZONE") or "").strip(),
+                patient_name=value("CARELOOP_DEMO_PATIENT_NAME", "Maya"),
+                require_consent=value("CARELOOP_REQUIRE_CONSENT", "true").lower() not in {"0", "false", "no", "off"},
+                demo_reset=value("CARELOOP_DEMO_RESET", "false").lower() in {"1", "true", "yes", "on"},
             )
         except ValueError as exc:
             raise ValueError("CareLoop port, retention, and rate limit must be integers") from exc

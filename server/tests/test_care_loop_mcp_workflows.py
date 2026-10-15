@@ -110,7 +110,7 @@ def test_voice_approval_flow_uses_refs_without_plan_text() -> None:
 def test_care_circle_invite_accept_and_revoke_through_mcp() -> None:
     now = [1_791_936_000]
     mcp, deps = build(now, patient())
-    invited = mcp.tools["invite_caregiver"](["read_tasks", "receive_alerts"], FakeContext(), "2026-12-31")
+    invited = asyncio.run(mcp.tools["invite_caregiver"](["read_tasks", "receive_alerts"], FakeContext(), "2026-12-31"))
     assert_voice_contract(invited, "care-circle")
     invitation_id = invited["refs"][0]["id"]
     assert invited["refs"][0]["status"] == "pending"
@@ -166,7 +166,7 @@ def test_invite_rejects_invalid_expiry_before_storage(invalid_expiry) -> None:
     mcp, deps = build([100], patient())
 
     with pytest.raises(ToolError, match="Caregiver invitation is unavailable"):
-        mcp.tools["invite_caregiver"](["read_tasks"], FakeContext(), invalid_expiry)
+        asyncio.run(mcp.tools["invite_caregiver"](["read_tasks"], FakeContext(), invalid_expiry))
     assert deps.service.storage.list("patient", "CONSENT") == []
 
 

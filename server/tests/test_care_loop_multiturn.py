@@ -116,7 +116,7 @@ def test_guided_review_changes_time_assigns_pauses_and_resumes() -> None:
     _clock, service, _deps, tools, _imported = setup()
     first = Script({"new_time": "9"}, {"who": "Sam"}, "decline")
     paused = run(tools["review_plan_by_voice"](first))
-    assert first.asked[0] == ("Item 1 of 3: Take a short walk, at 08:00. Approve, change the time, "
+    assert first.asked[0] == ("Item 1 of 3: Take a short walk, at 8 AM. Approve, change the time, "
                               "give it to someone, skip, or stop?")
     assert first.asked[2].startswith("Item 3 of 3: Alert rule: contact your clinic when your pain score is 7 or higher")
     assert first.asked[2].endswith("Approve, skip, or stop?")
@@ -162,7 +162,7 @@ def test_checkin_asks_about_own_tasks_and_mentions_family_tasks() -> None:
     person = Script({"pain_score": 4}, {"done": True})
     result = run(tools["start_daily_checkin"](person))
     assert person.asked == ["On a scale from 0 to 10, what's your pain score today?", "Did you do Take a short walk today?"]
-    assert result["speakable"] == "Check-in recorded. You did 1 of 1 task. Sam has Change the dressing at 19:00."
+    assert result["speakable"] == "Check-in recorded. You did 1 of 1 task. Sam has Change the dressing at 7 PM."
     assert "4" not in result["speakable"]
     events = service.storage.list("demo-patient", "TASK_EVENT")
     assert [e["task_id"] for e in events] == [tasks["morning"]["id"]]
@@ -181,7 +181,7 @@ def test_update_task_time_by_spoken_time() -> None:
     _clock, service, _deps, tools, _imported = setup(approve=True)
     evening = tasks_by_schedule(service)["evening"]
     moved = tools["update_task_time"](evening["id"], "8 pm", Script())
-    assert moved["speakable"] == "Done. Change the dressing is now at 20:00."
+    assert moved["speakable"] == "Done. Change the dressing is now at 8 PM."
     assert moved["reminders"][0]["times"] == ["20:00"]
     assert service.storage.get("demo-patient", evening["id"])["edits"][-1]["to"] == ["20:00"]
     with pytest.raises(ToolError):
@@ -191,9 +191,9 @@ def test_update_task_time_by_spoken_time() -> None:
 def test_tasks_and_people_can_be_named_instead_of_ids() -> None:
     _clock, service, _deps, tools, _imported = setup(approve=True)
     assigned = tools["assign_task"]("the dressing", Script(), "Sam")
-    assert assigned["speakable"] == "Done. Sam will handle Change the dressing at 19:00."
+    assert assigned["speakable"] == "Done. Sam will handle Change the dressing at 7 PM."
     moved = tools["update_task_time"]("the walk", "10", Script())
-    assert moved["speakable"] == "Done. Take a short walk is now at 10:00."
+    assert moved["speakable"] == "Done. Take a short walk is now at 10 AM."
     with pytest.raises(ToolError):
         tools["assign_task"]("the", Script(), "Sam")  # says nothing about which task
     with pytest.raises(ToolError):
@@ -207,7 +207,16 @@ def test_checkin_groups_family_tasks_by_person() -> None:
     tools["assign_task"]("walk", Script(), "Sam")
     tools["assign_task"]("dressing", Script(), "Sam")
     result = run(tools["start_daily_checkin"](Script({"pain_score": 3})))
-    assert result["speakable"] == "Check-in recorded. Sam has Take a short walk at 08:00 and Change the dressing at 19:00."
+    assert result["speakable"] == "Check-in recorded. Sam has Take a short walk at 8 AM and Change the dressing at 7 PM."
+
+
+def test_document_lines_are_read_without_doubled_punctuation() -> None:
+    _clock, _service, _deps, tools, _imported = setup(invite_sam=False)
+    tools["import_care_plan_text"]("Typed", "TASK: Change the wound dressing every evening. | schedule: evening", Script())
+    person = Script({"action": "approve"}, {"action": "approve"}, {"action": "approve"}, "decline")
+    run(tools["review_plan_by_voice"](person))
+    assert any("Change the wound dressing every evening, at 7 PM." in q for q in person.asked)
+    assert not any(".," in q or ".." in q for q in person.asked)
 
 
 def test_change_time_without_a_time_asks_what_time() -> None:
@@ -224,5 +233,5 @@ def test_a_paused_review_picks_up_items_imported_later() -> None:
     tools["import_care_plan_text"]("Second plan", "TASK: Drink water | schedule: lunchtime", Script())
     person = Script({"action": "approve"}, {"action": "approve"}, {"action": "approve"})
     done = run(tools["review_plan_by_voice"](person))
-    assert person.asked[0].startswith("Item 2 of 4:") and person.asked[2].startswith("Item 4 of 4: Drink water, at 12:00.")
+    assert person.asked[0].startswith("Item 2 of 4:") and person.asked[2].startswith("Item 4 of 4: Drink water, at noon.")
     assert done["speakable"] == "Done: 4 approved."

@@ -26,7 +26,9 @@ INSTRUCTIONS=(
     "labels (for example 'draft task 1') to pass back to action tools. Confirm with the user before "
     "destructive tools. Render the tool's ui://careloop view only in an authenticated private MCP App; "
     "never quote, summarize, or expose get_private_view data or that view on a shared voice surface. "
-    "Do not diagnose, change treatment, or claim emergency monitoring. "
+    "Do not diagnose, change treatment, or claim emergency monitoring. If someone mentions self-harm or a "
+    "medical emergency, don't call tools: tell them to call their local emergency number (988 in the US for "
+    "the Suicide and Crisis Lifeline). If a result offers next_step, ask it and run that tool on yes. "
     "Care content is private."
 )
 
@@ -48,6 +50,10 @@ def build_deps(settings: Settings | None=None, **overrides: Any) -> Deps:
     auth=overrides.get("auth") or TokenAuth.from_settings(settings)
     service=overrides.get("service") or CareLoopService(storage,overrides.get("clock") or storage.clock,
                                                          settings.retention_days)
+    if overrides.get("service") is None:
+        service.require_consent = settings.require_consent
+        service.timezone = settings.timezone or None
+        service.default_patient_name = settings.patient_name
     if service.intake is None:
         from .intake_engines import IntakeEngines
         service.intake = overrides.get("intake") or IntakeEngines(settings)
@@ -72,7 +78,8 @@ def create_app(deps: Deps | None=None) -> ASGIApp:
         async with mcp_app.router.lifespan_context(mcp_app):
             yield
     app = FastAPI(title="CareLoop private portal", lifespan=lifespan)
-    app.include_router(build_router(deps.service, deps.auth))
+    app.include_router(build_router(deps.service, deps.auth,
+                                   demo_caregiver=deps.settings.caregiver_id if deps.settings.demo_reset else None))
     # The MCP sub-application remains separate from portal routes; the parent
     # middleware accepts only CareLoop bearer identities for its /mcp prefix.
     app.mount("/", mcp_app)

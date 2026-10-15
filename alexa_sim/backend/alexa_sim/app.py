@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -69,7 +70,7 @@ def create_alexa_sim_app(settings: AlexaSimSettings | None = None, pool: MCPClie
     traces: list[dict[str, Any]] = []
     sockets: set[WebSocket] = set()
     devices = {"show": Device("show", DeviceKind.SHOW, owner="maya"), "dot": Device("dot", DeviceKind.DOT, owner="sam")}
-    host_state: dict[str, Any] = {"invitation_id": None, "reminders": []}
+    host_state: dict[str, Any] = {"invitation_id": None, "reminders": [], "last_used": time.monotonic(), "used": False}
 
     async def broadcast(message: dict[str, Any]) -> None:
         for socket in list(sockets):
@@ -156,11 +157,21 @@ def create_alexa_sim_app(settings: AlexaSimSettings | None = None, pool: MCPClie
                 await trace({"type": "host", "text": f"Alexa+ reminder set for {who}: '{reminder['label']}' at "
                                                      f"{', '.join(reminder['times'])} (simulated native reminder)"})
 
-    def remember_invitation(turn) -> None:
-        """Model the invitation link Maya's invite would send to Sam out of band."""
+    INVITE_NOTICE = "Maya invited you to help with her care in CareLoop. Open the invitation in your Alexa app to accept."
+
+    def remember_invitation(turn) -> bool:
+        """Model the invitation link Maya's invite would send to Sam out of band. True if a new one was sent."""
+        sent = False
         for name, data in turn.results:
             if name == "invite_caregiver" and data.get("refs"):
                 host_state["invitation_id"] = data["refs"][0]["id"]
+                sent = True
+        return sent
+
+    async def tell_sam_about_invitation() -> None:
+        """Simulated notice on Sam's own Dot: who invited him, nothing about permissions or health."""
+        if host_state["invitation_id"] and pool.linked(devices["dot"].account):
+            await announce("dot", INVITE_NOTICE)
 
     def device_account(device_id: str) -> str:
         device = devices[device_id]
@@ -168,15 +179,51 @@ def create_alexa_sim_app(settings: AlexaSimSettings | None = None, pool: MCPClie
             raise HTTPException(401, "Enable CareLoop for this device first")
         return device.account  # type: ignore[return-value]
 
+    async def reset_demo() -> dict[str, Any]:
+        """Shared demo: CareLoop wipes and reseeds the demo patient; both devices start over, linked."""
+        seeded = (await asyncio.to_thread(careloop_http, "POST", "/api/care/demo/reset", "maya"))["seeded"]
+        for device in devices.values():
+            device.forget_conversation()
+        host_state.update(invitation_id=None, reminders=[], last_used=time.monotonic(), used=False)
+        traces.clear()
+        for account, device_id in ACCOUNTS.items():
+            await pool.link(account, settings.token_for(account))
+            devices[device_id].account = account
+        await sync_caregiver_notifications()
+        await broadcast({"type": "reset"})
+        await trace({"type": "host", "text": "Demo reset: synthetic starting data restored, Maya and Sam linked"})
+        return seeded
+
+    async def reset_when_idle() -> None:
+        while True:
+            await asyncio.sleep(min(30.0, settings.idle_reset_minutes * 60))
+            idle = time.monotonic() - host_state["last_used"]
+            if host_state["used"] and idle >= settings.idle_reset_minutes * 60:
+                try:
+                    await reset_demo()
+                except Exception as exc:
+                    await trace({"type": "host", "text": f"Idle demo reset failed ({type(exc).__name__})"})
+                    host_state["last_used"] = time.monotonic()
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         app.state.pool, app.state.devices = pool, devices
         voice.warm_in_background()
+        idle_task = asyncio.create_task(reset_when_idle()) if settings.idle_reset_minutes > 0 else None
         yield
+        if idle_task:
+            idle_task.cancel()
         await pool.close()
 
     app = FastAPI(title="CareLoop Alexa+ behavior simulator", lifespan=lifespan)
     app.mount("/static", StaticFiles(directory=FRONTEND), name="static")
+
+    @app.middleware("http")
+    async def note_use(request: Request, call_next):
+        """Anything a visitor does to the demo postpones the idle reset."""
+        if request.method == "POST" and request.url.path not in {"/api/demo/reset", "/api/tts", "/api/stt"}:
+            host_state.update(last_used=time.monotonic(), used=True)
+        return await call_next(request)
 
     @app.get("/", include_in_schema=False)
     async def index() -> FileResponse:
@@ -188,7 +235,9 @@ def create_alexa_sim_app(settings: AlexaSimSettings | None = None, pool: MCPClie
             "label": LABEL,
             "planner": orchestrator.planner.name,
             "invitation_pending": bool(host_state["invitation_id"]),
+            "privacy_url": f"{settings.server_url}/privacy", "terms_url": f"{settings.server_url}/terms",
             "reminders": host_state["reminders"],
+            "idle_reset_minutes": settings.idle_reset_minutes,
             "devices": [{"id": d.id, "kind": d.kind, "owner": d.owner, "account": d.account, "state": d.state,
                          "notification": d.notification, "pending": bool(d.pending)} for d in devices.values()],
             "trace": traces[-60:],
@@ -204,6 +253,8 @@ def create_alexa_sim_app(settings: AlexaSimSettings | None = None, pool: MCPClie
         device = devices[ACCOUNTS[body.account]]
         device.account = body.account
         await sync_caregiver_notifications()
+        if body.account == "sam":
+            await tell_sam_about_invitation()  # an invitation sent before Sam linked his Dot
         return {"linked": body.account, "device_id": device.id, "tools": [t["name"] for t in session.model_tools]}
 
     @app.post("/api/unlink/{account}")
@@ -290,8 +341,8 @@ def create_alexa_sim_app(settings: AlexaSimSettings | None = None, pool: MCPClie
         finally:
             device.state = DeviceState.IDLE
             await device_event(device)
-        if device.account == "maya":
-            remember_invitation(turn)
+        if device.account == "maya" and remember_invitation(turn):
+            await tell_sam_about_invitation()
         await remember_reminders([data for _name, data in turn.results])
         if turn.tools:
             await sync_caregiver_notifications()
@@ -304,10 +355,20 @@ def create_alexa_sim_app(settings: AlexaSimSettings | None = None, pool: MCPClie
     @app.post("/api/conversation/reset")
     async def reset_conversation() -> dict[str, bool]:
         for device in devices.values():
-            if device.awaiting is not None and not device.awaiting.question.answer.done():
-                device.awaiting.question.answer.set_result({"action": "cancel"})
-            device.history, device.pending, device.disclaimed, device.awaiting = [], None, False, None
+            device.forget_conversation()
         return {"reset": True}
+
+    @app.post("/api/demo/reset")
+    async def demo_reset() -> dict[str, Any]:
+        try:
+            seeded = await reset_demo()
+        except HTTPException as exc:
+            if exc.status_code == 404:
+                raise HTTPException(409, "Demo reset is off. Start CareLoop with CARELOOP_DEMO_RESET=true.") from exc
+            raise
+        except OSError as exc:
+            raise HTTPException(502, "CareLoop isn't reachable. Is the server running?") from exc
+        return {"reset": True, "seeded": seeded}
 
     # ---- local speech (Kokoro TTS / Whisper STT); the browser falls back on 404/503 -----
     @app.get("/api/voice")

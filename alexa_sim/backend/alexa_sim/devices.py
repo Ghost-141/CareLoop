@@ -40,6 +40,13 @@ class Device:
     context: dict[str, Any] = field(default_factory=dict)  # last task / person mentioned, for "it" and "him"
     disclaimed: bool = False  # the care disclaimer is spoken once per linked session
 
+    def forget_conversation(self) -> None:
+        """Drop the conversation; a tool call paused on a question is cancelled."""
+        if self.awaiting is not None and not self.awaiting.question.answer.done():
+            self.awaiting.question.answer.set_result({"action": "cancel"})
+        self.history, self.pending, self.awaiting, self.offer, self.context = [], None, None, None, {}
+        self.disclaimed = False
+
     @property
     def has_screen(self) -> bool:
         return self.kind == DeviceKind.SHOW
