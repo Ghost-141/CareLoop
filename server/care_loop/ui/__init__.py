@@ -36,6 +36,20 @@ def _with_citations(deps: Any, identity: Any, items: list[dict[str, Any]]) -> li
     rows = []
     for item in items:
         row = dict(item)
+        if item.get("source"):
+            # Intake drafts carry their own cited lines (with OCR method and confidence).
+            title = None
+            if item.get("source_id"):
+                try:
+                    title = deps.service.source_excerpt(identity, item["source_id"])["title"]
+                except AccessDenied:
+                    title = None
+            row["citation"] = {"title": title or "Uploaded document",
+                               "excerpts": [{"page": line["page"], "excerpt": line["text"], "line_id": line["id"],
+                                             "method": line["method"], "confidence_pct": line["confidence_pct"]}
+                                            for line in item["source"]]}
+            rows.append(row)
+            continue
         source_id = item.get("source_id")
         if source_id and source_id not in cache:
             try:
@@ -52,6 +66,14 @@ def _with_citations(deps: Any, identity: Any, items: list[dict[str, Any]]) -> li
     return rows
 
 
+def _document_order(item: dict[str, Any]) -> tuple:
+    """Review in the order the document reads: by first cited page and line, then creation time."""
+    first = (item.get("source") or [{}])[0]
+    line_id = str(first.get("id", ""))
+    number = int(line_id.split(":L")[1]) if ":L" in line_id else 0
+    return (item.get("created_at", 0) // 60, first.get("page", 0), number, item.get("created_at", 0))
+
+
 def _rule_thresholds(items: list[dict[str, Any]]) -> list[int]:
     return sorted({item["rule_spec"]["threshold"] for item in items
                    if item["type"] == "PLAN_RULE" and item.get("status") == "active" and item.get("rule_spec")})
@@ -61,7 +83,15 @@ def view_details(deps: Any, identity: Any, view: str, record_ids: list[str]) -> 
     """Return the detail for one view, using only scope-checked service calls."""
     service = deps.service
     if view in {"plan-review", "tasks"}:
-        return {"items": _with_citations(deps, identity, service.list_care_tasks(identity))}
+        items = sorted(service.list_care_tasks(identity), key=_document_order)
+        data: dict[str, Any] = {"items": _with_citations(deps, identity, items)}
+        if view == "plan-review" and identity.role == "patient":
+            jobs = service.intake_jobs(identity)
+            if jobs:
+                job = jobs[0]
+                data["document"] = {k: job.get(k) for k in ("id", "title", "status", "error", "counts", "notes",
+                                                            "unused_lines", "follow_up_date", "pages", "engine")}
+        return data
     if view == "plan-source":
         if record_ids:
             return {"sources": [service.source_excerpt(identity, record_ids[0])]}

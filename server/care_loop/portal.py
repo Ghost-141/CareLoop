@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, BackgroundTasks
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
@@ -177,6 +177,40 @@ def build_router(service: CareLoopService, auth: TokenAuth) -> APIRouter:
             return {"intake": service.intake_text_document(identity, title, text)}
         except AccessDenied as exc:
             raise HTTPException(403, "CareLoop access denied") from exc
+
+    @router.post("/api/care/documents/upload", status_code=202)
+    async def upload_document(request: Request, background: BackgroundTasks, title: str = "Uploaded document",
+                              doc_type: str | None = None,
+                              identity: Identity = Depends(current_identity)) -> dict[str, Any]:
+        """Patient or a family member with ``upload_documents``: PDF, PNG or JPEG. Drafts need patient approval."""
+        from .extraction import ExtractionError, MAX_UPLOAD_BYTES, sniff
+        length = request.headers.get("content-length")
+        if length and int(length) > MAX_UPLOAD_BYTES:
+            raise HTTPException(413, "Documents are limited to 5 MB")
+        data = await request.body()
+        if len(data) > MAX_UPLOAD_BYTES:
+            raise HTTPException(413, "Documents are limited to 5 MB")
+        try:
+            sniff(data)
+        except ExtractionError as exc:
+            raise HTTPException(415, str(exc)) from exc
+        if doc_type not in {None, "prescription", "discharge_plan", "care_plan"}:
+            raise HTTPException(422, "Unsupported document type")
+        job = denied(lambda: service.create_intake_job(identity, title, size=len(data)))
+        # Runs after the response in the threadpool; the bytes are never stored.
+        background.add_task(service.run_intake_job, job["patient_id"], job["id"], data, doc_type=doc_type)
+        return {"job": {"id": job["id"], "status": job["status"], "title": job["title"]}}
+
+    @router.get("/api/care/intake")
+    def intake_jobs(identity: Identity = Depends(current_identity)) -> dict[str, Any]:
+        return {"jobs": denied(lambda: service.intake_jobs(identity))}
+
+    @router.get("/api/care/intake/{job_id}")
+    def intake_job(job_id: str, identity: Identity = Depends(current_identity)) -> dict[str, Any]:
+        job = next((j for j in denied(lambda: service.intake_jobs(identity)) if j["id"] == job_id), None)
+        if job is None:
+            raise HTTPException(404, "Intake job is unavailable")
+        return {"job": job}
 
     @router.post("/api/care/plan/{record_id}/approve")
     def approve_plan_item(record_id: str, identity: Identity = Depends(current_identity)) -> dict[str, Any]:

@@ -1,6 +1,6 @@
 """Patient-scoped CareLoop record service; source records are authoritative."""
 from __future__ import annotations
-import hashlib, json, time, uuid
+import hashlib, json, re, time, uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -8,21 +8,27 @@ from typing import Any
 from .auth import Identity
 from .storage import CareLoopStorage
 
-CORE_TYPES = {"PATIENT", "DOCUMENT", "PLAN_TASK", "PLAN_RULE", "OBSERVATION", "TASK_EVENT", "CONSENT", "ALERT", "HANDOFF", "SEARCH_ENTRY", "AUDIT"}
-SEARCHABLE_TYPES = {"DOCUMENT", "PLAN_TASK", "PLAN_RULE", "OBSERVATION", "TASK_EVENT", "HANDOFF"}
+CORE_TYPES = {"PATIENT", "DOCUMENT", "PLAN_TASK", "PLAN_RULE", "PLAN_NOTE", "INTAKE_JOB", "OBSERVATION", "TASK_EVENT", "CONSENT", "ALERT", "HANDOFF", "SEARCH_ENTRY", "AUDIT"}
+SEARCHABLE_TYPES = {"DOCUMENT", "PLAN_TASK", "PLAN_RULE", "PLAN_NOTE", "OBSERVATION", "TASK_EVENT", "HANDOFF"}
 # These are deliberately capability names, not a general-purpose role bag.  A
 # caregiver never receives ownership or data-rights capabilities.
-CAREGIVER_SCOPES = frozenset({"read_tasks", "read_observations", "write_observations", "receive_alerts", "acknowledge_alerts"})
+CAREGIVER_SCOPES = frozenset({"read_tasks", "read_observations", "write_observations", "receive_alerts", "acknowledge_alerts",
+                              "upload_documents"})
 CAREGIVER_RECORD_TYPES = {
     # Documents and alerts need purpose-built, deliberately minimal views.
     # Never make either full record listable merely because a caregiver needs
     # task context or an alert notification.
-    "read_tasks": frozenset({"PLAN_TASK", "PLAN_RULE"}),
+    "read_tasks": frozenset({"PLAN_TASK", "PLAN_RULE", "PLAN_NOTE"}),
     "read_observations": frozenset({"OBSERVATION"}),
 }
 # Audit fields are intentionally closed vocabulary, so no clinical content can
 # be smuggled into logs through caller-controlled action/outcome strings.
-AUDIT_ACTIONS = frozenset({"access_invited", "access_granted", "access_revoked", "alert_acknowledged", "data_exported", "record_deleted", "records_purged"})
+AUDIT_ACTIONS = frozenset({"access_invited", "access_granted", "access_revoked", "alert_acknowledged", "data_exported", "record_deleted", "records_purged",
+                           "document_uploaded", "plan_item_approved", "plan_item_rejected"})
+PLAN_TYPES = frozenset({"PLAN_TASK", "PLAN_RULE", "PLAN_NOTE"})
+REVIEWABLE = frozenset({"draft", "needs_review"})
+INTAKE_JOB_TTL_SECONDS = 24 * 3600
+_CLOCK_TIME = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 AUDIT_OUTCOMES = frozenset({"success", "denied", "failed"})
 
 class AccessDenied(PermissionError): pass
@@ -32,6 +38,8 @@ class CareLoopService:
     storage: CareLoopStorage
     clock: Any = time.time
     retention_days: int | None = 365
+    # Document intake engines (OCR + local model); see intake_engines.py. None = fixtures only.
+    intake: Any = None
     def __post_init__(self) -> None:
         # Re-evaluate durable approved rules after a restart. Alert episode
         # keys make this safe to run repeatedly.
@@ -86,7 +94,8 @@ class CareLoopService:
     def create_document(self, identity: Identity, title: str, excerpts: list[dict[str, Any]], source_hash: str | None=None, *, reviewed=False) -> dict[str, Any]:
         if not excerpts: raise ValueError("a document needs at least one page excerpt")
         # Raw PDF bytes/text are intentionally not accepted or retained here.
-        normalized=[{"page":int(e["page"]),"excerpt":str(e["excerpt"])} for e in excerpts]
+        normalized=[{"page":int(e["page"]),"excerpt":str(e["excerpt"])}
+                    | {k: e[k] for k in ("line_id", "method", "confidence_pct") if k in e} for e in excerpts]
         combined=" ".join(e["excerpt"] for e in normalized)
         return self.write(identity,"DOCUMENT",{"title":title,"source_hash":source_hash or hashlib.sha256(combined.encode()).hexdigest(),"page_excerpts":normalized,"excerpt":combined},reviewed=reviewed)
 
@@ -124,26 +133,166 @@ class CareLoopService:
         return {"document": document, "drafts": drafts, "manual_review_required": bool(extracted.manual_review_reasons),
                 "manual_review_reasons": extracted.manual_review_reasons}
 
-    def approve_plan_item(self, identity: Identity, record_id: str) -> dict[str, Any]:
-        """Activate a clinician-cited draft only after the patient confirms it."""
+    def approve_plan_item(self, identity: Identity, record_id: str, *, on_screen: bool = False,
+                          confirmed: bool = False, edits: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Activate a draft only after the patient confirms it.
+
+        Items flagged ``needs_review`` and medication items can only be approved
+        on the patient's screen, with the flags explicitly confirmed. Edits are
+        limited to the spoken label and suggested times, and are recorded.
+        """
         patient = self._require_patient(identity)
         item = self.storage.get(patient, record_id)
-        if not item or item["type"] not in {"PLAN_TASK", "PLAN_RULE"} or item.get("status") != "draft":
+        if not item or item["type"] not in PLAN_TYPES or item.get("status") not in REVIEWABLE:
             raise ValueError("draft plan item is unavailable")
+        if item.get("status") == "needs_review" and not (on_screen and confirmed):
+            raise ValueError("this item needs review on screen")
+        if item.get("item_kind") == "medication_task" and not on_screen:
+            raise ValueError("medicine items are approved on screen only")
         if item["type"] == "PLAN_RULE":
             # Unsupported prose may still be displayed as an approved source
             # item, but can never become executable logic.
             spec = self._rule_spec(item)
             if spec is None:
                 raise ValueError("rule needs a supported clinician rule specification")
-            if not self._source_has_rule_spec(patient, item.get("source_id"), spec):
+            if item.get("rule_basis") == "confirmed_mapping":
+                if not (on_screen and confirmed) or not self._cited_numbers_support(patient, item, spec):
+                    raise ValueError("rule must be confirmed against its cited source")
+            elif not self._source_has_rule_spec(patient, item.get("source_id"), spec):
                 raise ValueError("rule needs an exact reviewed source excerpt")
             item["rule_spec"] = spec
+        changes = self._review_edits(item, edits or {}, identity)
         item |= {"status": "active", "reviewed": True, "approval_required": False,
-                 "approved_by": identity.subject_id, "approved_at": self._now(), "updated_at": self._now()}
+                 "approved_by": identity.subject_id, "approved_at": self._now(), "updated_at": self._now(),
+                 "approved_on": "screen" if on_screen else "voice"}
+        if changes:
+            item["edits"] = list(item.get("edits", [])) + changes
         saved = self.storage.put(patient, record_id, item["type"], item)
+        self.audit(identity, "plan_item_approved", "success")
         if saved["type"] == "PLAN_RULE": self.evaluate_rules(patient)
         return saved
+
+    def reject_plan_item(self, identity: Identity, record_id: str) -> bool:
+        patient = self._require_patient(identity)
+        item = self.storage.get(patient, record_id)
+        if not item or item["type"] not in PLAN_TYPES or item.get("status") not in REVIEWABLE:
+            raise ValueError("draft plan item is unavailable")
+        removed = self.storage.soft_delete(patient, record_id, self._now())
+        self.audit(identity, "plan_item_rejected", "success")
+        return removed
+
+    def _review_edits(self, item: dict[str, Any], edits: dict[str, Any], identity: Identity) -> list[dict[str, Any]]:
+        """Only the speakable label and suggested times may change; the cited instruction never does."""
+        unknown = set(edits) - {"label", "times"}
+        if unknown:
+            raise ValueError("only the label and times can be edited")
+        changes = []
+        if "label" in edits:
+            label = " ".join(str(edits["label"]).split())
+            if not label or len(label) > 60:
+                raise ValueError("label must be 1-60 characters")
+            if label != item.get("label"):
+                changes.append({"field": "label", "from": item.get("label"), "to": label})
+                item["label"] = label
+        if "times" in edits:
+            times = edits["times"]
+            if not isinstance(times, list) or len(times) > 8 or not all(isinstance(t, str) and _CLOCK_TIME.match(t) for t in times):
+                raise ValueError("times must be up to 8 HH:MM values")
+            times = sorted(dict.fromkeys(times))
+            if times != item.get("times"):
+                changes.append({"field": "times", "from": item.get("times"), "to": times})
+                item["times"] = times
+        now = self._now()
+        return [change | {"by": identity.subject_id, "at": now} for change in changes]
+
+    def _cited_numbers_support(self, patient: str, item: dict[str, Any], spec: dict[str, int]) -> bool:
+        """A confirmed rule's numbers must appear in its cited lines of a reviewed source document."""
+        source = self.storage.get(patient, item.get("source_id")) if item.get("source_id") else None
+        if not source or source["type"] != "DOCUMENT" or not source.get("reviewed"):
+            return False
+        cited = {line.get("id") for line in item.get("source", [])}
+        text = " ".join(e["excerpt"] for e in source.get("page_excerpts", []) if e.get("line_id") in cited)
+        numbers = set(re.findall(r"\d+", text))
+        return "pain" in text.lower() and {str(spec["threshold"]), str(spec["consecutive_days"])} <= numbers
+
+    # ---- document intake: upload → extraction/OCR → local model → checks → drafts ----------
+    def create_intake_job(self, identity: Identity, title: str, *, size: int) -> dict[str, Any]:
+        """Patients, and family members granted ``upload_documents``, may upload. Only the patient approves."""
+        patient = self.patient_for(identity, "upload_documents" if identity.role == "caregiver" else None)
+        title = " ".join(str(title).split())
+        if not title or len(title) > 160:
+            raise ValueError("a short document title is required")
+        now, job_id = self._now(), self._id()
+        job = {"status": "processing", "title": title, "uploaded_by": identity.subject_id, "uploaded_role": identity.role,
+               "size_bytes": int(size), "created_at": now, "updated_at": now, "reviewed": False}
+        saved = self.storage.put(patient, job_id, "INTAKE_JOB", job, expires_at=now + INTAKE_JOB_TTL_SECONDS)
+        self.audit(self._patient_identity(patient), "document_uploaded", "success")
+        return saved
+
+    def run_intake_job(self, patient: str, job_id: str, data: bytes, *, doc_type: str | None = None) -> dict[str, Any]:
+        """Extract, structure and verify a document into draft items. Never raises: failures land on the job."""
+        from .extraction import ExtractionError, extract_document
+        from .structuring import structure_document
+        job = self.storage.get(patient, job_id)
+        if not job or job["type"] != "INTAKE_JOB":
+            raise ValueError("intake job is unavailable")
+        engines = self.intake
+        try:
+            extracted = extract_document(data, ocr=engines.ocr() if engines else None)
+            structured = structure_document(extracted, engines.model() if engines else None, now=self._now(),
+                                            doc_type=doc_type)
+        except ExtractionError as exc:
+            return self._finish_job(patient, job, status="failed", error=str(exc))
+        except Exception:  # never leak internals into a patient-visible record
+            return self._finish_job(patient, job, status="failed", error="The document couldn't be processed.")
+        owner = self._patient_identity(patient)
+        cited = {line["id"]: line for item in structured.items for line in item.source}
+        excerpts = [{"page": line["page"], "excerpt": line["text"], "line_id": line_id, "method": line["method"],
+                     "confidence_pct": line["confidence_pct"]} for line_id, line in cited.items()]
+        draft_ids: list[str] = []
+        document = None
+        if excerpts:
+            document = self.create_document(owner, job["title"], excerpts, extracted.source_hash, reviewed=True)
+            document = self.storage.put(patient, document["id"], "DOCUMENT", document | {
+                "uploaded_by": job["uploaded_by"], "intake_job_id": job["id"], "extraction": {str(k): v for k, v in extracted.page_methods.items()}})
+            for item in structured.items:
+                payload: dict[str, Any] = {
+                    "text": item.instruction, "label": item.label, "item_kind": item.kind, "status": item.status,
+                    "approval_required": True, "manual_review_required": item.status == "needs_review",
+                    "review_reasons": item.reasons, "source": item.source, "page": item.source[0]["page"] if item.source else 1,
+                    "intake_job_id": job["id"], "suggested_assignee": item.suggested_assignee,
+                }
+                if item.record_type == "PLAN_TASK":
+                    payload |= {"frequency": item.frequency, "times": item.times, "interval_hours": item.interval_hours,
+                                "duration_days": item.duration_days, "schedule": ", ".join(item.times) or item.frequency}
+                    if item.medication:
+                        payload["medication"] = item.medication
+                if item.record_type == "PLAN_RULE":
+                    payload |= {"rule_spec": item.rule_spec, "rule_basis": "confirmed_mapping"}
+                draft = self.write(owner, item.record_type, payload, source_id=document["id"], reviewed=False)
+                draft_ids.append(draft["id"])
+        counts = {"items": len(structured.items),
+                  "needs_review": sum(i.status == "needs_review" for i in structured.items),
+                  "medication_items": sum(i.kind == "medication_task" for i in structured.items)}
+        return self._finish_job(patient, job, status="ready", document_id=document["id"] if document else None,
+                                draft_ids=draft_ids, counts=counts, engine=structured.engine,
+                                notes=structured.notes, unused_lines=structured.unused_lines,
+                                follow_up_date=structured.follow_up_date,
+                                pages={str(k): v for k, v in extracted.page_methods.items()})
+
+    def _finish_job(self, patient: str, job: dict[str, Any], **fields: Any) -> dict[str, Any]:
+        job = dict(job) | fields | {"updated_at": self._now()}
+        expires_at = int(job.get("created_at", self._now())) + INTAKE_JOB_TTL_SECONDS
+        return self.storage.put(patient, job["id"], "INTAKE_JOB", job, expires_at=expires_at)
+
+    def intake_jobs(self, identity: Identity) -> list[dict[str, Any]]:
+        """Newest first. A family member sees only the jobs they uploaded, and only the summary."""
+        patient = self.patient_for(identity, "upload_documents" if identity.role == "caregiver" else None)
+        jobs = sorted(self.storage.list(patient, "INTAKE_JOB"), key=lambda j: j.get("created_at", 0), reverse=True)
+        if identity.role == "caregiver":
+            keep = {"id", "status", "title", "created_at", "counts", "error"}
+            return [{k: v for k, v in job.items() if k in keep} for job in jobs if job.get("uploaded_by") == identity.subject_id]
+        return jobs
 
     def _rule_spec(self, rule: dict[str, Any]) -> dict[str, int] | None:
         """Accept the sole Phase-4 clinician rule grammar.
@@ -273,7 +422,7 @@ class CareLoopService:
 
     def list_care_tasks(self, identity: Identity) -> list[dict[str, Any]]:
         patient = self.patient_for(identity, "read_tasks" if identity.role == "caregiver" else None)
-        tasks = [row for row in self.storage.list(patient) if row["type"] in {"PLAN_TASK", "PLAN_RULE"}]
+        tasks = [row for row in self.storage.list(patient) if row["type"] in PLAN_TYPES]
         # An unapproved proposal is private to the patient, including when a
         # caregiver otherwise has task-reading access.
         if identity.role == "caregiver":
@@ -318,7 +467,7 @@ class CareLoopService:
         """
         patient = self._require_patient(identity)
         if from_date < 0 or to_date < from_date: raise ValueError("invalid handoff date range")
-        plans = [row for row in self.storage.list(patient) if row["type"] in {"PLAN_TASK", "PLAN_RULE"} and row.get("status") == "active"]
+        plans = [row for row in self.storage.list(patient) if row["type"] in PLAN_TYPES and row.get("status") == "active"]
         plan_items = []
         for row in plans:
             source = self.storage.get(patient, row["source_id"]) if row.get("source_id") else None
@@ -368,7 +517,7 @@ class CareLoopService:
             linked = any(
                 record.get("source_id") == source_id and record.get("status", "active") == "active"
                 for record in self.storage.list(patient)
-                if record["type"] in {"PLAN_TASK", "PLAN_RULE"}
+                if record["type"] in PLAN_TYPES
             )
             if not linked:
                 raise AccessDenied("Source is unavailable")

@@ -261,6 +261,8 @@ def careloop_server(tmp_path):
            "CARELOOP_API_TOKEN": "careloop-local-demo-token", "CARELOOP_DEMO_PATIENT": "demo-patient",
            "PYTHONPATH": str(ROOT / "server")}
     env.pop("CARELOOP_CAREGIVER_TOKEN", None)
+    # Deterministic intake for tests: pattern fallback, no OCR or model downloads.
+    env |= {"CARELOOP_INTAKE_LLM": "none", "CARELOOP_INTAKE_OCR": "none"}
     process = subprocess.Popen([sys.executable, "-m", "care_loop"], cwd=ROOT, env=env,
                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
@@ -376,3 +378,34 @@ def test_voice_endpoints_use_local_engines_or_defer_to_the_browser() -> None:
     with TestClient(create_alexa_sim_app(AlexaSimSettings(), pool=Pool(), planner=MockReplay(), voice=FakeVoice())) as client:
         assert client.post("/api/tts", json={"text": "x"}).status_code == 404
         assert client.post("/api/stt", content=b"\x00").status_code == 404
+
+
+def test_family_member_shares_a_document_and_patient_is_told(careloop_server) -> None:
+    settings = AlexaSimSettings(mcp_url=careloop_server, planner="mock")
+    with TestClient(create_alexa_sim_app(settings, planner=MockReplay())) as client:
+        client.post("/api/link", json={"account": "maya"})
+        client.post("/api/link", json={"account": "sam"})
+        say = lambda device, text: client.post("/api/utterance", json={"device_id": device, "text": text}).json()
+
+        refused = client.post("/api/documents/share", params={"account": "sam", "sample": "typed"})
+        assert refused.status_code == 403  # no upload permission yet
+
+        invited = say("show", "Alexa, let my brother Sam see my tasks and upload documents")
+        assert invited["reply"].startswith("Invitation created with 2 permissions")
+        assert client.post("/api/invite/open").json()["accepted"] is True
+
+        shared = client.post("/api/documents/share", params={"account": "sam", "sample": "typed", "doc_type": "prescription"})
+        assert shared.status_code == 200
+        for _ in range(60):
+            turns = [e for e in client.get("/api/state").json()["trace"] if e.get("type") == "turn" and e["planner"] == "host"]
+            if any(t["device_id"] == "show" for t in turns):
+                break
+            time.sleep(0.25)
+        assert any(t["device_id"] == "dot" and "sent it to Maya" in t["reply"] for t in turns)
+        ready = next(t for t in turns if t["device_id"] == "show")
+        assert ready["reply"].startswith("Your document is ready.")
+        assert "Medicine items are approved on your screen." in ready["reply"]
+
+        status = say("show", "Alexa, is my document ready?")
+        assert status["screen"]["resource_uri"] == "ui://careloop/plan-review"
+        assert "Amoxicillin" not in status["reply"]

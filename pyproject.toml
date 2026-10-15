@@ -19,6 +19,8 @@ careloop-alexa-sim = "alexa_sim.__main__:main"
 [project.optional-dependencies]
 dev = ["pytest>=8", "pytest-asyncio>=0.23"]
 alexa-sim = ["websockets>=12"]
+intake = ["pypdf>=5", "pypdfium2>=4", "pillow>=10"]
+ocr = ["paddleocr>=3.7", "paddlepaddle>=3.3"]
 simulator = ["strands-agents[ollama,openai]>=1.50"]
 voice = ["kokoro-onnx>=0.6", "mlx-whisper>=0.4; sys_platform == 'darwin' and platform_machine == 'arm64'"]
 

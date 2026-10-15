@@ -13,6 +13,7 @@
     "Alexa, who has access to my care?",
     "Alexa, remove Sam",
     "Alexa, should I double my medication?",
+    "Alexa, is my document ready?",
   ];
   const DOT_CHIPS = [
     "Alexa, any CareLoop updates?",
@@ -421,11 +422,45 @@
     while ($("#trace").children.length > 150) $("#trace").lastChild.remove();
   }
 
+  // ---- document sharing (the Alexa app's "share a file") ---------------------------------
+  async function share(file, sample) {
+    const account = $("#share-as").value, type = $("#share-type").value;
+    const params = new URLSearchParams({ account, doc_type: type, title: type === "prescription" ? "Prescription" : "Discharge plan" });
+    if (sample) params.set("sample", sample);
+    $("#share-status").textContent = "Sending…";
+    try {
+      const res = await fetch("/api/documents/share?" + params, { method: "POST", body: file || null,
+        headers: file ? { "content-type": file.type || "application/octet-stream" } : {} });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.detail || "CareLoop couldn't take that document");
+      $("#share-status").textContent = `Shared as ${account}. CareLoop is reading it…`;
+    } catch (e) { $("#share-status").textContent = e.message; }
+  }
+  $("#share-upload").addEventListener("click", () => {
+    const file = $("#share-file").files[0];
+    if (!file) { $("#share-status").textContent = "Choose a PDF, PNG or JPEG first."; return; }
+    share(file);
+  });
+  $("#share-sample-go").addEventListener("click", () => share(null, $("#share-sample").value));
+
+  async function announced(msg) {
+    if (msg.device_id === "show") {
+      bubble(msg.reply);
+      if (msg.screen?.resource_uri) mountApp(msg.screen).catch(() => bubble("The private view couldn't load.", "system"));
+      $("#share-status").textContent = "Ready for Maya to review.";
+    } else {
+      $("#dot-caption").textContent = msg.reply || "";
+    }
+    refresh().catch(() => {});
+    await speak(msg.device_id, msg.reply);
+  }
+
   function connect() {
     const ws = new WebSocket((location.protocol === "https:" ? "wss" : "ws") + "://" + location.host + "/ws");
     ws.onmessage = (e) => {
       const msg = JSON.parse(e.data);
       if (msg.type === "trace") traceLine(msg.entry);
+      else if (msg.type === "announce") announced(msg);
       else if (msg.type === "device") {
         if (msg.device_id === "dot") devices.dot.classList.toggle("notify", !!msg.notification);
         if (msg.state === "thinking" && speakingDevice !== msg.device_id) setState(msg.device_id, "thinking");

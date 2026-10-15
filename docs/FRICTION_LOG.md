@@ -34,6 +34,10 @@ Status: **Resolved**, **Workaround** (we went around it), **Open** (still a prob
 | F-18 | Local LLM planner | Medium | Resolved | The small model copied the add-on's follow-up question instead of calling the tool |
 | F-19 | Caregiver notifications | Medium | Resolved | Acknowledged alerts kept the caregiver's ring lit |
 | F-20 | Local speech | Low | Resolved | Kokoro's first run downloads about 115 MB; Whisper writes "Seven" as "7." |
+| F-21 | Alexa+ add-ons, files | Medium | Workaround | No documented way for Alexa+ to pass a user's uploaded file to an add-on |
+| F-22 | Alexa+ policy, dosage | Medium | Open | Unclear whether storing a prescriber's own instruction counts as "drug dosage content" |
+| F-23 | Document intake | Medium | Resolved | Small local models mislabelled the pain rule and frequencies; a fixed-pattern safety net was needed |
+| F-24 | PDF/OCR tooling | Low | Resolved | `pypdf` can't render pages for OCR; PaddleOCR's first run downloads models; storage rejects floats |
 
 ---
 
@@ -166,6 +170,28 @@ Status: **Resolved**, **Workaround** (we went around it), **Open** (still a prob
   - The page falls back to browser speech if a local engine is unavailable.
 - **Measured:** Kokoro takes 0.12–0.42 s per sentence and Whisper 0.12–0.28 s per utterance on Apple Silicon. Whisper transcribed all four test phrases exactly; "Seven" came back as "7."
 
+### F-21: No documented file hand-off to add-ons · Medium · Workaround
+- **Doing:** letting a patient give CareLoop their prescription through Alexa+.
+- **Got:** Alexa+ accepts uploaded documents and photos for its own memory, but the MCP Toolkit docs describe no way to pass that file to an add-on. The `/mcp` endpoint also caps requests at 64 KB.
+- **Workaround:** uploads go to CareLoop's own private view (`POST /api/care/documents/upload`), which the simulator's Alexa app panel calls. Voice picks up from there ("is my document ready?").
+- **Suggestion:** a consented "share this file with an add-on" flow, or an MCP resource handle for user-shared files.
+
+### F-22: Is a stored prescription "drug dosage content"? · Medium · Open
+- **Got:** the policy says *"Drug dosage content requires documented developer affiliation with the manufacturer."* CareLoop never gives dosage information. It only stores the prescriber's own instruction, verbatim, for the patient's own record, and never speaks it on a speaker.
+- **Question:** does a patient's own transcribed prescription fall under that rule?
+
+### F-23: Small local models need a deterministic safety net · Medium · Resolved
+- **Got:** in the first live runs, both `qwen3.5:4b` and `gemma4:e4b` labelled "Contact the clinic if your pain score is 7 or higher for 2 consecutive days" as a warning sign, not a rule. `qwen` also marked daily tasks as "every N hours".
+- **Got (our bug):** the frequency table missed "three times **daily**", which would have suggested a single dose time. The model's disagreement flag exposed it.
+- **Resolution:** a fixed-pattern recogniser for the rule's own wording takes its numbers from the text. The frequency table was fixed and is covered by tests. An eval runner (`evals/intake/run_intake.py`) now gates recall, invented numbers and injection, 3 runs per document.
+
+### F-24: PDF and OCR tooling papercuts · Low · Resolved
+- **Got:**
+  - `pypdf` extracts text but cannot render a page to an image, so OCR needed `pypdfium2` as well.
+  - PaddleOCR's first run downloads its models, about 1.5 minutes in our run.
+  - CareLoop's storage rejects floats, so OCR confidence is stored as an integer percent.
+- **Measured:** PaddleOCR read the synthetic scan and photo exactly, with 99–100% line confidence, about 8 s per page after the models are cached.
+
 ---
 
 ## Open questions for the Alexa+ team
@@ -176,6 +202,8 @@ Status: **Resolved**, **Workaround** (we went around it), **Open** (still a prob
 4. Do general MCP add-ons support elicitation, and how is the question presented by voice? (F-05)
 5. Does the 500 ms limit include time spent waiting on an elicitation answer? (F-07)
 6. Does Alexa+ honor MCP Apps `visibility: ["app"]` (tools hidden from the model)? CareLoop relies on it to keep private view data away from the model.
+7. Can a user hand a file they shared with Alexa+ to an add-on, with consent? (F-21)
+8. Does a patient's own transcribed prescription count as "drug dosage content"? (F-22)
 
 ## Adding a new entry
 

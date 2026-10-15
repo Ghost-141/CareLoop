@@ -68,6 +68,20 @@
           <button data-link="sam">Enable CareLoop</button>
         </div>
         <button id="open-invite" class="secondary" disabled>Sam opens Maya’s invitation link</button>
+        <div class="share">
+          <h3>Share a document with CareLoop</h3>
+          <div class="row">
+            <label class="small">As <select id="share-as"><option value="maya">Maya</option><option value="sam">Sam</option></select></label>
+            <label class="small">Type <select id="share-type"><option value="prescription">Prescription</option><option value="discharge_plan">Discharge plan</option></select></label>
+          </div>
+          <input type="file" id="share-file" accept="application/pdf,image/png,image/jpeg" aria-label="Document file">
+          <div class="row">
+            <button id="share-upload">Share file</button>
+            <select id="share-sample" aria-label="Sample document"><option value="typed">Sample: typed PDF</option><option value="scanned">Sample: scanned PDF (OCR)</option><option value="photo">Sample: photo (OCR)</option><option value="injection">Sample: prompt injection</option></select>
+            <button id="share-sample-go" class="secondary">Share sample</button>
+          </div>
+          <p id="share-status" class="small muted"></p>
+        </div>
         <p class="small muted">Linking uses synthetic credentials held by this host; they never reach the browser or the app views.</p>
       </section>
       <section class="panel">

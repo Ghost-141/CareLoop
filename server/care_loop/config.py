@@ -32,6 +32,10 @@ class Settings:
     rate_limit_per_minute: int = 120
     caregiver_token: str | None = None
     caregiver_id: str = "demo-caregiver"
+    intake_llm: str = "ollama"  # ollama | none (pattern matching only)
+    intake_model: str = ""
+    intake_ocr: str = "paddle"  # paddle | none
+    llm_base_url: str = "http://127.0.0.1:11434"
 
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> "Settings":
@@ -51,6 +55,10 @@ class Settings:
                 rate_limit_per_minute=int(value("CARELOOP_RATE_LIMIT_PER_MINUTE", "120")),
                 caregiver_token=source.get("CARELOOP_CAREGIVER_TOKEN") or None,
                 caregiver_id=value("CARELOOP_DEMO_CAREGIVER", "demo-caregiver"),
+                intake_llm=value("CARELOOP_INTAKE_LLM", "ollama").lower(),
+                intake_model=(source.get("CARELOOP_INTAKE_MODEL") or source.get("LLM_MODEL") or "").strip(),
+                intake_ocr=value("CARELOOP_INTAKE_OCR", "paddle").lower(),
+                llm_base_url=value("LLM_BASE_URL", "http://127.0.0.1:11434"),
             )
         except ValueError as exc:
             raise ValueError("CareLoop port, retention, and rate limit must be integers") from exc

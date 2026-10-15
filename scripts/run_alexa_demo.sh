@@ -5,7 +5,8 @@
 #   VOICE=browser STT=browser scripts/run_alexa_demo.sh # browser speech instead of Kokoro/Whisper
 set -euo pipefail
 cd "$(dirname "$0")/.."
-uv sync --inexact --extra alexa-sim --extra voice >/dev/null
+uv sync --inexact --extra alexa-sim --extra voice --extra intake --extra ocr >/dev/null
+[ -f samples/prescription_typed.pdf ] || uv run python evals/intake/documents.py >/dev/null
 uv run careloop & careloop_pid=$!
 trap 'kill "$careloop_pid" 2>/dev/null || true' EXIT
 port="${CARELOOP_PORT:-8010}"

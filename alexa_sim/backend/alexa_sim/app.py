@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -16,11 +17,14 @@ from .devices import Device, DeviceKind, DeviceState
 from .mcp_pool import MCPClientPool
 from .orchestrator import Orchestrator
 from .planners import MockReplay, OllamaPlanner, Planner
-from .reply_policy import structured
+from .reply_policy import speakable, structured
 from .voice import VoiceEngines
 
 
 FRONTEND = Path(__file__).resolve().parents[2] / "frontend"
+SAMPLES = Path(__file__).resolve().parents[3] / "samples"
+SAMPLE_FILES = {"typed": "prescription_typed.pdf", "scanned": "prescription_scanned.pdf",
+                "photo": "prescription_photo.png", "injection": "prompt_injection.pdf"}
 LABEL = "Alexa+ behavior simulator for a hackathon demo. Not an Amazon product."
 ACCOUNTS = {"maya": "show", "sam": "dot"}
 
@@ -81,6 +85,50 @@ def create_alexa_sim_app(settings: AlexaSimSettings | None = None, pool: MCPClie
 
     async def device_event(device: Device, **payload: Any) -> None:
         await broadcast(device.event("device", **payload))
+
+    async def announce(device_id: str, reply: str, screen: dict[str, Any] | None = None) -> None:
+        """Speak on a device without a user turn (document ready, invite accepted, …)."""
+        await trace({"type": "turn", "device_id": device_id, "planner": "host", "tools": [], "reply": reply,
+                     "needs_confirmation": False})
+        await broadcast({"type": "announce", "device_id": device_id, "reply": reply, "screen": screen})
+
+    def careloop_http(method: str, path: str, account: str, body: bytes | None = None,
+                      content_type: str | None = None) -> dict[str, Any]:
+        """Server-side call to CareLoop's REST API with the account's credential (never sent to the browser)."""
+        from urllib.error import HTTPError
+        from urllib.request import Request as UrlRequest, urlopen
+        headers = {"Authorization": f"Bearer {settings.token_for(account)}"}
+        if content_type:
+            headers["Content-Type"] = content_type
+        request = UrlRequest(settings.server_url + path, data=body, headers=headers, method=method)
+        try:
+            with urlopen(request, timeout=30) as response:  # noqa: S310 - configured local CareLoop URL
+                return json.loads(response.read().decode("utf-8"))
+        except HTTPError as exc:
+            detail = json.loads(exc.read().decode("utf-8") or "{}").get("detail", "CareLoop refused the document")
+            raise HTTPException(exc.code, detail) from exc
+
+    async def watch_intake(account: str, job_id: str) -> None:
+        """Poll the job; when it's ready, Maya's Show announces it and opens the review screen."""
+        for _ in range(200):
+            await asyncio.sleep(1.5)
+            try:
+                job = (await asyncio.to_thread(careloop_http, "GET", f"/api/care/intake/{job_id}", account))["job"]
+            except Exception:
+                continue
+            if job["status"] == "processing":
+                continue
+            show = devices["show"]
+            if pool.linked(show.account):
+                result = await pool.call_tool(show.account, "get_intake_status", {})
+                reply = speakable(result) or "Your document has been processed."
+                data = structured(result)
+                screen = ({"tool": "get_intake_status", "resource_uri": data["view"],
+                           "result": {"structuredContent": data, "isError": False}}
+                          if not result["isError"] and data.get("view") else None)
+                await announce("show", reply, screen)
+            await sync_caregiver_notifications()
+            return
 
     pool = pool or MCPClientPool(settings.mcp_url, trace)
     orchestrator = Orchestrator(pool, planner or build_planner(settings), max_steps=settings.max_tool_steps, trace=trace)
@@ -170,6 +218,31 @@ def create_alexa_sim_app(settings: AlexaSimSettings | None = None, pool: MCPClie
         await sync_caregiver_notifications()
         reply = structured(result).get("speakable") if not result["isError"] else "That invitation is no longer available."
         return {"accepted": not result["isError"], "reply": reply}
+
+    @app.post("/api/documents/share")
+    async def share_document(request: Request, account: str, title: str = "Clinic document",
+                             doc_type: str | None = None, sample: str | None = None) -> dict[str, Any]:
+        """The Alexa app's 'share a file' flow: Maya, or Sam if she let him upload, sends a document to CareLoop."""
+        if account not in ACCOUNTS:
+            raise HTTPException(404, "Unknown account")
+        if sample:
+            if sample not in SAMPLE_FILES or not (SAMPLES / SAMPLE_FILES[sample]).is_file():
+                raise HTTPException(404, "Sample not found; run: uv run python evals/intake/documents.py")
+            data = (SAMPLES / SAMPLE_FILES[sample]).read_bytes()
+        else:
+            data = await request.body()
+        if not data:
+            raise HTTPException(422, "Choose a file to share")
+        from urllib.parse import urlencode
+        query = urlencode({k: v for k, v in {"title": title, "doc_type": doc_type}.items() if v})
+        await trace({"type": "host", "text": f"{account} shared a document with CareLoop ({len(data)} bytes)"})
+        out = await asyncio.to_thread(careloop_http, "POST", f"/api/care/documents/upload?{query}", account, data,
+                                      "application/octet-stream")
+        job = out["job"]
+        asyncio.create_task(watch_intake(account, job["id"]))
+        if account == "sam":
+            await announce("dot", "Thanks. I've sent it to Maya to review.")
+        return {"job": job}
 
     @app.post("/api/planner")
     async def set_planner(body: PlannerIn) -> dict[str, str]:

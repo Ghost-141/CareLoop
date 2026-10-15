@@ -153,7 +153,7 @@ def _plan_refs(items: list[dict[str, Any]]) -> list[Ref]:
     refs: list[Ref] = []
     counters: dict[str, int] = {}
     for item in items:
-        kind = "rule" if item["type"] == "PLAN_RULE" else "task"
+        kind = {"PLAN_RULE": "rule", "PLAN_NOTE": "note"}.get(item["type"], "task")
         status = item.get("status", "active")
         key = f"{status} {kind}"
         counters[key] = counters.get(key, 0) + 1
@@ -213,11 +213,14 @@ def register(mcp: MCPServer, deps) -> None:
         return _result(speakable, view="plan-review", refs=_plan_refs(drafts))
 
     @tool("approve_plan_item", "plan-review", _IDEMPOTENT_WRITE)
-    @_safe_tool("That plan item can't be approved. Review it in your private CareLoop view.")
+    @_safe_tool("That item needs your review on screen before it can be approved.")
     def approve_plan_item(record_id: str, ctx: Context) -> VoiceResult:
-        """Patient-confirm one source-cited draft (a ref id from list/import) so it becomes active."""
+        """Patient-confirm one source-cited draft (a ref id from list/import) so it becomes active.
+
+        Medicine items and items flagged for review can only be approved on the patient's screen.
+        """
         item = deps.service.approve_plan_item(_patient(deps, ctx), record_id)
-        kind = "rule" if item["type"] == "PLAN_RULE" else "task"
+        kind = {"PLAN_RULE": "rule", "PLAN_NOTE": "note"}.get(item["type"], "task")
         return _result(f"Plan {kind} approved and now active.", view="plan-review", refs=_plan_refs([item]))
 
     @tool("list_care_tasks", "tasks", _READ)
@@ -231,7 +234,7 @@ def register(mcp: MCPServer, deps) -> None:
         items = deps.service.list_care_tasks(_patient(deps, ctx))
         tasks = [i for i in items if i["type"] == "PLAN_TASK" and i.get("status", "active") == "active"]
         rules = [i for i in items if i["type"] == "PLAN_RULE" and i.get("status", "active") == "active"]
-        drafts = [i for i in items if i.get("status", "active") in {"draft", "pending_review"}]
+        drafts = [i for i in items if i.get("status", "active") in {"draft", "pending_review", "needs_review"}]
         if not items:
             speakable = "You have no CareLoop plan items yet."
         else:
@@ -257,6 +260,53 @@ def register(mcp: MCPServer, deps) -> None:
         return _result("The source excerpt is on your private screen.", view="plan-source",
                        refs=[{"id": source_id, "kind": "source", "label": "plan source"}])
 
+    @tool("get_intake_status", "plan-review", _READ)
+    @_safe_tool("Document status is unavailable.")
+    def get_intake_status(ctx: Context) -> VoiceResult:
+        """Status of the most recently uploaded document: still reading, ready for review (with counts), or unreadable.
+
+        Documents are uploaded in the CareLoop private view or the Alexa app, never by voice.
+        """
+        identity = _patient(deps, ctx)
+        jobs = deps.service.intake_jobs(identity)
+        if not jobs:
+            return _result("There are no uploaded documents.", view="plan-review")
+        job = jobs[0]
+        refs: list[Ref] = [{"id": job["id"], "kind": "document_job", "status": job["status"], "label": "latest document"}]
+        if job["status"] == "processing":
+            return _result("I'm still reading the document. I'll have it ready in a moment.", view="plan-review", refs=refs)
+        if job["status"] == "failed":
+            return _result("I couldn't read that document. Try a typed PDF, or a clearer photo.", view="plan-review", refs=refs)
+        counts = job.get("counts", {})
+        total, flagged = counts.get("items", 0), counts.get("needs_review", 0)
+        if identity.role == "caregiver":
+            return _result(f"The document you shared is ready. The patient will review {_plural(total, 'item')}.",
+                           view="plan-review", surface="glance", refs=refs)
+        pending = [i for i in deps.service.list_care_tasks(identity)
+                   if i.get("intake_job_id") == job["id"] and i.get("status") in {"draft", "needs_review"}]
+        speakable = f"Your document is ready. {_plural(len(pending), 'item')} {'needs' if len(pending) == 1 else 'need'} your approval"
+        speakable += f", and {flagged} {'is' if flagged == 1 else 'are'} flagged for a closer look." if flagged else "."
+        if counts.get("medication_items"):
+            speakable += " Medicine items are approved on your screen."
+        return _result(speakable, view="plan-review", refs=refs + _plan_refs(pending))
+
+    @tool("review_plan_item", "", _IDEMPOTENT_WRITE, app_only=True)
+    @_safe_tool("That item couldn't be updated. Check each flag and try again.")
+    def review_plan_item(record_id: str, action: Literal["approve", "reject"], ctx: Context, confirmed: bool = False,
+                         label: str | None = None, times: list[str] | None = None) -> VoiceResult:
+        """App-only (the patient's review screen): approve, edit-and-approve, or reject one draft.
+
+        ``confirmed`` = the patient checked every flag shown beside the item. Only the spoken
+        label and suggested times may be edited; the cited instruction never changes.
+        """
+        identity = _patient(deps, ctx)
+        if action == "reject":
+            deps.service.reject_plan_item(identity, record_id)
+            return _result("Item removed. It won't be added to your plan.", view="plan-review")
+        edits = {k: v for k, v in {"label": label, "times": times}.items() if v is not None}
+        item = deps.service.approve_plan_item(identity, record_id, on_screen=True, confirmed=confirmed, edits=edits)
+        return _result("Approved. It's now part of your plan.", view="plan-review", refs=_plan_refs([item]))
+
     # ---- care circle ------------------------------------------------------------
     @tool("list_care_circle", "care-circle", _READ)
     @_safe_tool("Care circle is unavailable.")
@@ -274,7 +324,7 @@ def register(mcp: MCPServer, deps) -> None:
         """Create a patient-controlled caregiver invitation.
 
         ``scopes`` ⊆ read_tasks, read_observations, write_observations,
-        receive_alerts, acknowledge_alerts.  ``expires_at`` accepts epoch or
+        receive_alerts, acknowledge_alerts, upload_documents.  ``expires_at`` accepts epoch or
         ISO-8601.  Share the returned invitation ref id with the caregiver.
         """
         expiry = None if expires_at is None else _date_bound(expires_at, end_of_day=True)

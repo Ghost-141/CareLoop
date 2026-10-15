@@ -48,6 +48,9 @@ def build_deps(settings: Settings | None=None, **overrides: Any) -> Deps:
     auth=overrides.get("auth") or TokenAuth.from_settings(settings)
     service=overrides.get("service") or CareLoopService(storage,overrides.get("clock") or storage.clock,
                                                          settings.retention_days)
+    if service.intake is None:
+        from .intake_engines import IntakeEngines
+        service.intake = overrides.get("intake") or IntakeEngines(settings)
     return Deps(settings,storage,auth,service,overrides.get("local_identity"))
 
 def build_server(deps: Deps) -> MCPServer:

@@ -20,6 +20,7 @@ def _load_dotenv() -> None:
 @dataclass(frozen=True)
 class AlexaSimSettings:
     mcp_url: str = "http://127.0.0.1:8010/mcp"
+    api_url: str = ""  # CareLoop REST base for document uploads; defaults to the MCP server's origin
     host: str = "127.0.0.1"
     port: int = 8021
     max_tool_steps: int = 4
@@ -45,6 +46,7 @@ class AlexaSimSettings:
         planner = env.get("CARELOOP_AGENT_LLM", cls.planner).strip().lower()
         return cls(
             mcp_url=env.get("CARELOOP_MCP_URL", cls.mcp_url),
+            api_url=env.get("CARELOOP_SERVER_URL", ""),
             host=env.get("CARELOOP_ALEXA_SIM_HOST", cls.host),
             port=int(env.get("CARELOOP_ALEXA_SIM_PORT", str(cls.port))),
             max_tool_steps=max(1, int(env.get("CARELOOP_ALEXA_SIM_MAX_TOOL_STEPS", "4"))),
@@ -61,6 +63,10 @@ class AlexaSimSettings:
             whisper_model=env.get("WHISPER_MODEL", cls.whisper_model) or cls.whisper_model,
             voice_models_dir=Path(env["CARELOOP_VOICE_MODELS_DIR"]).expanduser() if env.get("CARELOOP_VOICE_MODELS_DIR") else None,
         )
+
+    @property
+    def server_url(self) -> str:
+        return (self.api_url or self.mcp_url.rsplit("/mcp", 1)[0]).rstrip("/")
 
     def token_for(self, account: str) -> str:
         return self.patient_token if account == "maya" else self.caregiver_token

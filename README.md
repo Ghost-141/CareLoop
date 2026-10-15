@@ -15,7 +15,8 @@ CareLoop is intentionally bounded. It does **not** diagnose, prescribe, adjust m
 | Planner | Local tool-calling LLM via Ollama, or a deterministic mock for stage safety |
 | Identity | Credential-derived patient/caregiver identities; no caller-supplied patient scope |
 | Privacy | Voice-safe tool results, patient-owned expiring grants, generic caregiver notifications, deletion and purge |
-| Tests | 93 tests, including a live end-to-end run of the full demo story against a real server |
+| Document intake | Prescription/plan upload: PDF text first, PaddleOCR fallback, local LLM proposes items, deterministic checks, patient approves each item |
+| Tests | 122 tests, including live end-to-end runs against a real server; an intake eval against the local model |
 
 ## Contents
 
@@ -45,6 +46,7 @@ Alexa+ can remember documents, set reminders, and alert family about activity. C
 | Deterministic rules | Only a patient-approved, source-backed rule can create an alert, at most once per episode |
 | Privacy on shared speakers | Tool results expose only a `speakable` line plus opaque `refs`. The caregiver's speaker hears "You have 1 new CareLoop update", never the symptom |
 | Patient-controlled consent | Scoped, expiring caregiver invitations; revocation is confirmed by voice and applies on the next request |
+| Prescription intake | Upload a prescription (PDF, scan or photo): every proposed task cites its source line, invented numbers are blocked, and nothing reaches Alexa+ until the patient approves it |
 | Clinician handoff | A date-bounded, cited factual summary rendered as an MCP Apps view |
 | Data rights | Patient-scoped export, deletion, retention expiry, and purge |
 
@@ -75,7 +77,8 @@ cd CareLoop
 **2. Install dependencies.** `dev` adds tests, `alexa-sim` adds WebSocket support, and `voice` adds Kokoro and Whisper:
 
 ```bash
-uv sync --extra dev --extra alexa-sim --extra voice
+uv sync --extra dev --extra alexa-sim --extra voice --extra intake --extra ocr
+uv run python evals/intake/documents.py   # writes synthetic sample documents to samples/
 ```
 
 **3. Create your local settings** (`.env` is Git-ignored):
@@ -93,7 +96,8 @@ sed -i '' 's/^VOICE=.*/VOICE=kokoro/; s/^STT=.*/STT=whisper/' .env
 **4. (Optional) Pull the local planner model:**
 
 ```bash
-ollama pull qwen3.5:4b-mlx     # the model named by LLM_MODEL in .env
+ollama pull qwen3.5:4b-mlx     # voice planner (LLM_MODEL)
+ollama pull gemma4:e4b-mlx     # document intake (CARELOOP_INTAKE_MODEL)
 ```
 
 Skip this and set `CARELOOP_AGENT_LLM=mock` in `.env` to use the deterministic planner only.
@@ -102,7 +106,7 @@ Skip this and set `CARELOOP_AGENT_LLM=mock` in `.env` to use the deterministic p
 
 ```bash
 uv run pytest -q
-# 93 passed
+# 122 passed
 ```
 
 ## Run the Alexa+ demo
@@ -156,6 +160,17 @@ Start with a fresh database and the mock planner for exact replies (`CARELOOP_AG
 
 Steps 6–8 also work by voice end to end: answer the question out loud when the mic reopens.
 
+**Prescription intake (add-on).** In the Alexa app panel, pick **Share a document → Sample: typed PDF** (or *scanned PDF* / *photo* to show the OCR fallback):
+
+| # | Where | Action | Expected |
+|---|---|---|---|
+| A | Alexa app | Share the typed sample as Maya | About 10 s later the Show says "Your document is ready. 8 items need your approval, and 2 are flagged for a closer look. Medicine items are approved on your screen." and opens **Plan review** |
+| B | Show screen | Read a card | Each item shows the exact source line (`p1:L5 · …`), the medicine "as written", a spoken name and editable suggested times |
+| C | Show | "Alexa, approve my plan" | Medicine items are refused by voice: "That item needs your review on screen before it can be approved." |
+| D | Show screen | Tick the flags on the pain rule, tap **Approve** | The rule becomes active only after its flags are confirmed |
+| E | Alexa app | Share as **Sam** before and after Maya says "let Sam see my tasks and upload documents" | Refused, then accepted; Sam's Dot: "Thanks. I've sent it to Maya to review." |
+| F | Alexa app | Share **Sample: prompt injection** | The planted "ignore all previous instructions…" line never becomes an item; nothing is activated |
+
 **Reset for another run:** stop the script (`Ctrl-C`), then delete the local synthetic database:
 
 ```bash
@@ -165,7 +180,7 @@ rm -f data/careloop.db data/careloop.db-wal data/careloop.db-shm
 ## Testing
 
 ```bash
-uv run pytest -q                       # all 93 tests
+uv run pytest -q                       # all 122 tests
 uv run pytest -q server/tests          # MCP server, tools, consent, MCP Apps views, elicitation
 uv run pytest -q alexa_sim/tests       # simulator host, incl. a live run of the demo story above
 uv run pytest -q care_sim/tests        # evaluator and original voice simulator
@@ -215,6 +230,8 @@ Endpoint `http://127.0.0.1:8010/mcp` (Streamable HTTP, bearer token required). `
 | `list_generic_notifications` / `acknowledge_alert` | Generic caregiver updates; no private alert detail |
 | `create_visit_handoff` | Date-bounded, cited handoff (ISO dates, epochs, or `last_7_days`) |
 | `export_care_data` / `delete_care_record` | Patient data rights |
+| `get_intake_status` | Status of the latest uploaded document: reading, ready with counts, or unreadable |
+| `review_plan_item` | **App-only**: approve, edit the spoken name or times, or reject a draft on the patient's screen |
 | `get_private_view` | **App-only** (`_meta.ui.visibility: ["app"]`): detail for MCP Apps views; hidden from the model |
 
 **Voice-safe result contract.** Every model-visible tool returns structured content with these fields:
@@ -226,6 +243,29 @@ Endpoint `http://127.0.0.1:8010/mcp` (Streamable HTTP, bearer token required). `
 - `refs`: opaque ids with position-based labels such as `draft task 1`
 
 Failures are MCP tool errors with generic text. Each tool declares its MCP Apps view in `_meta.ui.resourceUri`. Those `ui://careloop/<view>` resources are static HTML shells that do the MCP Apps handshake and load detail only through `get_private_view`, which runs the same identity and consent checks. Destructive tools carry `destructiveHint` so hosts confirm first. Tool arguments never select another patient.
+
+## Document intake
+
+Patients, or family members the patient grants `upload_documents`, upload a prescription or discharge plan in the private view (`POST /api/care/documents/upload`) or through the simulator's Alexa app panel. Alexa+ doesn't pass user files to add-ons, so uploads never go through voice.
+
+1. **PDF text layer** (`pypdf`) per page; a quality check sends empty or garbled pages to OCR.
+2. **OCR fallback** (`PaddleOCR`, pages rendered with `pypdfium2`) for scanned pages and photos; each line keeps its confidence.
+3. **Local LLM** (Ollama, default `gemma4:e4b-mlx`) receives numbered lines (`p1:L12`) fenced as data and returns schema-constrained JSON items that cite their lines.
+4. **Deterministic checks:**
+   - Citations must exist and the instruction must appear verbatim.
+   - **Every number must appear in the source.**
+   - Schedules come from a fixed frequency table.
+   - Alert rules are accepted only in the supported form, with their numbers taken from the text.
+   - Low-confidence OCR, conflicts and unused lines are surfaced.
+   - Failures become **needs review**, never silently dropped.
+   - If the model is unavailable, a pattern fallback runs and flags every item.
+5. **Patient review** on screen: approve, edit the spoken name or times, or reject. Medicine and flagged items cannot be approved by voice. Raw extracted text expires after 24 h.
+
+```bash
+uv run python evals/intake/run_intake.py --model gemma4:e4b-mlx --repeat 3
+```
+
+On the synthetic set (typed, scanned, photo, injection), 3 runs each: recall 100%, invented numbers 0, citations valid, injection never followed. Median time per document: 8 s typed, 28 s photo, 41 s scanned (CPU OCR). Design: [docs/CARELOOP_DOCUMENT_INTAKE_PLAN.md](docs/CARELOOP_DOCUMENT_INTAKE_PLAN.md).
 
 ## Architecture
 
@@ -288,6 +328,9 @@ Settings come from environment variables; `.env` is loaded automatically and she
 | `WHISPER_MODEL` | `mlx-community/whisper-small.en-mlx` | Whisper model |
 | `CARELOOP_VOICE_MODELS_DIR` | `~/.cache/careloop/voice` | Kokoro model cache |
 | `CARELOOP_SIM_PORT` | `8020` | Original `care_sim` port |
+| `CARELOOP_INTAKE_LLM` | `ollama` | Document intake model provider, or `none` for pattern matching only |
+| `CARELOOP_INTAKE_MODEL` | `LLM_MODEL` (`.env.example`: `gemma4:e4b-mlx`) | Local model that structures uploaded documents |
+| `CARELOOP_INTAKE_OCR` | `paddle` | OCR for scanned pages and photos (`none` sends them to manual review) |
 
 ## Troubleshooting
 
@@ -305,13 +348,16 @@ Settings come from environment variables; `.env` is loaded automatically and she
 
 ```text
 server/care_loop/        CareLoop MCP server: tools, MCP Apps views, auth, core rules
+  extraction/            PDF text layer + PaddleOCR fallback → numbered source lines
+  structuring/           local-LLM schema, prompt, deterministic checks, pattern fallback
   tools/records.py       MCP tools and the voice-safe result contract
   ui/                    ui://careloop views (static MCP App shell)
 alexa_sim/               Alexa+ behavior simulator
   backend/alexa_sim/     host: MCP client pool, turn loop, planners, voice, MCP Apps bridge
   frontend/              devices, Alexa app panel, inspector, speech capture
 care_sim/                original voice simulator, local voice engines, evaluator
-evals/                   standalone eval cases and runner
+evals/                   standalone eval cases; evals/intake/ synthetic documents + intake eval
+samples/                 synthetic prescription PDF, scan, photo and prompt-injection documents
 scripts/                 run, seed, and end-to-end scripts
 docs/                    features, roadmap, demo plans, friction log
 ```

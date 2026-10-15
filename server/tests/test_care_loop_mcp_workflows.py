@@ -78,7 +78,7 @@ def test_every_model_tool_declares_an_mcp_app_view_and_annotations() -> None:
     for name, meta in mcp.meta.items():
         assert mcp.annotations[name] is not None, name
         ui = meta["ui"]
-        if name == "get_private_view":
+        if name in {"get_private_view", "review_plan_item"}:
             assert ui == {"visibility": ["app"]}
         else:
             assert ui["resourceUri"].removeprefix("ui://careloop/") in VIEWS, name
@@ -103,7 +103,7 @@ def test_voice_approval_flow_uses_refs_without_plan_text() -> None:
     tasks = mcp.tools["list_care_tasks"](FakeContext())
     assert tasks["speakable"] == "You have 1 active task and 1 active follow-up rule."
 
-    with pytest.raises(ToolError, match="can't be approved"):
+    with pytest.raises(ToolError, match="needs your review on screen"):
         mcp.tools["approve_plan_item"](labels["draft task 1"], FakeContext())
 
 

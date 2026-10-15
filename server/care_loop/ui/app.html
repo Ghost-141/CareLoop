@@ -28,6 +28,16 @@
   svg { width:100%; height:auto; display:block; }
   .empty, .error { color:var(--muted); padding:24px 0; text-align:center; }
   h2 { font-size:1rem; margin:16px 0 8px; }
+  .instruction { margin:8px 0; font-weight:500; }
+  .fields { display:grid; grid-template-columns:max-content 1fr; gap:6px 10px; align-items:center; margin:10px 0; }
+  .fields input, .card input:not([type=checkbox]) { font:inherit; padding:6px 8px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--fg); }
+  .flags { border-left:3px solid var(--warn); padding:6px 10px; margin:8px 0; }
+  .flag { color:var(--warn); font-size:.85rem; margin:2px 0; }
+  .confirm { display:block; margin-top:6px; font-size:.85rem; }
+  .badge { font-size:.75rem; color:var(--muted); margin-left:6px; }
+  .badge.warn, .cite.low { color:var(--warn); }
+  .review .row:last-child { justify-content:flex-start; margin-top:8px; }
+  details summary { cursor:pointer; }
 </style>
 </head>
 <body>
@@ -164,22 +174,101 @@
 
   function render(data) { (renderers[VIEW] || renderRecords)(data); }
 
+  const KIND_NAMES = { medication_task: "Medicine", care_task: "Care task", appointment: "Appointment",
+    warning_sign: "When to get help", rule_candidate: "Alert rule", note: "Note" };
+  function kindOf(item) { return KIND_NAMES[item.item_kind] || (item.type === "PLAN_RULE" ? "Follow-up rule" : item.type === "PLAN_NOTE" ? "Note" : "Task"); }
+  function sourceLines(item, c) {
+    if (!item.citation) return;
+    (item.citation.excerpts || []).forEach((e) => {
+      const ocr = e.method === "ocr", low = ocr && e.confidence_pct < 85;
+      const line = el("div", "cite" + (low ? " low" : ""), (e.line_id || "p." + e.page) + " · " + e.excerpt);
+      if (ocr) line.append(el("span", "badge" + (low ? " warn" : ""), " read by OCR " + e.confidence_pct + "%"));
+      c.append(line);
+    });
+  }
+  function input(value, placeholder, width) {
+    const i = document.createElement("input"); i.value = value || ""; i.placeholder = placeholder; if (width) i.style.width = width; return i;
+  }
+
+  function reviewCard(item) {
+    const isTask = item.type === "PLAN_TASK", reasons = item.review_reasons || [];
+    const c = el("div", "card review");
+    const head = el("div", "row"); const left = el("div");
+    left.append(el("div", "title", item.label || kindOf(item)), el("div", "meta", kindOf(item) + " · needs your approval"));
+    head.append(left, status(item.status)); c.append(head);
+    c.append(el("p", "instruction", item.text || ""));
+    if (item.medication) {
+      const m = item.medication, parts = [m.name, m.strength, m.dose, m.route].filter(Boolean);
+      if (parts.length) c.append(el("div", "meta", "As written: " + parts.join(" · ")));
+    }
+    if (item.rule_spec) c.append(el("div", "meta", `Alert when pain score is ${item.rule_spec.threshold} or higher for ${item.rule_spec.consecutive_days} days in a row`));
+    sourceLines(item, c);
+    const label = input(item.label, "Name Alexa can say aloud");
+    const times = isTask && item.frequency !== "as_needed" ? input((item.times || []).join(", "), "Times, e.g. 08:00, 20:00") : null;
+    const form = el("div", "fields");
+    form.append(el("label", "meta", "Spoken name"), label);
+    if (times) form.append(el("label", "meta", "Times (suggested from: " + (item.frequency || "unspecified").replaceAll("_", " ") + ")"), times);
+    else if (item.frequency === "as_needed") form.append(el("div", "meta", "As needed: no scheduled times"));
+    c.append(form);
+    let check = null;
+    if (reasons.length) {
+      const box = el("div", "flags");
+      reasons.forEach((r) => box.append(el("div", "flag", "⚑ " + r)));
+      const lab = el("label", "confirm"); check = document.createElement("input"); check.type = "checkbox";
+      lab.append(check, document.createTextNode(" I've checked these against the document"));
+      box.append(lab); c.append(box);
+    }
+    const buttons = el("div", "row");
+    const approve = action("Approve", "", () => {
+      const args = { record_id: item.id, action: "approve", confirmed: !reasons.length || check.checked, label: label.value };
+      if (times) args.times = times.value.split(",").map((t) => t.trim()).filter(Boolean);
+      return callTool("review_plan_item", args);
+    });
+    if (check) { approve.disabled = true; check.addEventListener("change", () => { approve.disabled = !check.checked; }); }
+    buttons.append(approve, action("Reject", "secondary", () => callTool("review_plan_item", { record_id: item.id, action: "reject" })));
+    c.append(buttons);
+    return c;
+  }
+
   function renderPlan(d) {
-    const items = d.items || [];
-    if (!items.length) return empty("No plan items yet. Share a plan from your clinician to start.");
-    root.replaceChildren(...items.map((item) => {
-      const isRule = item.type === "PLAN_RULE", state = item.status || "active";
-      let button = null;
-      if (state === "draft") button = action("Approve", "", () => callTool("approve_plan_item", { record_id: item.id }));
-      else if (!isRule && state === "active" && VIEW === "tasks")
-        button = action("Mark done", "", () => callTool("record_task_completion", { task_id: item.id }));
-      const c = card(item.text || (isRule ? "Follow-up rule" : "Task"), state,
-        (isRule ? "Follow-up rule" : "Task") + (item.schedule ? " · " + item.schedule : ""), button);
-      if (item.citation) (item.citation.excerpts || []).forEach((e) =>
-        c.append(el("div", "cite", item.citation.title + " · p." + e.page + " · " + e.excerpt)));
-      if (state === "pending_review") c.append(el("div", "meta", "Conflicting instructions: confirm with your clinician before activating."));
-      return c;
-    }));
+    const items = d.items || [], doc = d.document, parts = [];
+    if (doc && VIEW === "plan-review") {
+      if (doc.status === "processing") { parts.push(card("Reading your document…", "processing", doc.title || "")); setTimeout(load, 2000); }
+      else if (doc.status === "failed") parts.push(card("This document couldn't be read", "failed", doc.error || ""));
+      else {
+        const methods = Object.values(doc.pages || {}), ocr = methods.filter((m) => m === "ocr").length;
+        const how = (ocr ? `${ocr} page(s) read by OCR` : "read from the PDF text") + (doc.engine ? " · structured by " + doc.engine : "");
+        const c = card(doc.title || "Uploaded document", null, how);
+        (doc.notes || []).forEach((n) => c.append(el("div", "flag", "⚑ " + n)));
+        if (doc.follow_up_date) c.append(el("div", "meta", "Follow-up date in the document: " + doc.follow_up_date));
+        parts.push(c);
+      }
+    }
+    const pending = items.filter((i) => i.status === "draft" || i.status === "needs_review");
+    const done = items.filter((i) => !(i.status === "draft" || i.status === "needs_review"));
+    if (VIEW === "plan-review") parts.push(...pending.map(reviewCard));
+    const shown = VIEW === "plan-review" ? done : items;
+    if (shown.length) {
+      if (VIEW === "plan-review" && pending.length) parts.push(el("h2", "", "Already in your plan"));
+      parts.push(...shown.map((item) => {
+        const state = item.status || "active", isTask = item.type === "PLAN_TASK";
+        const button = isTask && state === "active" && VIEW === "tasks"
+          ? action("Mark done", "", () => callTool("record_task_completion", { task_id: item.id })) : null;
+        const c = card(item.label || item.text || kindOf(item), state,
+          kindOf(item) + ((item.times || []).length ? " · " + item.times.join(", ") : item.schedule ? " · " + item.schedule : ""), button);
+        if (item.label && item.text) c.append(el("div", "meta", item.text));
+        sourceLines(item, c);
+        return c;
+      }));
+    }
+    if (doc && (doc.unused_lines || []).length && VIEW === "plan-review") {
+      const details = document.createElement("details"); details.className = "card";
+      details.append(el("summary", "meta", `${doc.unused_lines.length} lines not turned into items`));
+      doc.unused_lines.forEach((l) => details.append(el("div", "cite", l.id + " · " + l.text)));
+      parts.push(details);
+    }
+    if (!parts.length) return empty("No plan items yet. Share a document from your clinician to start.");
+    root.replaceChildren(...parts);
   }
 
   function renderTrend(d) {

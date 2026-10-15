@@ -92,12 +92,16 @@ class MockReplay:
             scopes = ["read_tasks"] if "task" in text else []
             if re.search(r"\b(update|alert|notif)", text) or not scopes:
                 scopes += ["receive_alerts", "acknowledge_alerts"]
+            if re.search(r"\b(upload|document|prescription)", text):
+                scopes.append("upload_documents")
             arguments: dict[str, Any] = {"scopes": scopes}
             weeks = re.search(r"\b(one|two|three|four|\d+) weeks?\b", text)
             if weeks:
                 count = {"one": 1, "two": 2, "three": 3, "four": 4}.get(weeks.group(1)) or int(weeks.group(1))
                 arguments["expires_at"] = time.strftime("%Y-%m-%d", time.gmtime(time.time() + count * 7 * 86_400))
             return Action("invite_caregiver", arguments)
+        if re.search(r"\b(document|prescription|upload|what needs approv|needs? (my )?approval)", text) and not re.search(r"\b(invite|let|share with)\b", text):
+            return Action("get_intake_status", {}) if first else Action()
         if re.search(r"\b(remove|revoke|stop sharing)\b", text):
             return self._each(steps, "list_care_circle", "revoke_caregiver", "invitation_id",
                               lambda r: r.get("status") in {"active", "pending"}, limit=1)
