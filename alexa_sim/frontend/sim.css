@@ -1,0 +1,70 @@
+:root {
+  --bg: #071319; --panel: #0d222c; --line: #24414d; --fg: #e8f1f4; --muted: #94adb7;
+  --accent: #3ec1b4; --accent-2: #5fd8ff; --notify: #f7d046; --danger: #ff7a6e;
+  --screen: #f4f8f9; --screen-fg: #13262e;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: radial-gradient(circle at 30% -10%, #17394a, var(--bg) 60%); color: var(--fg);
+  font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; min-height: 100vh; }
+button, input, select { font: inherit; }
+button { cursor: pointer; border: 0; border-radius: 999px; padding: .55rem 1rem; background: var(--accent); color: #032a2a; font-weight: 700; }
+button.secondary { background: transparent; color: var(--fg); border: 1px solid var(--line); }
+button:disabled { opacity: .45; cursor: default; }
+select, input { background: #08171e; color: var(--fg); border: 1px solid var(--line); border-radius: 10px; padding: .5rem .7rem; }
+.shell { max-width: 1400px; margin: 0 auto; padding: 16px; }
+.top { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+h1 { margin: 0; font-size: 1.5rem; } h2 { font-size: 1rem; margin: 0 0 10px; }
+.muted { color: var(--muted); font-weight: 400; } .small { font-size: .82rem; }
+.note { margin: 6px 0 0; display: inline-block; background: #fff3ca; color: #513b00; border-radius: 8px; padding: .35rem .7rem; font-size: .85rem; }
+.voicebar { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+.toggle { display: inline-flex; gap: 6px; align-items: center; }
+.stage { display: grid; grid-template-columns: minmax(0, 2.1fr) minmax(240px, 1fr) minmax(280px, 1.1fr); gap: 16px; margin-top: 16px; align-items: start; }
+.device, .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 22px; padding: 14px; box-shadow: 0 18px 40px #0007; }
+.panel { border-radius: 16px; margin-bottom: 12px; }
+.device-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.state { font-size: .72rem; letter-spacing: .1em; text-transform: uppercase; color: var(--accent-2); }
+
+/* Echo Show-style screen */
+.screen { background: var(--screen); color: var(--screen-fg); border-radius: 14px; aspect-ratio: 16 / 10; overflow: auto; padding: 16px; position: relative; }
+.home { text-align: center; padding-top: 6%; color: #4d6670; }
+.clock { font-size: 3.2rem; font-weight: 300; color: var(--screen-fg); }
+.convo { display: flex; flex-direction: column; gap: 6px; }
+.bubble { max-width: 85%; padding: 8px 12px; border-radius: 14px; background: #dce9ec; }
+.bubble.user { align-self: flex-end; background: #b6ece4; }
+.bubble.system { align-self: center; background: transparent; color: #5b727b; font-size: .82rem; }
+.app-frame { width: 100%; height: 260px; border: 0; border-radius: 12px; background: #fff; margin-top: 10px; box-shadow: 0 2px 10px #0002; }
+.lightbar { height: 6px; border-radius: 999px; background: #18323c; margin: 12px 8% 0; overflow: hidden; position: relative; }
+.lightbar span { position: absolute; inset: 0; transform: scaleX(0); background: linear-gradient(90deg, transparent, var(--accent-2), transparent); transition: transform .25s; }
+[data-state="listening"] .lightbar span { transform: scaleX(1); animation: pulse 1s ease-in-out infinite; }
+[data-state="thinking"] .lightbar span { transform: scaleX(.35); animation: sweep 1s linear infinite; }
+[data-state="speaking"] .lightbar span { transform: scaleX(1); animation: pulse .5s ease-in-out infinite; }
+
+/* Echo Dot-style ring */
+.ring-wrap { display: grid; place-items: center; padding: 26px 0 10px; }
+.ring { width: 150px; height: 150px; border-radius: 50%; border: 14px solid #1d4250; box-shadow: inset 0 0 18px #0008; transition: border-color .25s, box-shadow .25s; }
+[data-state="listening"] .ring { border-color: var(--accent-2); box-shadow: 0 0 36px var(--accent-2); }
+[data-state="thinking"] .ring { border-color: var(--accent-2) #1d4250 var(--accent-2) #1d4250; animation: spin .9s linear infinite; }
+[data-state="speaking"] .ring { border-color: var(--accent-2); animation: pulse .5s ease-in-out infinite; }
+.dot.notify[data-state="idle"] .ring { border-color: var(--notify); box-shadow: 0 0 36px var(--notify); animation: pulse 1.6s ease-in-out infinite; }
+.caption { min-height: 3.2em; text-align: center; color: var(--fg); }
+
+.composer { display: flex; gap: 8px; margin-top: 12px; }
+.composer input { flex: 1; min-width: 0; }
+.mic { padding: .55rem .8rem; background: #173845; color: var(--fg); }
+.mic.live { background: var(--danger); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin-top: 8px; }
+.chip { background: transparent; border: 1px solid #8fb2bc; color: inherit; font-weight: 500; padding: .3rem .7rem; font-size: .82rem; }
+.dot .chip { border-color: var(--line); color: var(--muted); }
+.account { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.account.linked button { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+#open-invite { width: 100%; margin-top: 10px; }
+.row { display: flex; gap: 10px; align-items: end; justify-content: space-between; flex-wrap: wrap; margin-bottom: 8px; }
+.trace { list-style: none; margin: 0; padding: 0; max-height: 46vh; overflow: auto; font: 11.5px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.trace li { padding: 5px 0; border-bottom: 1px solid #ffffff10; word-break: break-word; white-space: pre-wrap; }
+.trace .out { color: var(--accent-2); } .trace .in { color: #b9e9e1; } .trace .host { color: var(--notify); } .trace .err { color: var(--danger); }
+.inspector[hidden] { display: none; }
+@keyframes pulse { 50% { opacity: .55; } }
+@keyframes sweep { from { transform: translateX(-100%) scaleX(.35); } to { transform: translateX(100%) scaleX(.35); } }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (max-width: 1100px) { .stage { grid-template-columns: 1fr 1fr; } .side { grid-column: 1 / -1; } }
+@media (max-width: 700px) { .stage { grid-template-columns: 1fr; } .screen { aspect-ratio: auto; min-height: 340px; } }

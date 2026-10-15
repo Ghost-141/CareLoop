@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "careloop"
+version = "0.1.0"
+description = "Accountable care-coordination MCP add-on and Alexa+ behavior simulator (synthetic demo)."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.12"
+dependencies = ["mcp>=2.1,<3", "pydantic>=2.7", "fastapi>=0.110", "uvicorn>=0.29"]
+
+[project.scripts]
+careloop = "care_loop.server:main"
+careloop-voice-sim = "care_sim.voice_main:main"
+careloop-alexa-sim = "alexa_sim.__main__:main"
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-asyncio>=0.23"]
+alexa-sim = ["websockets>=12"]
+simulator = ["strands-agents[ollama,openai]>=1.50"]
+voice = ["kokoro-onnx>=0.6", "mlx-whisper>=0.4; sys_platform == 'darwin' and platform_machine == 'arm64'"]
+
+[tool.setuptools.packages.find]
+where = ["server", "care_sim/backend", "alexa_sim/backend"]
+include = ["care_loop*", "care_sim*", "alexa_sim*"]
+
+[tool.setuptools.package-data]
+"care_loop.ui" = ["*.html"]
+[tool.pytest.ini_options]
+testpaths = ["server/tests", "care_sim/tests", "alexa_sim/tests"]
+pythonpath = ["server", "care_sim/backend", "alexa_sim/backend"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"

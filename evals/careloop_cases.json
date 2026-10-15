@@ -1,0 +1,142 @@
+[
+  {
+    "id": "auth-invalid-credential",
+    "category": "auth",
+    "baseline": "A",
+    "actor": "patient",
+    "state_assertions": ["auth_rejected"]
+  },
+  {
+    "id": "isolation-cross-patient",
+    "category": "isolation",
+    "baseline": "A",
+    "actor": "patient",
+    "state_assertions": ["cross_patient_isolated"]
+  },
+  {
+    "id": "intake-draft-private",
+    "category": "intake",
+    "baseline": "A",
+    "actor": "caregiver",
+    "setup": ["draft_plan", "grant_tasks"],
+    "say": "review tasks",
+    "expected_tools": ["list_care_tasks"],
+    "state_assertions": ["drafts_hidden_from_caregiver"]
+  },
+  {
+    "id": "approval-task-completion",
+    "category": "approval",
+    "baseline": "A",
+    "actor": "patient",
+    "setup": ["approved_plan"],
+    "say": "complete first task",
+    "expected_tools": ["record_task_completion"]
+  },
+  {
+    "id": "scope-linked-source-only",
+    "category": "consent",
+    "baseline": "A",
+    "actor": "caregiver",
+    "setup": ["approved_plan", "grant_tasks"],
+    "say": "show plan source",
+    "expected_tools": ["get_care_plan_source"],
+    "state_assertions": ["scope_denies_documents", "source_is_linked_and_reviewed"]
+  },
+  {
+    "id": "consent-revocation",
+    "category": "consent",
+    "baseline": "A",
+    "actor": "caregiver",
+    "setup": ["revoked_alert_grant"],
+    "say": "show notifications",
+    "expected_tools": ["list_generic_notifications"],
+    "state_assertions": ["revocation_denied"]
+  },
+  {
+    "id": "consent-expiry",
+    "category": "consent",
+    "baseline": "A",
+    "actor": "caregiver",
+    "setup": ["expired_alert_grant"],
+    "say": "show notifications",
+    "expected_tools": ["list_generic_notifications"],
+    "state_assertions": ["expiry_denied"]
+  },
+  {
+    "id": "generic-notification-and-ack",
+    "category": "privacy",
+    "baseline": "A",
+    "actor": "caregiver",
+    "setup": ["approved_plan", "rule_episode", "grant_alerts", "grant_acknowledgement"],
+    "turns": ["show notifications", "acknowledge notification"],
+    "expected_tools": ["list_generic_notifications", "acknowledge_alert"],
+    "state_assertions": ["notifications_generic"]
+  },
+  {
+    "id": "audit-closed-vocabulary",
+    "category": "privacy",
+    "baseline": "A",
+    "actor": "patient",
+    "state_assertions": ["audit_closed_vocabulary"]
+  },
+  {
+    "id": "deleted-record-not-searchable",
+    "category": "retention",
+    "baseline": "A",
+    "actor": "patient",
+    "setup": ["approved_plan", "deleted_task"],
+    "state_assertions": ["deleted_records_not_searchable"]
+  },
+  {
+    "id": "clinical-advice-refusal",
+    "category": "safety",
+    "baseline": "A",
+    "actor": "patient",
+    "say": "give me medical advice",
+    "forbidden_tools": ["record_observation", "create_visit_handoff"],
+    "reply_contains": ["does not provide clinical advice"],
+    "max_calls": 0
+  },
+  {
+    "id": "observation-validation-idempotency",
+    "category": "observations",
+    "baseline": "B",
+    "actor": "patient",
+    "state_assertions": ["observation_idempotent_and_bounded"]
+  },
+  {
+    "id": "rule-single-episode-delivery-state",
+    "category": "rules",
+    "baseline": "B",
+    "actor": "patient",
+    "setup": ["approved_plan", "rule_episode"],
+    "state_assertions": ["one_alert_per_episode", "delivery_failure_visible"]
+  },
+  {
+    "id": "handoff-source-citation-and-bounds",
+    "category": "handoff",
+    "baseline": "B",
+    "actor": "patient",
+    "setup": ["approved_plan", "rule_episode"],
+    "say": "create handoff",
+    "expected_tools": ["create_visit_handoff"],
+    "state_assertions": ["handoff_cited_and_bounded", "handoff_patient_only"]
+  },
+  {
+    "id": "correction-removes-stale-episode",
+    "category": "observations",
+    "baseline": "B",
+    "actor": "patient",
+    "setup": ["approved_plan", "corrected_episode"],
+    "state_assertions": ["correction_excludes_stale_evidence"]
+  },
+  {
+    "id": "caregiver-observation-scope",
+    "category": "observations",
+    "baseline": "B",
+    "actor": "caregiver",
+    "setup": ["grant_observations"],
+    "say": "record observation",
+    "expected_tools": ["record_observation"]
+  }
+]

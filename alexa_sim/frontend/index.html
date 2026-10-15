@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CareLoop Assistant Simulator</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/static/sim.css">
+</head>
+<body>
+<main class="shell">
+  <header class="top">
+    <div>
+      <h1>CareLoop <span class="muted">assistant simulator</span></h1>
+      <p class="note">Alexa+ behavior simulator for a hackathon demo. Not an Amazon product. Synthetic data only.</p>
+    </div>
+    <div class="voicebar">
+      <label class="toggle"><input type="checkbox" id="wake"> Hands-free “Alexa…”</label>
+      <label class="muted small">Hears:
+        <select id="wake-target"><option value="show">Maya’s Show</option><option value="dot">Sam’s Dot</option></select>
+      </label>
+      <span id="voice-engines" class="small muted"></span>
+      <span id="voice-status" class="small muted"></span>
+    </div>
+  </header>
+
+  <section class="stage">
+    <article class="device show" id="device-show" data-state="idle">
+      <div class="device-head"><strong>Maya’s Echo Show</strong><span class="state" id="show-state">idle</span></div>
+      <div class="screen" id="screen">
+        <div class="home" id="home">
+          <div class="clock" id="clock"></div>
+          <p>Link CareLoop in the Alexa app, then say “Alexa, …” or tap a prompt below.</p>
+        </div>
+        <div class="convo" id="convo" hidden></div>
+        <div class="app-slot" id="app-slot"></div>
+      </div>
+      <div class="lightbar" aria-hidden="true"><span></span></div>
+      <form class="composer" data-device="show">
+        <button type="button" class="mic" data-mic="show" aria-label="Talk to Maya’s Show">🎤</button>
+        <input aria-label="Say something to Maya’s Show" placeholder="“Alexa, show my tasks”">
+        <button>Send</button>
+      </form>
+      <div class="chips" id="show-chips"></div>
+    </article>
+
+    <article class="device dot" id="device-dot" data-state="idle">
+      <div class="device-head"><strong>Sam’s Echo Dot</strong><span class="state" id="dot-state">idle</span></div>
+      <div class="ring-wrap"><div class="ring" id="ring" role="img" aria-label="Light ring"></div></div>
+      <p class="caption" id="dot-caption">Voice only. Audience caption shows exactly what is spoken.</p>
+      <div class="chips" id="dot-chips"></div>
+      <form class="composer" data-device="dot">
+        <button type="button" class="mic" data-mic="dot" aria-label="Talk to Sam’s Dot">🎤</button>
+        <input aria-label="Say something to Sam’s Dot" placeholder="“Alexa, any CareLoop updates?”">
+        <button>Send</button>
+      </form>
+    </article>
+
+    <aside class="side">
+      <section class="panel">
+        <h2>Alexa app <span class="muted small">(simulated)</span></h2>
+        <div class="account" data-account="maya">
+          <div><strong>Maya</strong> <span class="muted small">patient · Echo Show</span></div>
+          <button data-link="maya">Enable CareLoop</button>
+        </div>
+        <div class="account" data-account="sam">
+          <div><strong>Sam</strong> <span class="muted small">caregiver · Echo Dot</span></div>
+          <button data-link="sam">Enable CareLoop</button>
+        </div>
+        <button id="open-invite" class="secondary" disabled>Sam opens Maya’s invitation link</button>
+        <p class="small muted">Linking uses synthetic credentials held by this host; they never reach the browser or the app views.</p>
+      </section>
+      <section class="panel">
+        <h2>Director</h2>
+        <div class="row">
+          <label class="small">Planner
+            <select id="planner"><option value="ollama">Local LLM (Ollama)</option><option value="mock">Mock replay</option></select>
+          </label>
+          <button id="reset" class="secondary">Reset conversation</button>
+        </div>
+        <label class="toggle small"><input type="checkbox" id="show-inspector" checked> Show MCP inspector</label>
+      </section>
+      <section class="panel inspector" id="inspector">
+        <h2>MCP inspector</h2>
+        <ol class="trace" id="trace"></ol>
+      </section>
+    </aside>
+  </section>
+</main>
+<script src="/static/sim.js"></script>
+</body>
+</html>
