@@ -30,7 +30,7 @@ _FREQUENCIES: list[tuple[str, str]] = [
     (r"\b(?:once\s*(?:a\s*)?day|once\s+daily|every\s+(?:day|morning|evening|afternoon)|daily|o\.?d\.?|q\.?d\.?)\b", "once_daily"),
 ]
 _TIME_OF_DAY = [(r"\bbefore\s+breakfast\b", "07:30"), (r"\bmorning\b|\bbreakfast\b", "08:00"),
-                (r"\bnoon\b|\blunch\b", "12:00"), (r"\bafternoon\b", "14:00"),
+                (r"\bnoon\b|\blunch", "12:00"), (r"\bafternoon\b", "14:00"),
                 (r"\bevening\b|\bdinner\b|\bsupper\b", "19:00")]
 DEFAULT_TIMES = {
     "once_daily": ["08:00"], "twice_daily": ["08:00", "20:00"], "three_times_daily": ["08:00", "14:00", "20:00"],

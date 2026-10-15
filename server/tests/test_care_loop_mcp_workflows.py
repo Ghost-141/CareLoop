@@ -64,7 +64,7 @@ PLAN = "TASK: Take a daily walk | schedule: morning\nRULE: PAIN_SCORE_AT_OR_ABOV
 
 
 def assert_voice_contract(result: dict, view: str) -> None:
-    assert set(result) == {"status", "speakable", "surface", "view", "refs"}
+    assert set(result) - {"reminders"} == {"status", "speakable", "surface", "view", "refs"}
     assert result["status"] == "ok"
     assert isinstance(result["speakable"], str) and result["speakable"]
     assert result["surface"] in {"glance", "private_screen"}

@@ -69,7 +69,7 @@ def create_alexa_sim_app(settings: AlexaSimSettings | None = None, pool: MCPClie
     traces: list[dict[str, Any]] = []
     sockets: set[WebSocket] = set()
     devices = {"show": Device("show", DeviceKind.SHOW, owner="maya"), "dot": Device("dot", DeviceKind.DOT, owner="sam")}
-    host_state: dict[str, Any] = {"invitation_id": None}
+    host_state: dict[str, Any] = {"invitation_id": None, "reminders": []}
 
     async def broadcast(message: dict[str, Any]) -> None:
         for socket in list(sockets):
@@ -145,6 +145,17 @@ def create_alexa_sim_app(settings: AlexaSimSettings | None = None, pool: MCPClie
             dot.notification = any(ref.get("status") == "action_required" for ref in refs)
         await device_event(dot)
 
+    async def remember_reminders(results: list[dict[str, Any]]) -> None:
+        """Alexa+ would create these with its own reminders feature; the simulator keeps them for the Director."""
+        for data in results:
+            for reminder in data.get("reminders") or []:
+                # One reminder per task, for whoever currently owns it (reassigning replaces it).
+                host_state["reminders"] = [r for r in host_state["reminders"] if r["task_id"] != reminder["task_id"]]
+                host_state["reminders"].append(reminder)
+                who = "Maya" if reminder["to"] == "patient" else reminder["to"]
+                await trace({"type": "host", "text": f"Alexa+ reminder set for {who}: '{reminder['label']}' at "
+                                                     f"{', '.join(reminder['times'])} (simulated native reminder)"})
+
     def remember_invitation(turn) -> None:
         """Model the invitation link Maya's invite would send to Sam out of band."""
         for name, data in turn.results:
@@ -177,6 +188,7 @@ def create_alexa_sim_app(settings: AlexaSimSettings | None = None, pool: MCPClie
             "label": LABEL,
             "planner": orchestrator.planner.name,
             "invitation_pending": bool(host_state["invitation_id"]),
+            "reminders": host_state["reminders"],
             "devices": [{"id": d.id, "kind": d.kind, "owner": d.owner, "account": d.account, "state": d.state,
                          "notification": d.notification, "pending": bool(d.pending)} for d in devices.values()],
             "trace": traces[-60:],
@@ -244,6 +256,18 @@ def create_alexa_sim_app(settings: AlexaSimSettings | None = None, pool: MCPClie
             await announce("dot", "Thanks. I've sent it to Maya to review.")
         return {"job": job}
 
+    @app.post("/api/reminders/ring")
+    async def ring_reminder() -> dict[str, Any]:
+        """Director: fire the next simulated Alexa+ reminder on the right device."""
+        if not host_state["reminders"]:
+            raise HTTPException(404, "No reminders are set")
+        reminder = host_state["reminders"].pop(0)
+        if reminder["to"] == "patient":
+            await announce("show", f"Reminder: {reminder['label']}.")
+        else:
+            await announce("dot", f"Reminder for {reminder['to']}: Maya's {reminder['label']}.")
+        return {"rang": reminder, "remaining": len(host_state["reminders"])}
+
     @app.post("/api/planner")
     async def set_planner(body: PlannerIn) -> dict[str, str]:
         orchestrator.planner = build_planner(settings, body.mode)
@@ -268,6 +292,7 @@ def create_alexa_sim_app(settings: AlexaSimSettings | None = None, pool: MCPClie
             await device_event(device)
         if device.account == "maya":
             remember_invitation(turn)
+        await remember_reminders([data for _name, data in turn.results])
         if turn.tools:
             await sync_caregiver_notifications()
         await trace({"type": "turn", "device_id": device.id, "planner": turn.planner, "tools": turn.tools,
@@ -333,6 +358,7 @@ def create_alexa_sim_app(settings: AlexaSimSettings | None = None, pool: MCPClie
         result = await pool.call_tool(account, body.name, body.arguments, source="app")
         if body.name != "get_private_view":
             await sync_caregiver_notifications()
+            await remember_reminders([result["structuredContent"] or {}])
         return {"structuredContent": result["structuredContent"], "content": result["content"], "isError": result["isError"]}
 
     @app.websocket("/ws")

@@ -54,6 +54,7 @@ PORTAL_HTML = r"""<!doctype html>
 class InvitationIn(BaseModel):
     scopes: list[str] = Field(min_length=1)
     expires_at: int | None = None
+    name: str | None = Field(default=None, max_length=40)
 
 
 class DocumentTextIn(BaseModel):
@@ -136,7 +137,7 @@ def build_router(service: CareLoopService, auth: TokenAuth) -> APIRouter:
 
     @router.post("/api/care/invitations")
     def invite(body: InvitationIn, identity: Identity = Depends(current_identity)) -> dict[str, Any]:
-        return {"invitation": denied(lambda: service.invite(identity, body.scopes, body.expires_at))}
+        return {"invitation": denied(lambda: service.invite(identity, body.scopes, body.expires_at, body.name))}
 
     @router.post("/api/care/invitations/{invitation_id}/accept")
     def accept(invitation_id: str, identity: Identity = Depends(current_identity)) -> dict[str, Any]:

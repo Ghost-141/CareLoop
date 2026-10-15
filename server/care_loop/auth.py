@@ -70,8 +70,9 @@ class BearerAuthMiddleware:
         try:
             identity = self.auth.identity_for_headers(headers)
         except AuthError:
+            # Alexa+ requires a plain 401 without WWW-Authenticate (not yet supported by its MCP client).
             body = b'{"error":"unauthorized","message":"missing or invalid CareLoop bearer token"}'
-            await send({"type":"http.response.start","status":401,"headers":[(b"content-type",b"application/json"),(b"content-length",str(len(body)).encode()),(b"www-authenticate",b'Bearer realm="careloop"')]})
+            await send({"type":"http.response.start","status":401,"headers":[(b"content-type",b"application/json"),(b"content-length",str(len(body)).encode())]})
             await send({"type":"http.response.body","body":body}); return
         scope.setdefault("state", {})["careloop_identity"] = identity
         await self.app(scope, receive, send)

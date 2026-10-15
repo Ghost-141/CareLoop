@@ -26,6 +26,9 @@ Rules:
 - Tool results contain only `speakable`, `status`, `refs` (opaque ids with labels like "draft task 1") and a view link. Pass ref ids back to action tools. Never invent ids: look them up with a list tool first.
 - For "do my check-in" (no value given) call start_daily_checkin with no arguments: CareLoop asks the person its own follow-up questions. Never ask for check-in values yourself.
 - If the person states a pain score directly, use record_pain_observation with that integer 0-10 and a fresh unique idempotency_key.
+- "Add a question for my doctor: ..." → add_question_for_clinician with the question text. Never answer the question yourself.
+- To assign a task to a family member, look up the task (list_care_tasks) and the person (list_care_circle), then call assign_task.
+- A family member asking about their own tasks → list_my_assigned_tasks; when they say they did one → record_task_completion with its id.
 - Never give medical advice, diagnosis, dosage or emergency guidance. For those, do not call a tool; say CareLoop can't advise on that and to contact their clinician (or emergency services in an emergency).
 - When you have the result you need, stop calling tools and answer in one short spoken sentence."""
 
@@ -79,6 +82,20 @@ class MockReplay:
 
     def _plan(self, text: str, steps: list[Step]) -> Action:
         first = not steps
+        question = re.search(r"\b(?:question|ask)\b.*?\b(?:doctor|clinician|nurse|care team)\b[:,]?\s*(.*)$", text)
+        if question:
+            asked = question.group(1).strip(" .?!") or text
+            return Action("add_question_for_clinician", {"question": asked[:300] + "?"}) if first else Action()
+        if re.search(r"\bwho\b.*\b(seen|accessed|looked|viewed|checked)\b", text):
+            return Action("who_accessed_my_care_data", {}) if first else Action()
+        if re.search(r"\b(done|did|finished|completed)\b.*\bmaya'?s\b|\bmaya'?s\b.*\b(is )?(done|finished)\b", text):
+            return self._each(steps, "list_my_assigned_tasks", "record_task_completion", "task_id",
+                              lambda r: r.get("kind") == "task", limit=1)
+        if re.search(r"\btasks? for maya\b|\bwhat do i need to do\b|\bassigned to me\b|\bmy (assigned )?tasks\b.*\bmaya\b", text):
+            return Action("list_my_assigned_tasks", {}) if first else Action()
+        assignee = re.search(r"\b(sam|mom|dad|brother|sister)\b", text)
+        if assignee and re.search(r"\b(handles?|assign|takes? care of|will do|is doing|do my)\b", text) and "invite" not in text:
+            return self._assign(text, steps)
         if re.search(r"\b(new|import|got)\b.*\b(care )?plan\b", text):
             return Action("import_care_plan_text", {"title": DEMO_PLAN_TITLE, "text": DEMO_PLAN_TEXT}) if first else Action()
         if "approve" in text:
@@ -94,7 +111,12 @@ class MockReplay:
                 scopes += ["receive_alerts", "acknowledge_alerts"]
             if re.search(r"\b(upload|document|prescription)", text):
                 scopes.append("upload_documents")
+            if re.search(r"\b(help|handle|do|perform)\b.*\btasks?\b", text):
+                scopes.append("perform_tasks")
             arguments: dict[str, Any] = {"scopes": scopes}
+            named = re.search(r"\b(sam|mom|dad)\b", text)
+            if named:
+                arguments["name"] = named.group(1).capitalize()
             weeks = re.search(r"\b(one|two|three|four|\d+) weeks?\b", text)
             if weeks:
                 count = {"one": 1, "two": 2, "three": 3, "four": 4}.get(weeks.group(1)) or int(weeks.group(1))
@@ -134,6 +156,29 @@ class MockReplay:
         if first:
             return Action(say="Sorry, I can't help with that in CareLoop yet.")
         return Action()
+
+    @staticmethod
+    def _assign(text: str, steps: list[Step]) -> Action:
+        """Find the task (by time of day) and the family member, then assign."""
+        called = {name for name, _, _ in steps}
+        if "list_care_tasks" not in called:
+            return Action("list_care_tasks", {})
+        if "list_care_circle" not in called:
+            return Action("list_care_circle", {})
+        if "assign_task" in called:
+            return Action()
+        tasks = [r for r in _refs(steps, "list_care_tasks") if r.get("kind") == "task" and r.get("status") == "active"]
+        if "evening" in text or "night" in text:
+            tasks = [r for r in tasks if any(t >= "17:00" for t in r.get("times", []))] or tasks
+        elif "morning" in text:
+            tasks = [r for r in tasks if any(t < "12:00" for t in r.get("times", []))] or tasks
+        people = [r for r in _refs(steps, "list_care_circle")
+                  if r.get("status") == "active" and "perform_tasks" in r.get("scopes", [])]
+        if not tasks:
+            return Action(say="There's no active task to assign yet.")
+        if not people:
+            return Action(say="No family member can be assigned tasks yet. Invite them to help with tasks first.")
+        return Action("assign_task", {"task_id": tasks[0]["id"], "assignee_id": people[0]["id"]})
 
     @staticmethod
     def _each(steps: list[Step], lookup: str, act: str, key: str, want, limit: int | None = None) -> Action:

@@ -154,11 +154,16 @@
     "care-circle": (d) => {
       const grants = d.grants || [];
       if (!grants.length) return empty("Nobody has access to your CareLoop yet.");
-      root.replaceChildren(...grants.map((g, i) => card(
-        "Caregiver access " + (i + 1), g.status,
-        (g.scopes || []).join(", ").replaceAll("_", " ") + " · expires " + when(g.expires_at),
+      const parts = grants.map((g, i) => card(
+        g.display_name || "Caregiver access " + (i + 1), g.status,
+        (g.scopes || []).join(", ").replaceAll("_", " ") + (g.expires_at ? " · expires " + when(g.expires_at) : " · no expiry"),
         g.status === "active" || g.status === "pending"
-          ? action("Revoke", "secondary", () => callTool("revoke_caregiver", { invitation_id: g.id })) : null)));
+          ? action("Revoke", "secondary", () => callTool("revoke_caregiver", { invitation_id: g.id })) : null));
+      const access = d.access || [];
+      parts.push(el("h2", "", "Who accessed your care data (last 7 days)"));
+      if (!access.length) parts.push(card("No one else accessed your care data", null, ""));
+      access.forEach((p) => parts.push(card(p.name, null, (p.actions || []).join(" · "))));
+      root.replaceChildren(...parts);
     },
     "notifications": (d) => {
       const updates = d.updates || [];
@@ -255,7 +260,8 @@
         const button = isTask && state === "active" && VIEW === "tasks"
           ? action("Mark done", "", () => callTool("record_task_completion", { task_id: item.id })) : null;
         const c = card(item.label || item.text || kindOf(item), state,
-          kindOf(item) + ((item.times || []).length ? " · " + item.times.join(", ") : item.schedule ? " · " + item.schedule : ""), button);
+          kindOf(item) + ((item.times || []).length ? " · " + item.times.join(", ") : item.schedule ? " · " + item.schedule : "")
+          + (isTask && state === "active" ? " · " + (item.assignee_name ? "assigned to " + item.assignee_name : "you") : ""), button);
         if (item.label && item.text) c.append(el("div", "meta", item.text));
         sourceLines(item, c);
         return c;
@@ -300,12 +306,17 @@
     const h = (d.handoff || {}).data || d.handoff || {};
     const t = h.totals || {};
     const parts = [card(h.label || "Visit handoff", null, when(h.from_date) + " → " + when(h.to_date))];
-    parts.push(card("Totals", null, `${t.plan_items || 0} plan items · ${t.task_events || 0} completed tasks · ${t.observations || 0} check-ins · ${t.alerts || 0} alerts · ${t.corrections || 0} corrections`));
+    parts.push(card("Totals", null, `${t.plan_items || 0} plan items · ${t.task_events || 0} completed tasks · ${t.missed_tasks || 0} missed · ${t.observations || 0} check-ins · ${t.alerts || 0} alerts · ${t.questions || 0} questions · ${t.corrections || 0} corrections`));
     const section = (title, rows, fn) => { if (!rows || !rows.length) return; parts.push(el("h2", "", title)); rows.forEach((r) => parts.push(fn(r))); };
-    section("Plan items", h.plan_items, (p) => { const c = card(p.text, p.status, p.type === "PLAN_RULE" ? "Follow-up rule" : "Task");
+    section("Questions for your clinician", h.questions, (q) => card(q.text, null, "asked " + when(q.asked_at)));
+    section("Plan items", h.plan_items, (p) => { const c = card(p.text, p.status, (p.type === "PLAN_RULE" ? "Follow-up rule" : "Task")
+      + ((p.times || []).length ? " · " + p.times.join(", ") : "") + (p.type === "PLAN_TASK" ? " · " + (p.assignee === "patient" ? "patient" : p.assignee) : ""));
       ((p.source_citation || {}).page_excerpts || []).forEach((e) => c.append(el("div", "cite", "p." + e.page + " · " + e.excerpt))); return c; });
+    section("Completed tasks", h.task_events, (e) => card("Task completed", null, when(e.completed_at) + " · by " + (e.completed_by_name || "the patient")));
     section("Check-ins", h.observations, (o) => card("Pain score " + o.pain_score + " / 10", null, when(o.observed_at)));
-    section("Alerts", h.alerts, (a) => card("Follow-up rule episode", a.status, (a.acknowledgements || []).length + " caregiver acknowledgement(s)"));
+    section("Alerts", h.alerts, (a) => a.kind === "missed_task"
+      ? card("Missed: " + (a.task_label || "task"), a.status, "due " + when(a.due_at) + (a.assignee_name ? " · assigned to " + a.assignee_name : ""))
+      : card("Follow-up rule episode", a.status, (a.acknowledgements || []).length + " caregiver acknowledgement(s)"));
     section("Notes", h.uncertainties, (u) => card(u));
     root.replaceChildren(...parts);
   }

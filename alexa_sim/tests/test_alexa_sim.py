@@ -409,3 +409,40 @@ def test_family_member_shares_a_document_and_patient_is_told(careloop_server) ->
         status = say("show", "Alexa, is my document ready?")
         assert status["screen"]["resource_uri"] == "ui://careloop/plan-review"
         assert "Amoxicillin" not in status["reply"]
+
+
+def test_family_tasks_reminders_questions_and_access_log_live(careloop_server) -> None:
+    settings = AlexaSimSettings(mcp_url=careloop_server, planner="mock")
+    with TestClient(create_alexa_sim_app(settings, planner=MockReplay())) as client:
+        client.post("/api/link", json={"account": "maya"})
+        client.post("/api/link", json={"account": "sam"})
+        say = lambda device, text: client.post("/api/utterance", json={"device_id": device, "text": text}).json()
+
+        say("show", "Alexa, I got a new care plan from my clinic")
+        say("show", "Alexa, approve my plan")
+        assert say("show", "Alexa, let Sam help with my tasks")["reply"].startswith("Invitation created with 2 permissions")
+        assert client.post("/api/invite/open").json()["accepted"] is True
+
+        assigned = say("show", "Alexa, Sam handles my evening task")
+        assert assigned["tools"] == ["list_care_tasks", "list_care_circle", "assign_task"]
+        assert assigned["reply"].startswith("Done. Sam will handle Complete the evening check-in at 19:00.")
+        reminders = client.get("/api/state").json()["reminders"]
+        assert any(r["to"] == "Sam" and r["times"] == ["19:00"] for r in reminders)
+        while client.get("/api/state").json()["reminders"]:
+            rang = client.post("/api/reminders/ring").json()["rang"]
+            if rang["to"] == "Sam":
+                break
+        dot_turns = [e for e in client.get("/api/state").json()["trace"] if e.get("type") == "turn" and e["device_id"] == "dot"]
+        assert dot_turns[-1]["reply"] == "Reminder for Sam: Maya's Complete the evening check-in."
+
+        assert say("dot", "Alexa, what are my tasks for Maya?")["reply"] == \
+            "You have 1 task to help with: Complete the evening check-in at 19:00."
+        assert say("dot", "Alexa, I've done Maya's evening task")["reply"] == "Thanks. I've recorded that you did it."
+
+        saved = say("show", "Alexa, add a question for my doctor: can I stop my medicine early")
+        assert saved["tools"] == ["add_question_for_clinician"] and saved["reply"].startswith("Saved.")
+        assert "medicine" not in saved["reply"].lower()
+        assert say("show", "Alexa, get me ready for my appointment")["reply"].endswith(
+            "It includes 1 question for your clinician.")
+        log = say("show", "Alexa, who has seen my care data this week?")["reply"]
+        assert log.startswith("In the last 7 days, Sam") and "completed a task" in log

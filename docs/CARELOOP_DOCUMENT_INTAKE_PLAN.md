@@ -1,6 +1,6 @@
 # Document intake plan: PDF → OCR fallback → LLM → human review → Alexa+
 
-> **Status (Oct 15, 2026): phases 1–5 implemented.** Decisions: D1 **PaddleOCR**, D2 **local Ollama** (`gemma4:e4b-mlx` chosen: 8 s vs 25 s for `qwen3.5:4b-mlx`, fewer false flags), D5 **patient or family members with `upload_documents`** (the patient still approves). Eval results are in the README. Phase 6 (family assignment) is not built yet.
+> **Status (Oct 15, 2026): phases 1–5 implemented.** Decisions: D1 **PaddleOCR**, D2 **local Ollama** (`gemma4:e4b-mlx` chosen: 8 s vs 25 s for `qwen3.5:4b-mlx`, fewer false flags), D5 **patient or family members with `upload_documents`** (the patient still approves). Eval results are in the README. Phase 6 (family assignment + reminder suggestions) is also implemented, using `assign_task` and a `perform_tasks` permission.
 
 **Goal:** a patient uploads a typed prescription or discharge plan. CareLoop extracts the text, falling back to OCR only when a page has no usable text. A local LLM turns the text into *draft* tasks and other items, each tied to the exact source lines it came from. Code then checks every item against the source. A person reviews, edits and approves each item, and **nothing reaches Alexa+ until it is approved.**
 

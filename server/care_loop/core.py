@@ -8,12 +8,12 @@ from typing import Any
 from .auth import Identity
 from .storage import CareLoopStorage
 
-CORE_TYPES = {"PATIENT", "DOCUMENT", "PLAN_TASK", "PLAN_RULE", "PLAN_NOTE", "INTAKE_JOB", "OBSERVATION", "TASK_EVENT", "CONSENT", "ALERT", "HANDOFF", "SEARCH_ENTRY", "AUDIT"}
+CORE_TYPES = {"PATIENT", "DOCUMENT", "PLAN_TASK", "PLAN_RULE", "PLAN_NOTE", "INTAKE_JOB", "QUESTION", "OBSERVATION", "TASK_EVENT", "CONSENT", "ALERT", "HANDOFF", "SEARCH_ENTRY", "AUDIT"}
 SEARCHABLE_TYPES = {"DOCUMENT", "PLAN_TASK", "PLAN_RULE", "PLAN_NOTE", "OBSERVATION", "TASK_EVENT", "HANDOFF"}
 # These are deliberately capability names, not a general-purpose role bag.  A
 # caregiver never receives ownership or data-rights capabilities.
 CAREGIVER_SCOPES = frozenset({"read_tasks", "read_observations", "write_observations", "receive_alerts", "acknowledge_alerts",
-                              "upload_documents"})
+                              "upload_documents", "perform_tasks"})
 CAREGIVER_RECORD_TYPES = {
     # Documents and alerts need purpose-built, deliberately minimal views.
     # Never make either full record listable merely because a caregiver needs
@@ -24,7 +24,17 @@ CAREGIVER_RECORD_TYPES = {
 # Audit fields are intentionally closed vocabulary, so no clinical content can
 # be smuggled into logs through caller-controlled action/outcome strings.
 AUDIT_ACTIONS = frozenset({"access_invited", "access_granted", "access_revoked", "alert_acknowledged", "data_exported", "record_deleted", "records_purged",
-                           "document_uploaded", "plan_item_approved", "plan_item_rejected"})
+                           "document_uploaded", "plan_item_approved", "plan_item_rejected",
+                           # Access transparency: what a family member looked at or did (never the content).
+                           "tasks_viewed", "observations_viewed", "records_viewed", "source_viewed", "history_searched",
+                           "task_assigned", "task_completed", "question_added"})
+ACCESS_PHRASES = {"tasks_viewed": "viewed your tasks", "observations_viewed": "viewed your check-ins",
+                  "records_viewed": "viewed your records", "source_viewed": "viewed a plan source",
+                  "history_searched": "searched your history", "alert_acknowledged": "acknowledged an update",
+                  "document_uploaded": "uploaded a document", "task_completed": "completed a task",
+                  "access_granted": "accepted your invitation"}
+MISSED_TASK_GRACE_SECONDS = 60 * 60
+MAX_QUESTION_CHARS = 300
 PLAN_TYPES = frozenset({"PLAN_TASK", "PLAN_RULE", "PLAN_NOTE"})
 REVIEWABLE = frozenset({"draft", "needs_review"})
 INTAKE_JOB_TTL_SECONDS = 24 * 3600
@@ -40,6 +50,8 @@ class CareLoopService:
     retention_days: int | None = 365
     # Document intake engines (OCR + local model); see intake_engines.py. None = fixtures only.
     intake: Any = None
+    # Local time zone for task times ("20:00") and the missed-task check; None = this machine's zone.
+    timezone: str | None = None
     def __post_init__(self) -> None:
         # Re-evaluate durable approved rules after a restart. Alert episode
         # keys make this safe to run repeatedly.
@@ -121,13 +133,18 @@ class CareLoopService:
         for draft in extracted.drafts:
             payload: dict[str, Any] = {
                 "text": draft.text, "page": draft.page,
+                # The name Alexa says in replies and reminders; the patient can edit it on screen.
+                "label": draft.text[:60] if draft.kind == "TASK" else "Follow-up rule",
                 # Conflicting instructions are visible as proposals for a
                 # human reviewer, but cannot be patient-activated by code.
                 "status": "pending_review" if conflicting else "draft",
                 "approval_required": True, "manual_review_required": conflicting,
             }
             if draft.schedule is not None:
+                from .structuring.validate import detect_frequency, suggested_times
                 payload["schedule"] = draft.schedule
+                # Suggested clock times (editable) so approved tasks can carry reminder suggestions.
+                payload["times"] = suggested_times(detect_frequency(draft.schedule) or "once_daily", draft.schedule)
             drafts.append(self.write(identity, "PLAN_TASK" if draft.kind == "TASK" else "PLAN_RULE", payload,
                                      source_id=document["id"], reviewed=False))
         return {"document": document, "drafts": drafts, "manual_review_required": bool(extracted.manual_review_reasons),
@@ -226,7 +243,10 @@ class CareLoopService:
         job = {"status": "processing", "title": title, "uploaded_by": identity.subject_id, "uploaded_role": identity.role,
                "size_bytes": int(size), "created_at": now, "updated_at": now, "reviewed": False}
         saved = self.storage.put(patient, job_id, "INTAKE_JOB", job, expires_at=now + INTAKE_JOB_TTL_SECONDS)
-        self.audit(self._patient_identity(patient), "document_uploaded", "success")
+        if identity.role == "caregiver":
+            self._log_access(patient, identity.subject_id, "document_uploaded")
+        else:
+            self.audit(self._patient_identity(patient), "document_uploaded", "success")
         return saved
 
     def run_intake_job(self, patient: str, job_id: str, data: bytes, *, doc_type: str | None = None) -> dict[str, Any]:
@@ -415,7 +435,8 @@ class CareLoopService:
         # historical alert record, but invalidate it so it cannot be shown,
         # acknowledged, or included as a current alert in a handoff.
         for alert in self.storage.list(patient, "ALERT"):
-            if alert.get("status", "active") == "active" and alert.get("episode_key") not in qualifying_episode_keys:
+            if (alert.get("kind", "rule") == "rule" and alert.get("status", "active") == "active"
+                    and alert.get("episode_key") not in qualifying_episode_keys):
                 alert |= {"status": "invalidated", "invalidated_at": self._now(), "updated_at": self._now()}
                 self.storage.put(patient, alert["id"], "ALERT", alert, expires_at=None)
         return created
@@ -427,18 +448,144 @@ class CareLoopService:
         # caregiver otherwise has task-reading access.
         if identity.role == "caregiver":
             tasks = [row for row in tasks if row.get("status", "active") == "active"]
+            self._caregiver_view(identity, "tasks_viewed")
         return tasks
 
     def record_task_completion(self, identity: Identity, task_id: str, completed_at: int | None = None) -> dict[str, Any]:
+        """The patient, or the family member the task is assigned to, records that it was done."""
+        if identity.role == "caregiver":
+            patient = self.patient_for(identity, "perform_tasks")
+        else:
+            patient = self._require_patient(identity)
+        task = self.storage.get(patient, task_id)
+        if not task or task["type"] != "PLAN_TASK" or task.get("status", "active") != "active":
+            raise ValueError("active care task is unavailable")
+        if identity.role == "caregiver" and task.get("assignee_id") != identity.subject_id:
+            raise AccessDenied("This task isn't assigned to you")
+        when = self._now() if completed_at is None else int(completed_at)
+        if when < 0:
+            raise ValueError("completion timestamp is invalid")
+        event = {"task_id": task_id, "event": "completed", "completed_at": when, "completed_by": identity.subject_id,
+                 "completed_by_name": self._display_name(patient, identity.subject_id)}
+        if identity.role == "caregiver":
+            now, record_id = self._now(), self._id()
+            saved = self.storage.put(patient, record_id, "TASK_EVENT", event | {
+                "created_at": now, "updated_at": now, "reviewed": True, "source_id": task.get("source_id"),
+                "actor_id": identity.subject_id})
+            self._log_access(patient, identity.subject_id, "task_completed")
+            return saved
+        return self.write(identity, "TASK_EVENT", event, source_id=task.get("source_id"), reviewed=True)
+
+    # ---- family task assignment and reminder suggestions ---------------------------
+    def _active_grant(self, patient: str, grant_id: str, scope: str) -> dict[str, Any]:
+        grant = self.storage.get(patient, grant_id)
+        if (not grant or grant["type"] != "CONSENT" or not grant.get("accepted_at") or grant.get("revoked_at")
+                or (grant.get("expires_at") and grant["expires_at"] <= self._now()) or scope not in grant.get("scopes", [])):
+            raise ValueError("that family member can't be assigned tasks")
+        return grant
+
+    def _display_name(self, patient: str, subject_id: str) -> str:
+        if subject_id == patient:
+            return "the patient"
+        for grant in self.storage.list(patient, "CONSENT"):
+            if grant.get("caregiver_id") == subject_id and grant.get("display_name"):
+                return grant["display_name"]
+        return "a family member"
+
+    def assign_task(self, identity: Identity, task_id: str, grant_id: str | None) -> dict[str, Any]:
+        """Patient assigns an active task to a family member granted ``perform_tasks`` (None = back to the patient)."""
         patient = self._require_patient(identity)
         task = self.storage.get(patient, task_id)
         if not task or task["type"] != "PLAN_TASK" or task.get("status", "active") != "active":
             raise ValueError("active care task is unavailable")
-        when = self._now() if completed_at is None else int(completed_at)
-        if when < 0:
-            raise ValueError("completion timestamp is invalid")
-        return self.write(identity, "TASK_EVENT", {"task_id": task_id, "event": "completed", "completed_at": when},
-                          source_id=task.get("source_id"), reviewed=True)
+        if grant_id:
+            grant = self._active_grant(patient, grant_id, "perform_tasks")
+            task |= {"assignee_id": grant["caregiver_id"], "assignee_name": grant.get("display_name") or "a family member",
+                     "assignee_grant_id": grant_id, "assigned_at": self._now()}
+        else:
+            for key in ("assignee_id", "assignee_name", "assignee_grant_id"):
+                task.pop(key, None)
+            task["assigned_at"] = self._now()
+        task["updated_at"] = self._now()
+        saved = self.storage.put(patient, task_id, "PLAN_TASK", task)
+        self.audit(identity, "task_assigned", "success")
+        return saved
+
+    def assigned_tasks(self, identity: Identity) -> list[dict[str, Any]]:
+        """A family member's own assigned tasks: label and times only (never the cited instruction)."""
+        patient = self.patient_for(identity, "perform_tasks")
+        self.evaluate_missed_tasks(patient)
+        keep = {"id", "label", "times", "frequency", "status", "type", "assignee_name"}
+        return [{k: v for k, v in task.items() if k in keep}
+                for task in self.storage.list(patient, "PLAN_TASK")
+                if task.get("status") == "active" and task.get("assignee_id") == identity.subject_id]
+
+    @staticmethod
+    def reminder_suggestions(tasks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """What Alexa+ should set as its own native reminders. CareLoop never schedules them itself."""
+        return [{"task_id": t["id"], "label": t.get("label") or "Care task", "times": list(t.get("times") or []),
+                 "for": t.get("assignee_name") or "patient"}
+                for t in tasks if t.get("type", "PLAN_TASK") == "PLAN_TASK" and t.get("status") == "active" and t.get("times")]
+
+    def _zone(self):
+        from zoneinfo import ZoneInfo
+        return ZoneInfo(self.timezone) if self.timezone else datetime.now().astimezone().tzinfo
+
+    def evaluate_missed_tasks(self, patient: str) -> list[dict[str, Any]]:
+        """A generic update when an assigned task isn't done within an hour of a scheduled time today."""
+        zone, now = self._zone(), self._now()
+        today = datetime.fromtimestamp(now, zone).date()
+        events = self.storage.list(patient, "TASK_EVENT")
+        existing = {a.get("episode_key") for a in self.storage.list(patient, "ALERT")}
+        created = []
+        for task in self.storage.list(patient, "PLAN_TASK"):
+            if task.get("status") != "active" or not task.get("assignee_id"):
+                continue
+            for slot in task.get("times") or []:
+                hour, minute = (int(part) for part in slot.split(":"))
+                due = int(datetime(today.year, today.month, today.day, hour, minute, tzinfo=zone).timestamp())
+                key = f"missed:{task['id']}:{today.isoformat()}:{slot}"
+                if due < task.get("assigned_at", 0) or now < due + MISSED_TASK_GRACE_SECONDS or key in existing:
+                    continue
+                if any(e.get("task_id") == task["id"] and due - 3 * 3600 <= e.get("completed_at", 0) <= now for e in events):
+                    continue
+                alert = self.storage.put(patient, self._id(), "ALERT", {
+                    "created_at": now, "updated_at": now, "reviewed": True, "actor_id": "careloop-task-check",
+                    "kind": "missed_task", "task_id": task["id"], "task_label": task.get("label"), "due_at": due,
+                    "assignee_name": task.get("assignee_name"), "episode_key": key, "status": "active",
+                    "delivery_status": "failed", "acknowledgements": []}, expires_at=None)
+                created.append(alert)
+        return created
+
+    # ---- questions for the clinician --------------------------------------------------
+    def add_clinician_question(self, identity: Identity, question: str) -> dict[str, Any]:
+        """Stored for the next handoff and never answered by CareLoop."""
+        text = " ".join(str(question).split())
+        if not text or len(text) > MAX_QUESTION_CHARS:
+            raise ValueError("a question of up to 300 characters is required")
+        number = len(self.storage.list(self._require_patient(identity), "QUESTION")) + 1
+        saved = self.write(identity, "QUESTION", {"text": text, "status": "open", "number": number}, reviewed=False)
+        self.audit(identity, "question_added", "success")
+        return saved
+
+    def clinician_questions(self, identity: Identity) -> list[dict[str, Any]]:
+        patient = self._require_patient(identity)
+        return sorted(self.storage.list(patient, "QUESTION"), key=lambda q: (q["created_at"], q.get("number", 0)))
+
+    # ---- access transparency ------------------------------------------------------------
+    def access_summary(self, identity: Identity, from_date: int, to_date: int) -> list[dict[str, Any]]:
+        """Who (other than the patient) looked at or did what, counted per person. Never content."""
+        patient = self._require_patient(identity)
+        people: dict[str, dict[str, int]] = {}
+        for row in self.storage.list(patient, "AUDIT"):
+            if row.get("actor_id") in {patient, None} or not from_date <= row.get("created_at", 0) <= to_date:
+                continue
+            if row.get("action") in ACCESS_PHRASES:
+                counts = people.setdefault(row["actor_id"], {})
+                counts[row["action"]] = counts.get(row["action"], 0) + 1
+        return [{"actor_id": actor, "name": self._display_name(patient, actor), "actions": counts}
+                for actor, counts in people.items()]
+
     def search(self, identity: Identity, query: str, *, from_date: int | None=None, to_date: int | None=None) -> list[dict[str, Any]]:
         if from_date is not None and to_date is not None and from_date > to_date: raise ValueError("invalid date range")
         patient = self.patient_for(identity)
@@ -446,6 +593,7 @@ class CareLoopService:
         # A corrected measurement is historical evidence, not current
         # retrieval evidence. Its correction remains source-linked instead.
         superseded = {row.get("corrects_id") for row in self.storage.list(patient, "OBSERVATION") if row.get("corrects_id")}
+        self._caregiver_view(identity, "history_searched")
         return [r for r in self.storage.search(patient,query)
                 if r["type"] in allowed
                 and r["id"] not in superseded
@@ -455,6 +603,7 @@ class CareLoopService:
     def list_observations(self, identity: Identity, *, from_date: int | None = None, to_date: int | None = None) -> list[dict[str, Any]]:
         if from_date is not None and to_date is not None and from_date > to_date: raise ValueError("invalid date range")
         patient = self.patient_for(identity, "read_observations" if identity.role == "caregiver" else None)
+        self._caregiver_view(identity, "observations_viewed")
         rows = [row for row in self._effective_observations(patient)
                 if (from_date is None or row["observed_at"] >= from_date) and (to_date is None or row["observed_at"] <= to_date)]
         return sorted(rows, key=lambda row: (row["observed_at"], row["created_at"], row["id"]))
@@ -472,16 +621,22 @@ class CareLoopService:
         for row in plans:
             source = self.storage.get(patient, row["source_id"]) if row.get("source_id") else None
             citation = None if not source else {"source_id": source["id"], "title": source.get("title", "Approved source"), "page_excerpts": source.get("page_excerpts", [])}
-            plan_items.append({"plan_id": row["id"], "type": row["type"], "status": row.get("status", "unknown"), "text": row.get("text", ""), "source_id": row.get("source_id"), "source_citation": citation})
+            plan_items.append({"plan_id": row["id"], "type": row["type"], "status": row.get("status", "unknown"), "text": row.get("text", ""), "source_id": row.get("source_id"), "source_citation": citation,
+                               "label": row.get("label"), "times": row.get("times"), "assignee": row.get("assignee_name") or "patient"})
         events = [row for row in self.storage.list(patient, "TASK_EVENT") if from_date <= row.get("completed_at", row["created_at"]) <= to_date]
         observations = self.list_observations(identity, from_date=from_date, to_date=to_date)
         all_observations = self.storage.list(patient, "OBSERVATION")
         corrections = [{"correction_id": row["id"], "corrects_id": row["corrects_id"]} for row in all_observations if row.get("corrects_id") and from_date <= row.get("observed_at", 0) <= to_date]
+        self.evaluate_missed_tasks(patient)
         alerts = [row for row in self.storage.list(patient, "ALERT") if row.get("status", "active") == "active" and from_date <= row.get("created_at", 0) <= to_date]
+        questions = [{"text": q["text"], "asked_at": q["created_at"]} for q in self.clinician_questions(identity)
+                     if q.get("status", "open") == "open"]
         data = {"label": "Patient-generated factual summary for clinician discussion", "from_date": from_date, "to_date": to_date,
                 "plan_items": plan_items, "task_events": events, "observations": observations, "alerts": alerts,
+                "questions": questions,
                 "corrections": corrections, "uncertainties": ["No observation is recorded for dates absent from this handoff."],
-                "totals": {"plan_items": len(plan_items), "task_events": len(events), "observations": len(observations), "alerts": len(alerts), "corrections": len(corrections)}}
+                "totals": {"plan_items": len(plan_items), "task_events": len(events), "observations": len(observations), "alerts": len(alerts), "corrections": len(corrections),
+                           "missed_tasks": sum(a.get("kind") == "missed_task" for a in alerts), "questions": len(questions)}}
         return self.write(identity, "HANDOFF", data, reviewed=True)
 
     def mark_alert_delivery(self, identity: Identity, alert_id: str, status: str) -> dict[str, Any]:
@@ -499,6 +654,7 @@ class CareLoopService:
         if record_type is not None and record_type not in allowed:
             raise AccessDenied("Caregiver scope does not allow this record type")
         records = self.storage.list(patient, record_type)
+        self._caregiver_view(identity, "records_viewed")
         return [record for record in records if record["type"] in allowed]
 
     def source_excerpt(self, identity: Identity, source_id: str) -> dict[str, Any]:
@@ -521,6 +677,7 @@ class CareLoopService:
             )
             if not linked:
                 raise AccessDenied("Source is unavailable")
+            self._caregiver_view(identity, "source_viewed")
         return {
             "source_id": source["id"],
             "title": source.get("title", "Approved source"),
@@ -537,6 +694,17 @@ class CareLoopService:
     def purge(self, identity: Identity) -> int:
         """Physically purge only the authenticated patient's expired/deleted data."""
         return self.storage.purge(self._now(), patient_id=self._require_patient(identity))
+    def _log_access(self, patient: str, actor_id: str, action: str) -> None:
+        """Record that a family member looked at or did something. Metadata only, never content."""
+        if action not in AUDIT_ACTIONS:
+            raise ValueError("invalid CareLoop audit metadata")
+        self.storage.put(patient, self._id(), "AUDIT", {"created_at": self._now(), "actor_id": actor_id,
+                                                        "action": action, "outcome": "success"})
+
+    def _caregiver_view(self, identity: Identity, action: str) -> None:
+        if identity.role == "caregiver":
+            self._log_access(identity.patient, identity.subject_id, action)
+
     def audit(self, identity: Identity, action: str, outcome: str) -> dict[str, Any]:
         """Store metadata only; clinical content must never enter CareLoop audit records."""
         if action not in AUDIT_ACTIONS or outcome not in AUDIT_OUTCOMES:
@@ -547,16 +715,25 @@ class CareLoopService:
             "created_at": self._now(), "actor_id": identity.subject_id,
             "action": action, "outcome": outcome,
         })
-    def invite(self, identity: Identity, scopes: list[str], expires_at: int | None = None) -> dict[str, Any]:
-        """Create a patient-owned, pending invitation with no caregiver binding yet."""
+    def invite(self, identity: Identity, scopes: list[str], expires_at: int | None = None,
+               name: str | None = None) -> dict[str, Any]:
+        """Create a patient-owned, pending invitation with no caregiver binding yet.
+
+        ``name`` is the patient's own short name for this person ("Sam", "Mom"), used in
+        spoken replies such as "Sam will handle Short walk".
+        """
         if not scopes or not set(scopes) <= CAREGIVER_SCOPES:
             raise ValueError("invalid caregiver scope")
+        if name is not None:
+            name = " ".join(str(name).split())
+            if not name or len(name) > 40 or not re.fullmatch(r"[\w' .-]+", name):
+                raise ValueError("invalid caregiver name")
         if expires_at is not None and expires_at <= self._now():
             raise ValueError("invitation expiry must be in the future")
         # The storage record ID becomes the opaque invitation identifier.
         saved = self.write(identity, "CONSENT", {
             "scopes": sorted(set(scopes)), "expires_at": expires_at,
-            "status": "pending",
+            "status": "pending", "display_name": name,
         })
         saved["invitation_id"] = saved["id"]
         saved = self.storage.put(identity.patient, saved["id"], "CONSENT", saved, expires_at=expires_at)
@@ -578,7 +755,7 @@ class CareLoopService:
         invitation |= {"caregiver_id": identity.subject_id, "accepted_at": self._now(), "status": "active", "updated_at": self._now()}
         saved = self.storage.put(patient, invitation["id"], "CONSENT", invitation, expires_at=invitation.get("expires_at"))
         # Consent audit events deliberately contain no invitation, person, or clinical details.
-        self.audit(self._patient_identity(patient), "access_granted", "success")
+        self._log_access(patient, identity.subject_id, "access_granted")
         return saved
 
     def _patient_identity(self, patient: str) -> Identity:
@@ -608,6 +785,7 @@ class CareLoopService:
         patient = self.patient_for(identity, "receive_alerts")
         if identity.role != "caregiver":
             raise AccessDenied("Notifications are routed to authorized caregivers")
+        self.evaluate_missed_tasks(patient)
         def state(alert: dict[str, Any]) -> str:
             acknowledged = any(row.get("caregiver_id") == identity.subject_id for row in alert.get("acknowledgements", []))
             return "acknowledged" if acknowledged else "action_required"
@@ -625,7 +803,7 @@ class CareLoopService:
         alert |= {"acknowledgements": acknowledgements, "updated_at": self._now()}
         self.storage.put(patient, alert_id, "ALERT", alert, expires_at=None)
         # The stored audit action has a closed vocabulary and no alert content.
-        self.audit(self._patient_identity(patient), "alert_acknowledged", "success")
+        self._log_access(patient, identity.subject_id, "alert_acknowledged")
         # Do not return the ALERT record: acknowledgement permission is not
         # permission to read the alert's clinical details.
         return {"case_id": alert_id, "status": "acknowledged"}

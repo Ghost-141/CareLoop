@@ -14,12 +14,18 @@
     "Alexa, remove Sam",
     "Alexa, should I double my medication?",
     "Alexa, is my document ready?",
+    "Alexa, let Sam help with my tasks",
+    "Alexa, Sam handles my evening task",
+    "Alexa, add a question for my doctor: can I start swimming",
+    "Alexa, who has seen my care data this week?",
   ];
   const DOT_CHIPS = [
     "Alexa, any CareLoop updates?",
     "Alexa, mark it seen",
     "Alexa, what was Maya's pain score?",
     "Alexa, show Maya's tasks",
+    "Alexa, what are my tasks for Maya?",
+    "Alexa, I've done Maya's evening task",
   ];
 
   // ---- API ------------------------------------------------------------------
@@ -380,6 +386,11 @@
     }
     $("#open-invite").disabled = !s.invitation_pending || !s.devices.find((d) => d.id === "dot").account;
     $("#planner").value = s.planner;
+    const reminders = s.reminders || [];
+    $("#ring").disabled = !reminders.length;
+    $("#reminder-count").textContent = reminders.length
+      ? `${reminders.length} reminder(s) set · next: ${reminders[0].label} for ${reminders[0].to === "patient" ? "Maya" : reminders[0].to}`
+      : "No reminders set";
   }
   $$("[data-link]").forEach((b) => b.addEventListener("click", async () => {
     const account = b.dataset.link, linked = b.closest(".account").classList.contains("linked");
@@ -394,6 +405,7 @@
     catch (e) { traceLine({ type: "error", text: e.message }); }
     refresh();
   });
+  $("#ring").addEventListener("click", () => api("/api/reminders/ring", {}).then(refresh).catch(() => {}));
   $("#planner").addEventListener("change", (e) => api("/api/planner", { mode: e.target.value }).then(refresh));
   $("#reset").addEventListener("click", () => api("/api/conversation/reset", {}).then(() => { $("#convo").replaceChildren(); $("#app-slot").replaceChildren(); }));
   $("#show-inspector").addEventListener("change", (e) => { $("#inspector").hidden = !e.target.checked; });

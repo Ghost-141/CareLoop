@@ -74,9 +74,9 @@ Follow the sandbox rules in the layout guide: no cookies, no localStorage, host 
 
 **F7. Clinician share link (time-boxed, read-only).** `share_handoff_with_clinician(expires_in_hours)` creates a single-purpose grant with a signed URL. It is logged, revocable, and automatically expires. It closes the loop to the visit.
 
-**F8. "Questions for my doctor" queue.** *"Alexa, add a question for my doctor: can I start swimming?"* is stored attributed and timestamped, then included in the next handoff. Simple, very demoable, and it stays out of medical advice because CareLoop never answers the question.
+**F8. "Questions for my doctor" queue.** *(Implemented: `add_question_for_clinician`.)* *"Alexa, add a question for my doctor: can I start swimming?"* is stored attributed and timestamped, then included in the next handoff. Simple, very demoable, and it stays out of medical advice because CareLoop never answers the question.
 
-**F9. Access transparency / consent receipts.** `who_accessed_my_care_data(range)` reads the existing `audit()` log: *"This week Sam viewed your tasks twice and acknowledged one update."* Consent you can audit by voice is new to Alexa+.
+**F9. Access transparency / consent receipts.** *(Implemented: `who_accessed_my_care_data`.)* `who_accessed_my_care_data(range)` reads the existing `audit()` log: *"This week Sam viewed your tasks twice and acknowledged one update."* Consent you can audit by voice is new to Alexa+.
 
 **F10. More deterministic rule types.** Add `AT_OR_BELOW`, `MISSED_TASK_N_DAYS`, and `NO_CHECKIN_BY_LOCAL_TIME`. They still need source backing and patient approval. The "no check-in" rule is the plan-derived version of Alexa's "first interaction" alert.
 
@@ -86,7 +86,7 @@ Follow the sandbox rules in the layout guide: no cookies, no localStorage, host 
 
 **F12. MCP prompts.** Publish `weekly_review` and `pre_visit_prep` prompts that chain handoff + questions + trend card.
 
-**F13. Reminder hand-off to Alexa+.** Tool results include `reminder_suggestions[]` (title, schedule, source citation) so Alexa+ creates native reminders. CareLoop never schedules them itself.
+**F13. Reminder hand-off to Alexa+.** *(Implemented: `reminders` in task results, plus family assignment with `assign_task`.)* Tool results include `reminder_suggestions[]` (title, schedule, source citation) so Alexa+ creates native reminders. CareLoop never schedules them itself.
 
 ## 4. Revised demo story (≈3 min)
 

@@ -42,6 +42,17 @@ class Ref(TypedDict):
     status: NotRequired[str]
     scopes: NotRequired[list[str]]
     expires_at: NotRequired[int | None]
+    name: NotRequired[str]  # the patient's own short name for a family member
+    times: NotRequired[list[str]]  # a task's scheduled local times, e.g. "20:00"
+    assignee: NotRequired[str]
+
+
+class Reminder(TypedDict):
+    """A reminder Alexa+ should create with its own native feature. CareLoop never schedules it."""
+    task_id: str
+    label: str
+    times: list[str]
+    to: str  # "patient", or the family member's name
 
 
 class VoiceResult(TypedDict):
@@ -50,14 +61,24 @@ class VoiceResult(TypedDict):
     surface: Surface
     view: str
     refs: list[Ref]
+    reminders: NotRequired[list[Reminder]]
 
 
 def _view_uri(view: str) -> str:
     return f"ui://careloop/{view}"
 
 
-def _result(speakable: str, *, view: str, refs: list[Ref] | None = None, surface: Surface = "private_screen") -> VoiceResult:
-    return {"status": "ok", "speakable": speakable, "surface": surface, "view": _view_uri(view), "refs": refs or []}
+def _result(speakable: str, *, view: str, refs: list[Ref] | None = None, surface: Surface = "private_screen",
+            reminders: list[dict[str, Any]] | None = None) -> VoiceResult:
+    result: VoiceResult = {"status": "ok", "speakable": speakable, "surface": surface, "view": _view_uri(view), "refs": refs or []}
+    if reminders:
+        result["reminders"] = [{"task_id": r["task_id"], "label": r["label"], "times": r["times"], "to": r["for"]}
+                               for r in reminders]
+    return result
+
+
+def _join(parts: list[str]) -> str:
+    return parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + " and " + parts[-1]
 
 
 def _plural(count: int, noun: str) -> str:
@@ -157,15 +178,25 @@ def _plan_refs(items: list[dict[str, Any]]) -> list[Ref]:
         status = item.get("status", "active")
         key = f"{status} {kind}"
         counters[key] = counters.get(key, 0) + 1
-        refs.append({"id": item["id"], "kind": kind, "status": status, "label": f"{key} {counters[key]}"})
+        ref: Ref = {"id": item["id"], "kind": kind, "status": status, "label": f"{key} {counters[key]}"}
+        if item.get("times"):
+            ref["times"] = list(item["times"])
+        if item.get("assignee_name"):
+            ref["assignee"] = item["assignee_name"]
+        refs.append(ref)
     return refs
 
 
 def _grant_refs(grants: list[dict[str, Any]]) -> list[Ref]:
-    return [{"id": grant["id"], "kind": "caregiver_grant", "status": grant.get("status", "active"),
-             "label": f"caregiver access {index}", "scopes": list(grant.get("scopes", [])),
-             "expires_at": grant.get("expires_at")}
-            for index, grant in enumerate(grants, start=1)]
+    refs: list[Ref] = []
+    for index, grant in enumerate(grants, start=1):
+        ref: Ref = {"id": grant["id"], "kind": "caregiver_grant", "status": grant.get("status", "active"),
+                    "label": f"caregiver access {index}", "scopes": list(grant.get("scopes", [])),
+                    "expires_at": grant.get("expires_at")}
+        if grant.get("display_name"):
+            ref["name"] = grant["display_name"]
+        refs.append(ref)
+    return refs
 
 
 def _patient(deps, ctx):
@@ -220,8 +251,10 @@ def register(mcp: MCPServer, deps) -> None:
         Medicine items and items flagged for review can only be approved on the patient's screen.
         """
         item = deps.service.approve_plan_item(_patient(deps, ctx), record_id)
+        reminders = deps.service.reminder_suggestions([item])
         kind = {"PLAN_RULE": "rule", "PLAN_NOTE": "note"}.get(item["type"], "task")
-        return _result(f"Plan {kind} approved and now active.", view="plan-review", refs=_plan_refs([item]))
+        return _result(f"Plan {kind} approved and now active.", view="plan-review", refs=_plan_refs([item]),
+                       reminders=reminders)
 
     @tool("list_care_tasks", "tasks", _READ)
     @_safe_tool("Care tasks are unavailable.")
@@ -246,10 +279,16 @@ def register(mcp: MCPServer, deps) -> None:
     @tool("record_task_completion", "tasks", _WRITE)
     @_safe_tool("That task can't be marked complete.")
     def record_task_completion(task_id: str, ctx: Context, completed_at: int | str | None = None) -> VoiceResult:
-        """Record completion of one active task (ref id). ``completed_at`` accepts epoch or ISO-8601."""
+        """Record completion of one active task (ref id). ``completed_at`` accepts epoch or ISO-8601.
+
+        A family member can complete only tasks assigned to them (see ``list_my_assigned_tasks``).
+        """
+        identity = _patient(deps, ctx)
         when = None if completed_at is None else _date_bound(completed_at, end_of_day=False)
-        event = deps.service.record_task_completion(_patient(deps, ctx), task_id, when)
-        return _result("Task completion recorded.", view="tasks",
+        event = deps.service.record_task_completion(identity, task_id, when)
+        speakable = ("Thanks. I've recorded that you did it." if identity.role == "caregiver"
+                     else "Task completion recorded.")
+        return _result(speakable, view="tasks", surface="glance" if identity.role == "caregiver" else "private_screen",
                        refs=[{"id": event["id"], "kind": "task_event", "label": "completion"}])
 
     @tool("get_care_plan_source", "plan-source", _READ)
@@ -305,7 +344,70 @@ def register(mcp: MCPServer, deps) -> None:
             return _result("Item removed. It won't be added to your plan.", view="plan-review")
         edits = {k: v for k, v in {"label": label, "times": times}.items() if v is not None}
         item = deps.service.approve_plan_item(identity, record_id, on_screen=True, confirmed=confirmed, edits=edits)
-        return _result("Approved. It's now part of your plan.", view="plan-review", refs=_plan_refs([item]))
+        return _result("Approved. It's now part of your plan.", view="plan-review", refs=_plan_refs([item]),
+                       reminders=deps.service.reminder_suggestions([item]))
+
+    # ---- family task assignment -------------------------------------------------
+    @tool("assign_task", "tasks", _IDEMPOTENT_WRITE)
+    @_safe_tool("That task can't be assigned. Check that the family member has permission to do tasks.")
+    def assign_task(task_id: str, ctx: Context, assignee_id: str | None = None) -> VoiceResult:
+        """Patient assigns an active task (ref id) to a family member, or back to themself.
+
+        ``assignee_id`` = a caregiver_grant ref id from ``list_care_circle`` whose scopes include
+        perform_tasks; omit it to take the task back. The result carries reminder suggestions for
+        Alexa+ to create with its own reminders feature.
+        """
+        task = deps.service.assign_task(_patient(deps, ctx), task_id, assignee_id)
+        who = task.get("assignee_name")
+        when = f" at {_join(task['times'])}" if task.get("times") else ""
+        speakable = (f"Done. {who} will handle {task.get('label') or 'that task'}{when}." if who
+                     else f"Done. You'll handle {task.get('label') or 'that task'} yourself.")
+        return _result(speakable, view="tasks", refs=_plan_refs([task]),
+                       reminders=deps.service.reminder_suggestions([task]))
+
+    @tool("list_my_assigned_tasks", "tasks", _READ)
+    @_safe_tool("Your assigned tasks are unavailable.")
+    def list_my_assigned_tasks(ctx: Context) -> VoiceResult:
+        """Family member: the patient's tasks assigned to you, with their times (never the cited instructions)."""
+        tasks = deps.service.assigned_tasks(_patient(deps, ctx))
+        if not tasks:
+            return _result("You don't have any CareLoop tasks assigned to you.", view="tasks", surface="glance")
+        described = [f"{t.get('label') or 'a care task'}" + (f" at {_join(t['times'])}" if t.get("times") else "")
+                     for t in tasks]
+        speakable = f"You have {_plural(len(tasks), 'task')} to help with: {_join(described)}."
+        return _result(speakable, view="tasks", surface="glance", refs=_plan_refs(tasks),
+                       reminders=deps.service.reminder_suggestions(tasks))
+
+    # ---- questions for the clinician ----------------------------------------------
+    @tool("add_question_for_clinician", "visit-handoff", _WRITE)
+    @_safe_tool("That question couldn't be saved.")
+    def add_question_for_clinician(question: str, ctx: Context) -> VoiceResult:
+        """Save the patient's question for their clinician. It goes into the next visit handoff.
+
+        CareLoop never answers it, and the reply never repeats the question aloud.
+        """
+        deps.service.add_clinician_question(_patient(deps, ctx), question)
+        total = sum(q.get("status", "open") == "open" for q in deps.service.clinician_questions(_patient(deps, ctx)))
+        return _result(f"Saved. You have {_plural(total, 'question')} ready for your next appointment.", view="visit-handoff")
+
+    # ---- access transparency ------------------------------------------------------
+    @tool("who_accessed_my_care_data", "care-circle", _READ)
+    @_safe_tool("The access log is unavailable.")
+    def who_accessed_my_care_data(ctx: Context, from_date: int | str = "last_7_days", to_date: int | str | None = None) -> VoiceResult:
+        """Patient: who else looked at or acted on their care data, and how often. Defaults to the last 7 days."""
+        from ..core import ACCESS_PHRASES
+        start, end = _date_range(from_date, to_date, now=int(deps.service.clock()), required=False)
+        now = int(deps.service.clock())
+        people = deps.service.access_summary(_patient(deps, ctx), start or 0, end or now)
+        period = "in the last 7 days" if from_date == "last_7_days" else "in that period"
+        if not people:
+            return _result(f"No one else accessed your care data {period}.", view="care-circle")
+        sentences = []
+        for person in people:
+            acts = [f"{ACCESS_PHRASES[action]}{'' if n == 1 else f' {n} times'}"
+                    for action, n in sorted(person["actions"].items(), key=lambda kv: -kv[1])]
+            sentences.append(f"{person['name']} {_join(acts)}")
+        return _result(f"{period.capitalize()}, " + "; ".join(sentences) + ".", view="care-circle")
 
     # ---- care circle ------------------------------------------------------------
     @tool("list_care_circle", "care-circle", _READ)
@@ -320,15 +422,17 @@ def register(mcp: MCPServer, deps) -> None:
 
     @tool("invite_caregiver", "care-circle", _WRITE)
     @_safe_tool("Caregiver invitation is unavailable.")
-    def invite_caregiver(scopes: list[str], ctx: Context, expires_at: int | str | None = None) -> VoiceResult:
-        """Create a patient-controlled caregiver invitation.
+    def invite_caregiver(scopes: list[str], ctx: Context, expires_at: int | str | None = None,
+                         name: str | None = None) -> VoiceResult:
+        """Create a patient-controlled caregiver invitation for a family member.
 
-        ``scopes`` ⊆ read_tasks, read_observations, write_observations,
-        receive_alerts, acknowledge_alerts, upload_documents.  ``expires_at`` accepts epoch or
-        ISO-8601.  Share the returned invitation ref id with the caregiver.
+        ``scopes`` ⊆ read_tasks, read_observations, write_observations, receive_alerts,
+        acknowledge_alerts, upload_documents, perform_tasks (can be assigned tasks and mark them
+        done). ``name`` is the patient's short name for them ("Sam", "Mom"). ``expires_at``
+        accepts epoch or ISO-8601. Share the returned invitation ref id with the caregiver.
         """
         expiry = None if expires_at is None else _date_bound(expires_at, end_of_day=True)
-        invitation = deps.service.invite(_patient(deps, ctx), scopes, expiry)
+        invitation = deps.service.invite(_patient(deps, ctx), scopes, expiry, name)
         return _result(f"Invitation created with {_plural(len(invitation['scopes']), 'permission')}.",
                        view="care-circle", refs=_grant_refs([invitation]))
 
@@ -446,7 +550,11 @@ def register(mcp: MCPServer, deps) -> None:
         """
         from_epoch, to_epoch = _handoff_dates(from_date, to_date, now=int(deps.service.clock()))
         handoff = deps.service.create_visit_handoff(_patient(deps, ctx), from_epoch, to_epoch)
-        return _result("Your visit handoff is ready on your private screen.", view="visit-handoff",
+        questions = handoff.get("totals", {}).get("questions", 0)
+        speakable = "Your visit handoff is ready on your private screen."
+        if questions:
+            speakable += f" It includes {_plural(questions, 'question')} for your clinician."
+        return _result(speakable, view="visit-handoff",
                        refs=[{"id": handoff["id"], "kind": "handoff", "label": "visit handoff"}])
 
     # ---- data rights -------------------------------------------------------------

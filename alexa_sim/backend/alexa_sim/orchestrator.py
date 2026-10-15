@@ -23,6 +23,8 @@ Trace = Callable[[dict[str, Any]], Awaitable[None]]
 _WAKE = re.compile(r"^\s*(hey\s+)?alexa[\s,.!:-]*", re.IGNORECASE)
 _CONFIRM = re.compile(r"^(confirm|yes|yeah|yep|do it|go ahead)\b", re.IGNORECASE)
 _MEDICAL = re.compile(r"\b(dose|dosage|medication|medicine|diagnos\w*|prescri\w*|should i take|emergency|double my)\b", re.IGNORECASE)
+# A question saved for the clinician is not a request for advice: CareLoop stores it and never answers.
+_CLINICIAN_QUESTION = re.compile(r"\b(question|ask)\b.*\b(doctor|clinician|nurse|care team)\b", re.IGNORECASE)
 REFUSAL = "I can't give medical advice. Please contact your clinician, or emergency services in an emergency."
 _CANCEL = re.compile(r"^(cancel|no|stop|never ?mind|don'?t)\b", re.IGNORECASE)
 
@@ -146,7 +148,7 @@ class Orchestrator:
             return Turn("")
 
         # Deterministic safety refusal wins before any planner or model sees the request.
-        if _MEDICAL.search(text):
+        if _MEDICAL.search(text) and not _CLINICIAN_QUESTION.search(text):
             device.remember(text, REFUSAL)
             return Turn(REFUSAL, planner="policy")
         tools, by_name = account.model_tools, {tool["name"]: tool for tool in account.model_tools}

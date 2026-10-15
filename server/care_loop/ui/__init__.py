@@ -99,7 +99,13 @@ def view_details(deps: Any, identity: Any, view: str, record_ids: list[str]) -> 
         source_ids = list(dict.fromkeys(i["source_id"] for i in items if i.get("source_id")))
         return {"sources": [service.source_excerpt(identity, s) for s in source_ids]}
     if view == "care-circle":
-        return {"grants": service.list_grants(identity)}
+        now = int(service.clock())
+        from ..core import ACCESS_PHRASES
+        access = [{"name": person["name"],
+                   "actions": [f"{ACCESS_PHRASES[action]}{'' if n == 1 else f' ({n} times)'}"
+                               for action, n in person["actions"].items()]}
+                  for person in service.access_summary(identity, now - 7 * 86_400, now)]
+        return {"grants": service.list_grants(identity), "access": access}
     if view == "notifications":
         return {"updates": service.notifications(identity)}
     if view == "records":

@@ -19,7 +19,7 @@ Status: **Resolved**, **Workaround** (we went around it), **Open** (still a prob
 | F-03 | Alexa+ docs, MCP Apps | Medium | Workaround | Unclear whether `resourceUri` belongs on the tool definition or in the tool response |
 | F-04 | Alexa+ docs, notifications | Medium | Workaround | No documented way for an add-on to notify a caregiver; we had to simulate push |
 | F-05 | Alexa+ docs, elicitation | Medium | Workaround | Elicitation support is documented only on the category add-on page |
-| F-06 | Alexa+ auth | Medium | Open | A 401 must omit `WWW-Authenticate`, which differs from the standard MCP auth flow |
+| F-06 | Alexa+ auth | Medium | Resolved | A 401 must omit `WWW-Authenticate`, which differs from the standard MCP auth flow |
 | F-07 | Alexa+ requirements | Medium | Open | The 500 ms round-trip rule is unclear for tools that wait on an elicitation answer |
 | F-08 | Alexa+ policy | Medium | Resolved | No reference pattern for handling sensitive data on shared voice devices |
 | F-09 | MCP Python SDK 2.x | High | Resolved | snake_case result fields silently read as empty; the simulator spoke generic replies and crashed |
@@ -79,10 +79,10 @@ Status: **Resolved**, **Workaround** (we went around it), **Open** (still a prob
 - **Workaround:** built `start_daily_checkin` with standard MCP elicitation, and made the simulator speak the question and keep the mic open. The rest of the tools still work for a client without elicitation (`record_pain_observation` takes the value directly).
 - **Suggestion:** state elicitation support in the toolkit's supported-capabilities list. Describe how Alexa+ voices the question, which schema types it supports, and whether the timeout differs from F-07.
 
-### F-06: 401 must omit `WWW-Authenticate` · Medium · Open
+### F-06: 401 must omit `WWW-Authenticate` · Medium · Resolved
 - **Doing:** checking the server against the QuickStart auth rules.
 - **Got:** Alexa+ says to return `401` **without** `WWW-Authenticate` (*"not yet supported"*). The MCP authorization spec uses that header to point clients to the resource metadata. Our server sends `WWW-Authenticate: Bearer realm="careloop"` (`server/care_loop/auth.py`).
-- **Status:** we will remove it before any Alexa+ deployment. This is an easy-to-miss difference for anyone following the MCP spec.
+- **Resolution:** removed from the `/mcp` 401 in `BearerAuthMiddleware`, with a test that checks the header is absent. This is an easy-to-miss difference for anyone following the MCP spec.
 - **Suggestion:** list every difference from the MCP auth spec in one table (no `WWW-Authenticate`, no Dynamic Client Registration, no Client ID Metadata Documents, no step-up), and have the Local Inspector flag each one.
 
 ### F-07: 500 ms rule vs a tool waiting on an answer · Medium · Open
