@@ -37,6 +37,7 @@ Status: **Resolved**, **Workaround** (we went around it), **Open** (still a prob
 | F-21 | Alexa+ add-ons, files | Medium | Workaround | No documented way for Alexa+ to pass a user's uploaded file to an add-on |
 | F-22 | Alexa+ policy, dosage | Medium | Open | Unclear whether storing a prescriber's own instruction counts as "drug dosage content" |
 | F-23 | Document intake | Medium | Resolved | Small local models mislabelled the pain rule and frequencies; a fixed-pattern safety net was needed |
+| F-25 | Local LLM planner | Medium | Resolved | A 4B model picked the wrong task ID in multi-turn chats; tools now accept names, and gemma4 replaced qwen as planner |
 | F-24 | PDF/OCR tooling | Low | Resolved | `pypdf` can't render pages for OCR; PaddleOCR's first run downloads models; storage rejects floats |
 
 ---
@@ -191,6 +192,14 @@ Status: **Resolved**, **Workaround** (we went around it), **Open** (still a prob
   - PaddleOCR's first run downloads its models, about 1.5 minutes in our run.
   - CareLoop's storage rejects floats, so OCR confidence is stored as an integer percent.
 - **Measured:** PaddleOCR read the synthetic scan and photo exactly, with 99–100% line confidence, about 8 s per page after the models are cached.
+
+### F-25: Small planner models mis-pick IDs across turns · Medium · Resolved
+- **Got:** in multi-turn runs, `qwen3.5:4b` answered "Sam handles the dressing" by passing the ID of a different task from an earlier result ("Sam will handle Take a short walk"). This happened in 2 of 3 runs. `gemma4:e4b` first asked about optional details (an expiry date) instead of acting.
+- **Resolution:**
+  - `assign_task` and `update_task_time` take `task` and `assignee` by **name or ID**; the server matches names exactly and refuses ambiguous ones.
+  - The prompt says to pass names, and not to ask about optional details.
+  - `gemma4:e4b-mlx` is now the recommended planner: right task in 3 of 3 runs.
+- **Takeaway for Alexa+ add-ons:** let tools accept the user's own words for things, and have the server resolve them unambiguously. Opaque IDs passed through a model across turns are fragile.
 
 ---
 

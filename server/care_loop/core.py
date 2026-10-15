@@ -8,7 +8,7 @@ from typing import Any
 from .auth import Identity
 from .storage import CareLoopStorage
 
-CORE_TYPES = {"PATIENT", "DOCUMENT", "PLAN_TASK", "PLAN_RULE", "PLAN_NOTE", "INTAKE_JOB", "QUESTION", "OBSERVATION", "TASK_EVENT", "CONSENT", "ALERT", "HANDOFF", "SEARCH_ENTRY", "AUDIT"}
+CORE_TYPES = {"PATIENT", "DOCUMENT", "PLAN_TASK", "PLAN_RULE", "PLAN_NOTE", "INTAKE_JOB", "QUESTION", "WORKFLOW", "OBSERVATION", "TASK_EVENT", "CONSENT", "ALERT", "HANDOFF", "SEARCH_ENTRY", "AUDIT"}
 SEARCHABLE_TYPES = {"DOCUMENT", "PLAN_TASK", "PLAN_RULE", "PLAN_NOTE", "OBSERVATION", "TASK_EVENT", "HANDOFF"}
 # These are deliberately capability names, not a general-purpose role bag.  A
 # caregiver never receives ownership or data-rights capabilities.
@@ -27,13 +27,40 @@ AUDIT_ACTIONS = frozenset({"access_invited", "access_granted", "access_revoked",
                            "document_uploaded", "plan_item_approved", "plan_item_rejected",
                            # Access transparency: what a family member looked at or did (never the content).
                            "tasks_viewed", "observations_viewed", "records_viewed", "source_viewed", "history_searched",
-                           "task_assigned", "task_completed", "question_added"})
+                           "task_assigned", "task_completed", "question_added", "task_rescheduled"})
 ACCESS_PHRASES = {"tasks_viewed": "viewed your tasks", "observations_viewed": "viewed your check-ins",
                   "records_viewed": "viewed your records", "source_viewed": "viewed a plan source",
                   "history_searched": "searched your history", "alert_acknowledged": "acknowledged an update",
                   "document_uploaded": "uploaded a document", "task_completed": "completed a task",
                   "access_granted": "accepted your invitation"}
 MISSED_TASK_GRACE_SECONDS = 60 * 60
+WORKFLOW_TTL_SECONDS = 7 * 86_400
+_NUMBER_WORDS = {w: i for i, w in enumerate("zero one two three four five six seven eight nine ten eleven twelve".split())}
+
+
+def resolve_spoken_time(spoken: str, reference: list[str] | None = None) -> str:
+    """Turn "8 pm", "20:00", "nine" or "9" into HH:MM.
+
+    A bare hour (1-12, no am/pm) picks whichever of hh:00 / hh+12:00 is nearer the item's
+    current time, so "make it 9" means 21:00 for an evening task and 09:00 for a morning one.
+    """
+    text = " ".join(str(spoken).lower().split())
+    for word, number in _NUMBER_WORDS.items():
+        text = re.sub(rf"\b{word}\b", str(number), text)
+    match = re.search(r"\b(\d{1,2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)?(?![\d:])", text)
+    if not match:
+        raise ValueError("no time was given")
+    hour, minute, meridiem = int(match.group(1)), int(match.group(2) or 0), match.group(3)
+    if minute > 59 or hour > 23:
+        raise ValueError("that isn't a valid time")
+    if meridiem:
+        if not 1 <= hour <= 12:
+            raise ValueError("that isn't a valid time")
+        hour = hour % 12 + (12 if meridiem.startswith("p") else 0)
+    elif 1 <= hour <= 12:
+        anchor = int((reference or ["12:00"])[0][:2])
+        hour = min((hour % 12, hour % 12 + 12), key=lambda h: abs(h - anchor))
+    return f"{hour:02d}:{minute:02d}"
 MAX_QUESTION_CHARS = 300
 PLAN_TYPES = frozenset({"PLAN_TASK", "PLAN_RULE", "PLAN_NOTE"})
 REVIEWABLE = frozenset({"draft", "needs_review"})
@@ -130,9 +157,9 @@ class CareLoopService:
         document = self.storage.put(identity.patient, document["id"], "DOCUMENT", document)
         drafts = []
         conflicting = any("conflicting extracted instructions" in reason for reason in extracted.manual_review_reasons)
-        for draft in extracted.drafts:
+        for position, draft in enumerate(extracted.drafts, start=1):
             payload: dict[str, Any] = {
-                "text": draft.text, "page": draft.page,
+                "text": draft.text, "page": draft.page, "order": position,
                 # The name Alexa says in replies and reminders; the patient can edit it on screen.
                 "label": draft.text[:60] if draft.kind == "TASK" else "Follow-up rule",
                 # Conflicting instructions are visible as proposals for a
@@ -275,8 +302,9 @@ class CareLoopService:
             document = self.create_document(owner, job["title"], excerpts, extracted.source_hash, reviewed=True)
             document = self.storage.put(patient, document["id"], "DOCUMENT", document | {
                 "uploaded_by": job["uploaded_by"], "intake_job_id": job["id"], "extraction": {str(k): v for k, v in extracted.page_methods.items()}})
-            for item in structured.items:
+            for position, item in enumerate(structured.items, start=1):
                 payload: dict[str, Any] = {
+                    "order": position,
                     "text": item.instruction, "label": item.label, "item_kind": item.kind, "status": item.status,
                     "approval_required": True, "manual_review_required": item.status == "needs_review",
                     "review_reasons": item.reasons, "source": item.source, "page": item.source[0]["page"] if item.source else 1,
@@ -495,11 +523,14 @@ class CareLoopService:
     def assign_task(self, identity: Identity, task_id: str, grant_id: str | None) -> dict[str, Any]:
         """Patient assigns an active task to a family member granted ``perform_tasks`` (None = back to the patient)."""
         patient = self._require_patient(identity)
-        task = self.storage.get(patient, task_id)
-        if not task or task["type"] != "PLAN_TASK" or task.get("status", "active") != "active":
+        task = self.find_task(identity, task_id)
+        task_id = task["id"]
+        if task.get("status", "active") != "active":
             raise ValueError("active care task is unavailable")
         if grant_id:
-            grant = self._active_grant(patient, grant_id, "perform_tasks")
+            found = self.find_helper(identity, grant_id)
+            grant = self._active_grant(patient, found["id"] if found else grant_id, "perform_tasks")
+            grant_id = grant["id"]
             task |= {"assignee_id": grant["caregiver_id"], "assignee_name": grant.get("display_name") or "a family member",
                      "assignee_grant_id": grant_id, "assigned_at": self._now()}
         else:
@@ -556,6 +587,120 @@ class CareLoopService:
                     "delivery_status": "failed", "acknowledgements": []}, expires_at=None)
                 created.append(alert)
         return created
+
+    _NAME_FILLER = frozenset({"the", "my", "a", "an", "task", "one", "that", "this", "your", "her", "his", "to", "of"})
+
+    def find_task(self, identity: Identity, task: str) -> dict[str, Any]:
+        """An active task by ref id, or by the words the person used ("the dressing"). Must be unambiguous."""
+        patient = self._require_patient(identity)
+        record = self.storage.get(patient, task)
+        if record and record["type"] == "PLAN_TASK":
+            return record
+        words = [w for w in re.findall(r"[a-z']+", task.lower()) if w not in self._NAME_FILLER and len(w) > 2]
+        if not words:
+            raise ValueError("which task?")
+        matches = [t for t in self.storage.list(patient, "PLAN_TASK") if t.get("status") == "active"
+                   and all(w in f"{t.get('label', '')} {t.get('text', '')}".lower() for w in words)]
+        if len(matches) != 1:
+            raise ValueError("no single task matches that name")
+        return matches[0]
+
+    def find_helper(self, identity: Identity, person: str) -> dict[str, Any] | None:
+        """A care-circle grant by ref id or by the patient's name for them."""
+        patient = self._require_patient(identity)
+        record = self.storage.get(patient, person)
+        if record and record["type"] == "CONSENT":
+            return record
+        return self.grant_for_name(identity, person.strip())
+
+    def update_task_time(self, identity: Identity, task_id: str, spoken_time: str) -> dict[str, Any]:
+        """Patient moves an active task to a new time ("move it to 8 pm"); the change is recorded."""
+        patient = self._require_patient(identity)
+        task = self.find_task(identity, task_id)
+        task_id = task["id"]
+        if task.get("status") != "active":
+            raise ValueError("active care task is unavailable")
+        new = [resolve_spoken_time(spoken_time, task.get("times"))]
+        task["edits"] = list(task.get("edits", [])) + [{"field": "times", "from": task.get("times"), "to": new,
+                                                        "by": identity.subject_id, "at": self._now()}]
+        task |= {"times": new, "updated_at": self._now()}
+        saved = self.storage.put(patient, task_id, "PLAN_TASK", task)
+        self.audit(identity, "task_rescheduled", "success")
+        return saved
+
+    def checkin_tasks(self, identity: Identity, limit: int = 3) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """(the patient's own active tasks not yet done today, family-assigned tasks not yet done today)."""
+        patient = self._require_patient(identity)
+        zone = self._zone()
+        today = datetime.fromtimestamp(self._now(), zone).date()
+        done_today = {e["task_id"] for e in self.storage.list(patient, "TASK_EVENT")
+                      if datetime.fromtimestamp(e.get("completed_at", 0), zone).date() == today}
+        active = sorted((t for t in self.storage.list(patient, "PLAN_TASK")
+                         if t.get("status") == "active" and t["id"] not in done_today),
+                        key=lambda t: ((t.get("times") or ["99:99"])[0], t.get("created_at", 0)))
+        mine = [t for t in active if not t.get("assignee_id")][:limit]
+        family = [t for t in active if t.get("assignee_id")]
+        return mine, family
+
+    def assign_offer(self, identity: Identity) -> tuple[dict[str, Any], dict[str, Any]] | None:
+        """An unassigned timed task (evening first) and a family member who can do tasks, if both exist."""
+        patient = self._require_patient(identity)
+        people = [g for g in self.storage.list(patient, "CONSENT")
+                  if g.get("accepted_at") and not g.get("revoked_at") and "perform_tasks" in g.get("scopes", [])
+                  and (not g.get("expires_at") or g["expires_at"] > self._now())]
+        tasks = [t for t in self.storage.list(patient, "PLAN_TASK")
+                 if t.get("status") == "active" and t.get("times") and not t.get("assignee_id")]
+        if not people or not tasks:
+            return None
+        tasks.sort(key=lambda t: (-int(t["times"][0][:2]), t.get("created_at", 0)))  # evening tasks first
+        return tasks[0], people[0]
+
+    # ---- saved, resumable workflows -----------------------------------------------------
+    def voice_reviewable(self, identity: Identity) -> tuple[list[dict[str, Any]], int]:
+        """(drafts that may be approved by voice, in document order; count that need the screen)."""
+        patient = self._require_patient(identity)
+        pending = [i for i in self.storage.list(patient) if i["type"] in PLAN_TYPES and i.get("status") in REVIEWABLE]
+        voice = [i for i in pending if i.get("status") == "draft" and i.get("item_kind") != "medication_task"]
+
+        def order(item: dict[str, Any]) -> tuple:
+            first = (item.get("source") or [{}])[0]
+            line = str(first.get("id", ""))
+            return (item.get("created_at", 0) // 60, first.get("page", item.get("page", 0)),
+                    int(line.split(":L")[1]) if ":L" in line else 0, item.get("order", 0), item["id"])
+        return sorted(voice, key=order), len(pending) - len(voice)
+
+    def active_workflow(self, identity: Identity, kind: str) -> dict[str, Any] | None:
+        patient = self._require_patient(identity)
+        flows = [w for w in self.storage.list(patient, "WORKFLOW") if w.get("kind") == kind and w.get("status") == "active"]
+        return max(flows, key=lambda w: w.get("created_at", 0)) if flows else None
+
+    def start_workflow(self, identity: Identity, kind: str, queue: list[str]) -> dict[str, Any]:
+        patient = self._require_patient(identity)
+        now = self._now()
+        return self.storage.put(patient, self._id(), "WORKFLOW", {
+            "kind": kind, "status": "active", "queue": queue, "position": 0, "approved": 0, "skipped": 0,
+            "assigned": [], "created_at": now, "updated_at": now}, expires_at=now + WORKFLOW_TTL_SECONDS)
+
+    def save_workflow(self, identity: Identity, workflow: dict[str, Any]) -> dict[str, Any]:
+        patient = self._require_patient(identity)
+        workflow = dict(workflow) | {"updated_at": self._now()}
+        return self.storage.put(patient, workflow["id"], "WORKFLOW", workflow,
+                                expires_at=int(workflow.get("created_at", self._now())) + WORKFLOW_TTL_SECONDS)
+
+    def grant_for_name(self, identity: Identity, name: str) -> dict[str, Any] | None:
+        patient = self._require_patient(identity)
+        for grant in self.storage.list(patient, "CONSENT"):
+            if (grant.get("display_name", "").casefold() == name.casefold() and grant.get("accepted_at")
+                    and not grant.get("revoked_at") and "perform_tasks" in grant.get("scopes", [])):
+                return grant
+        return None
+
+    def task_helpers(self, identity: Identity) -> list[str]:
+        """Names of family members who can be given tasks."""
+        patient = self._require_patient(identity)
+        return [g["display_name"] for g in self.storage.list(patient, "CONSENT")
+                if g.get("display_name") and g.get("accepted_at") and not g.get("revoked_at")
+                and "perform_tasks" in g.get("scopes", [])]
 
     # ---- questions for the clinician --------------------------------------------------
     def add_clinician_question(self, identity: Identity, question: str) -> dict[str, Any]:

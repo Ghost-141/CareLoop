@@ -16,7 +16,7 @@ CareLoop is intentionally bounded. It does **not** diagnose, prescribe, adjust m
 | Identity | Credential-derived patient/caregiver identities; no caller-supplied patient scope |
 | Privacy | Voice-safe tool results, patient-owned expiring grants, generic caregiver notifications, deletion and purge |
 | Document intake | Prescription/plan upload: PDF text first, PaddleOCR fallback, local LLM proposes items, deterministic checks, patient approves each item |
-| Tests | 132 tests, including live end-to-end runs against a real server; an intake eval against the local model |
+| Tests | 164 tests, including live end-to-end runs against a real server; an intake eval against the local model |
 
 ## Contents
 
@@ -48,6 +48,7 @@ Alexa+ can remember documents, set reminders, and alert family about activity. C
 | Patient-controlled consent | Scoped, expiring caregiver invitations; revocation is confirmed by voice and applies on the next request |
 | Family task assignment | The patient assigns a task to a named family member; Alexa+ gets reminder suggestions; the family member marks it done; a missed task raises a generic update |
 | Questions for the clinician | Saved by voice, never answered or read back, and placed in the next handoff |
+| Multi-turn workflows | Check-ins ask follow-up questions from the approved plan; a guided voice review walks through draft items (change the time, give it to someone, skip, stop) and resumes later; CareLoop offers the next step; "move it to 8 pm" refers to the task just mentioned; a new "Alexa, …" request pauses a waiting workflow |
 | Access transparency | "Who has seen my care data this week?" is answered from the audit log: who viewed or did what, never the content |
 | Prescription intake | Upload a prescription (PDF, scan or photo): every proposed task cites its source line, invented numbers are blocked, and nothing reaches Alexa+ until the patient approves it |
 | Clinician handoff | A date-bounded, cited factual summary rendered as an MCP Apps view |
@@ -99,8 +100,7 @@ sed -i '' 's/^VOICE=.*/VOICE=kokoro/; s/^STT=.*/STT=whisper/' .env
 **4. (Optional) Pull the local planner model:**
 
 ```bash
-ollama pull qwen3.5:4b-mlx     # voice planner (LLM_MODEL)
-ollama pull gemma4:e4b-mlx     # document intake (CARELOOP_INTAKE_MODEL)
+ollama pull gemma4:e4b-mlx     # voice planner (LLM_MODEL) and document intake (CARELOOP_INTAKE_MODEL)
 ```
 
 Skip this and set `CARELOOP_AGENT_LLM=mock` in `.env` to use the deterministic planner only.
@@ -109,7 +109,7 @@ Skip this and set `CARELOOP_AGENT_LLM=mock` in `.env` to use the deterministic p
 
 ```bash
 uv run pytest -q
-# 132 passed
+# 164 passed
 ```
 
 ## Run the Alexa+ demo
@@ -177,6 +177,20 @@ Steps 6–8 also work by voice end to end: answer the question out loud when the
 
 If an assigned task isn't marked done within an hour of its time, Sam's ring lights up with a generic update, and the miss appears in the handoff.
 
+**Multi-turn conversation (add-on).** Start fresh, do step G (Sam can help with tasks), then:
+
+| # | Say | Expected |
+|---|---|---|
+| N | "Alexa, I got a new care plan from my clinic" | "…Want to go through them now?" The mic stays open |
+| O | "yes" | "Item 1 of 3: Take a short walk, at 08:00. Approve, change the time, give it to someone, skip, or stop?" |
+| P | "make it 9" → "give it to Sam" | The walk moves to 09:00 and is approved; the evening task goes to Sam; item 3 (the alert rule) is asked |
+| Q | "Alexa, show my tasks" | A new request **pauses** the review: "Okay, I've saved your place. 1 item left…" followed by the task summary |
+| R | "Alexa, continue my review" → "approve" | Resumes at item 3: "Done: 3 approved." |
+| S | "Alexa, Sam handles my evening task" → "Alexa, move it to 8 pm" | "it" = the task just mentioned: "Done. Complete the evening check-in is now at 20:00." |
+| T | "Alexa, do my check-in" → "four" → "yes" | Asks pain, then "Did you do Take a short walk today?", then "Check-in recorded. You did 1 of 1 task. Sam has Complete the evening check-in at 20:00." |
+
+Design: [docs/CARELOOP_MULTITURN_PLAN.md](docs/CARELOOP_MULTITURN_PLAN.md).
+
 **Prescription intake (add-on).** In the Alexa app panel, pick **Share a document → Sample: typed PDF** (or *scanned PDF* / *photo* to show the OCR fallback):
 
 | # | Where | Action | Expected |
@@ -197,7 +211,7 @@ rm -f data/careloop.db data/careloop.db-wal data/careloop.db-shm
 ## Testing
 
 ```bash
-uv run pytest -q                       # all 132 tests
+uv run pytest -q                       # all 164 tests
 uv run pytest -q server/tests          # MCP server, tools, consent, MCP Apps views, elicitation
 uv run pytest -q alexa_sim/tests       # simulator host, incl. a live run of the demo story above
 uv run pytest -q care_sim/tests        # evaluator and original voice simulator
@@ -246,6 +260,8 @@ Endpoint `http://127.0.0.1:8010/mcp` (Streamable HTTP, bearer token required). `
 | `list_care_circle` / `invite_caregiver` / `accept_caregiver_invitation` / `revoke_caregiver` | Patient-controlled caregiver access (invitations can carry a name, e.g. "Sam") |
 | `assign_task` / `list_my_assigned_tasks` | Assign a task to a family member with `perform_tasks`; they list and complete their own tasks. Results carry `reminders` for Alexa+ to create natively |
 | `add_question_for_clinician` | Save a question for the next handoff; CareLoop never answers it |
+| `review_plan_by_voice` | Guided, resumable review of draft items by voice (MCP elicitation per item); medicine and flagged items stay on screen |
+| `update_task_time` | Move a task to a new spoken time ("8 pm", "9"), by name or id |
 | `who_accessed_my_care_data` | Who else viewed or acted on the patient's data (default: last 7 days) |
 | `list_generic_notifications` / `acknowledge_alert` | Generic caregiver updates; no private alert detail |
 | `create_visit_handoff` | Date-bounded, cited handoff (ISO dates, epochs, or `last_7_days`) |

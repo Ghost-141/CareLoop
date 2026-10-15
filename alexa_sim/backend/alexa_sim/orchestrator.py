@@ -16,12 +16,13 @@ from typing import Any, Awaitable, Callable
 from .devices import Device, PendingAction
 from .mcp_pool import MCPClientPool, Question
 from .planners import Action, MockReplay, Planner, Step
-from .reply_policy import DISCLAIMER, compose_reply, screen_payload, structured
+from .reply_policy import DISCLAIMER, compose_reply, screen_payload, speakable, structured
 
 Trace = Callable[[dict[str, Any]], Awaitable[None]]
 
 _WAKE = re.compile(r"^\s*(hey\s+)?alexa[\s,.!:-]*", re.IGNORECASE)
-_CONFIRM = re.compile(r"^(confirm|yes|yeah|yep|do it|go ahead)\b", re.IGNORECASE)
+_CONFIRM = re.compile(r"^(confirm|yes|yeah|yep|sure|ok(ay)?|please|do it|go ahead|sounds good)\b", re.IGNORECASE)
+_DECLINE = re.compile(r"^(no|nope|not now|no thanks|later|maybe later)\b", re.IGNORECASE)
 _MEDICAL = re.compile(r"\b(dose|dosage|medication|medicine|diagnos\w*|prescri\w*|should i take|emergency|double my)\b", re.IGNORECASE)
 # A question saved for the clinician is not a request for advice: CareLoop stores it and never answers.
 _CLINICIAN_QUESTION = re.compile(r"\b(question|ask)\b.*\b(doctor|clinician|nurse|care team)\b", re.IGNORECASE)
@@ -56,6 +57,23 @@ class Awaiting:
 
 
 _NUMBER_WORDS = {w: i for i, w in enumerate("zero one two three four five six seven eight nine ten".split())}
+# Spoken words that pick an enum option when its own word isn't said (what Alexa+'s NLU would do).
+_ENUM_SYNONYMS = {
+    "approve": r"\b(approve|yes|yeah|yep|ok(ay)?|sure|sounds good|correct|that'?s (fine|right)|keep it|fine)\b",
+    "skip": r"\b(skip|not now|later|no|nope|pass|next one)\b",
+    "stop": r"\b(stop|pause|enough|that'?s all|done for now)\b",
+    "change time": r"\b(change|move|reschedule|different time)\b",
+    "me": r"\b(me|myself|i'?ll|i will)\b",
+}
+_TIME_PHRASE = re.compile(
+    r"\b(?:\d{1,2}(?::\d{2})?|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)"
+    r"(?:\s*(?:a\.?m\.?|p\.?m\.?|o'?clock))?(?![\w:])", re.IGNORECASE)
+
+
+def time_phrase(text: str) -> str | None:
+    """The spoken time in an utterance ("9", "8 pm", "20:30"), resolved later by the server."""
+    match = _TIME_PHRASE.search(text)
+    return match.group(0).replace("o'clock", "").replace("oclock", "").strip() if match else None
 _YES = re.compile(r"\b(yes|yeah|yep|done|did|completed|sure)\b", re.IGNORECASE)
 _NO = re.compile(r"\b(no|nope|not yet|didn'?t|haven'?t)\b", re.IGNORECASE)
 
@@ -76,6 +94,9 @@ def parse_answer(text: str, schema: dict[str, Any]) -> tuple[dict[str, Any] | No
     """Fill a flat MCP elicitation schema from one spoken answer: (content, re-prompt)."""
     content: dict[str, Any] = {}
     for name, prop in (schema.get("properties") or {}).items():
+        if "type" not in prop and prop.get("anyOf"):  # an optional field written as anyOf[T, null]
+            prop = next((p for p in prop["anyOf"] if p.get("type") != "null"), {}) | {
+                k: v for k, v in prop.items() if k != "anyOf"}
         kind = prop.get("type")
         if kind in {"integer", "number"}:
             match = re.search(r"-?\d+(?:\.\d+)?", text)
@@ -101,12 +122,20 @@ def parse_answer(text: str, schema: dict[str, Any]) -> tuple[dict[str, Any] | No
         elif kind == "string":
             options = prop.get("enum")
             if options:
-                choice = next((o for o in options if str(o).lower() in text.lower()), None)
+                lowered = text.lower()
+                choice = next((o for o in options if re.search(rf"\b{re.escape(str(o).lower())}\b", lowered)), None)
+                if choice is None:
+                    choice = next((o for o in options if str(o).lower() in _ENUM_SYNONYMS
+                                   and re.search(_ENUM_SYNONYMS[str(o).lower()], lowered)), None)
                 if choice is None:
                     if name in (schema.get("required") or []):
                         return None, "Sorry, please choose one of: " + ", ".join(map(str, options)) + "."
                     continue
                 content[name] = choice
+            elif "time" in name:
+                spoken = time_phrase(text)
+                if spoken:
+                    content[name] = spoken
             else:
                 content[name] = text
     return content, None
@@ -130,12 +159,37 @@ class Orchestrator:
         if not self.pool.linked(device.account):
             return Turn("Please enable CareLoop for this device in the Alexa app panel first.")
         account = self.pool.accounts[device.account]
+        woke = text != utterance.strip()  # "Alexa, …" starts a new request
 
+        paused = None
         if device.awaiting is not None:
-            turn = await self._answer(device, account, text)
-            if turn is not None:
-                return turn
+            content, _reprompt = parse_answer(text, device.awaiting.question.schema)
+            if woke and not content:
+                # A new "Alexa, …" request while a workflow waits: save its place, then handle the request.
+                paused = await self._interrupt(device, account)
+            else:
+                turn = await self._answer(device, account, text)
+                if turn is not None:
+                    return turn
+        if paused:
+            turn = await self._respond_fresh(device, account, text)
+            turn.reply = f"{paused} {turn.reply}".strip()
+            return turn
+        return await self._respond_fresh(device, account, text)
 
+    async def _interrupt(self, device: Device, account) -> str | None:
+        awaiting, device.awaiting = device.awaiting, None
+        if awaiting.question.answer.done():
+            return None
+        awaiting.question.answer.set_result({"action": "decline"})
+        outcome = await self._race(account.account_id, awaiting.task)
+        while isinstance(outcome, Question):  # decline any further question from the same tool
+            self._inflight.pop(id(outcome), None)
+            outcome.answer.set_result({"action": "decline"})
+            outcome = await self._race(account.account_id, awaiting.task)
+        return speakable(outcome) if outcome and not outcome.get("isError") else None
+
+    async def _respond_fresh(self, device: Device, account, text: str) -> Turn:
         if device.pending:
             pending, device.pending = device.pending, None
             if _CONFIRM.match(text):
@@ -144,8 +198,17 @@ class Orchestrator:
             if _CANCEL.match(text):
                 device.remember(text, "Okay, I didn't change anything.")
                 return Turn("Okay, I didn't change anything.")
+        if device.offer is not None:
+            offer, device.offer = device.offer, None
+            if _CONFIRM.match(text):
+                return await self._run_offer(device, account, text, offer)
+            if _DECLINE.match(text):
+                device.remember(text, "Okay.")
+                return Turn("Okay.")
         if _CANCEL.fullmatch(text):
             return Turn("")
+        if re.fullmatch(r"(yes|yeah|yep|no|nope|ok(ay)?|sure|thanks?( you)?)[.!]?", text, re.IGNORECASE):
+            return Turn("Okay.")  # nothing is waiting on a yes or no
 
         # Deterministic safety refusal wins before any planner or model sees the request.
         if _MEDICAL.search(text) and not _CLINICIAN_QUESTION.search(text):
@@ -155,13 +218,15 @@ class Orchestrator:
         planner, steps, said = self.planner, [], None
         for _ in range(self.max_steps):
             try:
-                action = await planner.next(text, tools, device.history, [(n, a, r) for n, a, r, _ in steps])
+                action = await planner.next(text, tools, device.history, [(n, a, r) for n, a, r, _ in steps],
+                                            context=device.context)
             except Exception as exc:
                 if self.fallback is None or planner is self.fallback:
                     raise
                 await self._log({"type": "planner_fallback", "from": planner.name, "error": type(exc).__name__})
                 planner = self.fallback
-                action = await planner.next(text, tools, device.history, [(n, a, r) for n, a, r, _ in steps])
+                action = await planner.next(text, tools, device.history, [(n, a, r) for n, a, r, _ in steps],
+                                            context=device.context)
             if not action.tool:
                 said = action.say
                 break
@@ -189,6 +254,18 @@ class Orchestrator:
             device.remember(text, reply)
             return Turn(reply, planner=planner.name)
         return await self._finish(device, text, steps, account.tools, planner.name)
+
+    async def _run_offer(self, device: Device, account, text: str, offer: dict[str, Any]) -> Turn:
+        """The person said yes to the server's offer: call exactly that tool."""
+        tool = next((t for t in account.model_tools if t["name"] == offer["tool"]), None)
+        if tool is None or (tool.get("annotations") or {}).get("destructiveHint"):
+            return Turn("Sorry, I can't do that from here.")
+        step = await self._call(device, account, offer["tool"], offer["arguments"])
+        if isinstance(step, Question):
+            return self._ask(device, Awaiting(step, self._inflight.pop(id(step)), offer["tool"], offer["arguments"],
+                                              bool((tool.get("annotations") or {}).get("readOnlyHint")),
+                                              text, [], "offer"), remember=text)
+        return await self._finish(device, text, [step], account.tools, "offer")
 
     async def _call(self, device: Device, account, name: str, arguments: dict[str, Any]):
         """Call a tool; if the server asks a question first, return that Question instead."""
@@ -261,7 +338,26 @@ class Orchestrator:
                          .get("ui") or {}).get("resourceUri"))
             screen["resource_uri"] = meta_uri or screen["resource_uri"]
         results = [(name, structured(result)) for name, _args, result, _ in steps if not result.get("isError")]
-        return Turn(reply, [name for name, *_ in steps], screen, planner=planner, results=results)
+        self._remember_context(device, results)
+        offer = next((data.get("next_step") for _name, data in reversed(results) if data.get("next_step")), None)
+        device.offer = {"tool": offer["tool"], "arguments": offer.get("arguments") or {}} if offer else None
+        return Turn(reply, [name for name, *_ in steps], screen, planner=planner, results=results,
+                    expects_reply=device.offer is not None)
+
+    @staticmethod
+    def _remember_context(device: Device, results: list[tuple[str, dict[str, Any]]]) -> None:
+        """Keep the last single task and person mentioned, so "it", "that one" and "him" resolve."""
+        for _name, data in results:
+            refs = data.get("refs") or []
+            tasks = [r for r in refs if r.get("kind") == "task" and r.get("status") == "active"]
+            if len(tasks) == 1:
+                task = tasks[0]
+                device.context["task"] = {"id": task["id"], "title": task.get("title"), "times": task.get("times", [])}
+                if task.get("assignee_id"):
+                    device.context["person"] = {"id": task["assignee_id"], "name": task.get("assignee")}
+            people = [r for r in refs if r.get("kind") == "caregiver_grant" and r.get("status") == "active"]
+            if len(people) == 1:
+                device.context["person"] = {"id": people[0]["id"], "name": people[0].get("name")}
 
     @staticmethod
     def _screen(steps) -> list[tuple[str, dict[str, Any], bool]]:

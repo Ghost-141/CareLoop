@@ -27,9 +27,11 @@ Rules:
 - For "do my check-in" (no value given) call start_daily_checkin with no arguments: CareLoop asks the person its own follow-up questions. Never ask for check-in values yourself.
 - If the person states a pain score directly, use record_pain_observation with that integer 0-10 and a fresh unique idempotency_key.
 - "Add a question for my doctor: ..." → add_question_for_clinician with the question text. Never answer the question yourself.
-- To assign a task to a family member, look up the task (list_care_tasks) and the person (list_care_circle), then call assign_task.
+- To give a task to a family member, call assign_task with task = the task's name as they said it (e.g. "the dressing") and assignee = the person's name (e.g. "Sam"). For update_task_time, task = the name too. Only use an id for "it" / "that one".
 - A family member asking about their own tasks → list_my_assigned_tasks; when they say they did one → record_task_completion with its id.
+- "Go through them" / "continue my review" → review_plan_by_voice. "Move it to 8 pm" → update_task_time on the task just mentioned.
 - Never give medical advice, diagnosis, dosage or emergency guidance. For those, do not call a tool; say CareLoop can't advise on that and to contact their clinician (or emergency services in an emergency).
+- Act when you have what a tool requires. Don't ask about optional details (like an expiry date); leave them out.
 - When you have the result you need, stop calling tools and answer in one short spoken sentence."""
 
 DEMO_PLAN_TITLE = "Synthetic discharge plan (demo only)"
@@ -51,7 +53,7 @@ class Planner(Protocol):
     name: str
 
     async def next(self, utterance: str, tools: list[dict[str, Any]], history: list[dict[str, str]],
-                   steps: list[Step]) -> Action: ...
+                   steps: list[Step], context: dict[str, Any] | None = None) -> Action: ...
 
 
 def _refs(steps: list[Step], tool: str | None = None) -> list[dict[str, Any]]:
@@ -60,6 +62,11 @@ def _refs(steps: list[Step], tool: str | None = None) -> list[dict[str, Any]]:
             refs = structured(result).get("refs")
             return refs if isinstance(refs, list) else []
     return []
+
+
+def _time_phrase(text: str) -> str | None:
+    from .orchestrator import time_phrase
+    return time_phrase(text)
 
 
 def _called(steps: list[Step], tool: str, key: str) -> set[str]:
@@ -72,16 +79,25 @@ class MockReplay:
     name = "mock"
 
     async def next(self, utterance: str, tools: list[dict[str, Any]], history: list[dict[str, str]],
-                   steps: list[Step]) -> Action:
+                   steps: list[Step], context: dict[str, Any] | None = None) -> Action:
         available = {str(tool.get("name")) for tool in tools}
         text = utterance.lower()
-        action = self._plan(text, steps)
+        action = self._plan(text, steps, context or {})
         if action.tool and action.tool not in available:
             return Action(say="CareLoop can't do that from this account.")
         return action
 
-    def _plan(self, text: str, steps: list[Step]) -> Action:
-        first = not steps
+    def _plan(self, text: str, steps: list[Step], context: dict[str, Any] | None = None) -> Action:
+        first, context = not steps, context or {}
+        if re.search(r"\b(continue|resume|finish)\b.*\breview\b|\bgo through (them|my plan|the items|it)\b"
+                     r"|\breview (my plan|them|the items) (by voice|one by one)\b", text):
+            return Action("review_plan_by_voice", {}) if first else Action()
+        refers = re.search(r"\b(it|that|this|that one|this one)\b", text)
+        spoken = _time_phrase(text)
+        if refers and spoken and re.search(r"\b(move|change|make|shift|reschedule|push)\b", text) and context.get("task"):
+            return Action("update_task_time", {"task": context["task"]["id"], "new_time": spoken}) if first else Action()
+        if refers and re.search(r"\b(give|assign|hand)\b.*\bto\b", text) and context.get("task"):
+            return self._give(text, steps, context)
         question = re.search(r"\b(?:question|ask)\b.*?\b(?:doctor|clinician|nurse|care team)\b[:,]?\s*(.*)$", text)
         if question:
             asked = question.group(1).strip(" .?!") or text
@@ -158,6 +174,24 @@ class MockReplay:
         return Action()
 
     @staticmethod
+    def _give(text: str, steps: list[Step], context: dict[str, Any]) -> Action:
+        """ "Give it to Sam" / "give that one to him": the remembered task, a named or remembered person."""
+        if any(name == "assign_task" for name, _, _ in steps):
+            return Action()
+        named = re.search(r"\b(sam|mom|dad)\b", text)
+        person = context.get("person")
+        if person and (not named or (person.get("name") or "").lower() == named.group(1)):
+            return Action("assign_task", {"task": context["task"]["id"], "assignee": person["id"]})
+        if not any(name == "list_care_circle" for name, _, _ in steps):
+            return Action("list_care_circle", {})
+        wanted = named.group(1) if named else None
+        match = next((r for r in _refs(steps, "list_care_circle") if r.get("status") == "active"
+                      and (wanted is None or (r.get("name") or "").lower() == wanted)), None)
+        if not match:
+            return Action(say="I couldn't find who you mean in your care circle.")
+        return Action("assign_task", {"task": context["task"]["id"], "assignee": match["id"]})
+
+    @staticmethod
     def _assign(text: str, steps: list[Step]) -> Action:
         """Find the task (by time of day) and the family member, then assign."""
         called = {name for name, _, _ in steps}
@@ -178,7 +212,7 @@ class MockReplay:
             return Action(say="There's no active task to assign yet.")
         if not people:
             return Action(say="No family member can be assigned tasks yet. Invite them to help with tasks first.")
-        return Action("assign_task", {"task_id": tasks[0]["id"], "assignee_id": people[0]["id"]})
+        return Action("assign_task", {"task": tasks[0]["id"], "assignee": people[0]["id"]})
 
     @staticmethod
     def _each(steps: list[Step], lookup: str, act: str, key: str, want, limit: int | None = None) -> Action:
@@ -196,6 +230,17 @@ class MockReplay:
         return Action()
 
 
+def _context_note(context: dict[str, Any]) -> str:
+    parts = []
+    task, person = context.get("task"), context.get("person")
+    if task:
+        when = f" at {', '.join(task.get('times') or [])}" if task.get("times") else ""
+        parts.append(f"task '{task.get('title') or 'task'}'{when} (id={task['id']})")
+    if person:
+        parts.append(f"person '{person.get('name') or 'family member'}' (id={person['id']})")
+    return ("Recently mentioned; use these ids when the person says it, that one, him or her: " + "; ".join(parts) + ".") if parts else ""
+
+
 class OllamaPlanner:
     """Native tool-calling through a local Ollama model."""
 
@@ -206,9 +251,12 @@ class OllamaPlanner:
         self._post = post or self._http_post
 
     async def next(self, utterance: str, tools: list[dict[str, Any]], history: list[dict[str, str]],
-                   steps: list[Step]) -> Action:
-        messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}, *history,
-                                          {"role": "user", "content": utterance}]
+                   steps: list[Step], context: dict[str, Any] | None = None) -> Action:
+        messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}, *history]
+        note = _context_note(context or {})
+        if note:
+            messages.append({"role": "system", "content": note})
+        messages.append({"role": "user", "content": utterance})
         for name, arguments, result in steps:
             messages.append({"role": "assistant", "content": "",
                              "tool_calls": [{"function": {"name": name, "arguments": arguments}}]})

@@ -18,6 +18,9 @@
     "Alexa, Sam handles my evening task",
     "Alexa, add a question for my doctor: can I start swimming",
     "Alexa, who has seen my care data this week?",
+    "Alexa, go through them",
+    "Alexa, continue my review",
+    "Alexa, move it to 8 pm",
   ];
   const DOT_CHIPS = [
     "Alexa, any CareLoop updates?",
@@ -150,6 +153,7 @@
     if (id === "show") {
       bubble(out.reply);
       if (out.screen?.resource_uri) mountApp(out.screen).catch(() => bubble("The private view couldn't load.", "system"));
+      else if ((out.tools || []).length) refreshApp();  // e.g. a voice review step changed what's on screen
     } else {
       $("#dot-caption").textContent = out.reply || "";
     }
@@ -338,6 +342,10 @@
 
   // ---- MCP Apps host bridge -----------------------------------------------------------
   let activeApp = null;
+  function refreshApp() {
+    // Re-send the view's last tool result; the app reloads its private data through the bridge.
+    if (activeApp) activeApp.post({ jsonrpc: "2.0", method: "ui/notifications/tool-result", params: activeApp.result });
+  }
   async function mountApp(screen) {
     const { html } = await api(`/api/apps/resource?device_id=show&uri=${encodeURIComponent(screen.resource_uri)}`);
     if (activeApp) { window.removeEventListener("message", activeApp.listener); activeApp.frame.remove(); }
@@ -378,7 +386,7 @@
     window.addEventListener("message", listener);
     frame.srcdoc = html;
     $("#app-slot").replaceChildren(frame);
-    activeApp = { frame, listener };
+    activeApp = { frame, listener, post, result: screen.result };
   }
 
   // ---- Alexa app panel, director, inspector -----------------------------------------

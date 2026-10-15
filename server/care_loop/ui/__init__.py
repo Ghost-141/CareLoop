@@ -71,7 +71,7 @@ def _document_order(item: dict[str, Any]) -> tuple:
     first = (item.get("source") or [{}])[0]
     line_id = str(first.get("id", ""))
     number = int(line_id.split(":L")[1]) if ":L" in line_id else 0
-    return (item.get("created_at", 0) // 60, first.get("page", 0), number, item.get("created_at", 0))
+    return (item.get("created_at", 0) // 60, first.get("page", 0), number, item.get("order", 0), item.get("created_at", 0))
 
 
 def _rule_thresholds(items: list[dict[str, Any]]) -> list[int]:

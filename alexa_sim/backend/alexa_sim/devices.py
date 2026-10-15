@@ -36,6 +36,8 @@ class Device:
     pending: PendingAction | None = None
     notification: bool = False
     awaiting: Any = None  # orchestrator.Awaiting: a tool call paused on an MCP elicitation
+    offer: dict[str, Any] | None = None  # a next step the server offered; "yes" runs it (one turn only)
+    context: dict[str, Any] = field(default_factory=dict)  # last task / person mentioned, for "it" and "him"
     disclaimed: bool = False  # the care disclaimer is spoken once per linked session
 
     @property

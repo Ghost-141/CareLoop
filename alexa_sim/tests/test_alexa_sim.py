@@ -206,6 +206,9 @@ class ElicitingPool(FakePool):
 
     async def call_tool(self, account, name, arguments, source="model"):
         self.calls.append((name, arguments))
+        if name != "start_daily_checkin":
+            response = self.responses[name]
+            return response(arguments) if callable(response) else response
         while True:
             question = Question(account, "On a scale from 0 to 10, what's your pain score today?", PAIN_SCHEMA,
                                 asyncio.get_running_loop().create_future())
@@ -316,7 +319,11 @@ def test_full_demo_story_against_live_careloop(careloop_server) -> None:
         # The follow-up question is a real MCP elicitation from the server's tool.
         asked = say("show", "Alexa, do my check-in")
         assert asked["expects_reply"] and asked["reply"].startswith("On a scale from 0 to 10")
-        assert say("show", "nine")["reply"].startswith("Check-in recorded.")
+        # The check-in continues with the patient's own plan tasks for today (chained elicitation).
+        assert say("show", "nine")["reply"] == "Did you do Take a short walk today?"
+        assert say("show", "yes")["reply"] == "Did you do Complete the evening check-in today?"
+        done = say("show", "not yet")
+        assert done["reply"].startswith("Check-in recorded. You did 1 of 2 tasks. Complete the evening check-in is still to do.")
         kinds = [e.get("method") for e in client.get("/api/state").json()["trace"]]
         assert "elicitation/create" in kinds
         state = client.get("/api/state").json()
@@ -446,3 +453,129 @@ def test_family_tasks_reminders_questions_and_access_log_live(careloop_server) -
             "It includes 1 question for your clinician.")
         log = say("show", "Alexa, who has seen my care data this week?")["reply"]
         assert log.startswith("In the last 7 days, Sam") and "completed a task" in log
+
+
+# ---- multi-turn: answer parsing, offers, "it" ------------------------------------------------------
+REVIEW_SCHEMA = {"type": "object", "properties": {
+    "action": {"anyOf": [{"type": "string", "enum": ["approve", "change time", "skip", "stop"]}, {"type": "null"}]},
+    "new_time": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+    "who": {"anyOf": [{"type": "string", "enum": ["me", "Sam"]}, {"type": "null"}]}}}
+
+
+@pytest.mark.parametrize(("text", "expected"), [
+    ("yes", {"action": "approve"}), ("sounds good", {"action": "approve"}), ("not now", {"action": "skip"}),
+    ("make it 9", {"new_time": "9"}), ("move it to 8 pm", {"action": "change time", "new_time": "8 pm"}),
+    ("give it to Sam", {"who": "Sam"}), ("I'll do it myself", {"who": "me"}), ("hmm", {}),
+    ("what time is it", {}),  # "me" must not match inside "time"
+])
+def test_review_answers_are_parsed_like_alexa_would(text, expected) -> None:
+    assert parse_answer(text, REVIEW_SCHEMA) == (expected, None)
+
+
+@pytest.mark.asyncio
+async def test_offer_runs_on_yes_and_is_dropped_on_no() -> None:
+    offer = {"say": "Want Sam to handle Change the dressing?", "tool": "assign_task",
+             "arguments": {"task": "t1", "assignee": "g1"}}
+    pool = FakePool(TOOLS + [{"name": "assign_task", "annotations": {}}], {
+        "list_care_tasks": ok("You have 1 active task. Want Sam to handle Change the dressing?", next_step=offer),
+        "assign_task": lambda args: ok("Done. Sam will handle Change the dressing at 19:00.",
+                                       refs=[{"id": "t1", "kind": "task", "status": "active", "label": "active task 1",
+                                              "title": "Change the dressing", "assignee": "Sam", "assignee_id": "g1"}]),
+    })
+    device = Device("show", DeviceKind.SHOW, "maya", account="maya")
+    orchestrator = Orchestrator(pool)
+    first = await orchestrator.respond(device, "show my tasks")
+    assert first.expects_reply and device.offer["tool"] == "assign_task"
+    accepted = await orchestrator.respond(device, "yes please")
+    assert pool.calls[-1] == ("assign_task", {"task": "t1", "assignee": "g1"})
+    assert accepted.reply.startswith("Done. Sam will handle") and device.offer is None
+    assert device.context["task"]["id"] == "t1" and device.context["person"] == {"id": "g1", "name": "Sam"}
+
+    await orchestrator.respond(device, "show my tasks")
+    declined = await orchestrator.respond(device, "no thanks")
+    assert declined.reply == "Okay." and pool.calls[-1][0] == "list_care_tasks"
+
+
+@pytest.mark.asyncio
+async def test_it_refers_to_the_last_task_mentioned() -> None:
+    pool = FakePool(TOOLS + [{"name": "update_task_time", "annotations": {}}], {
+        "update_task_time": lambda args: ok(f"Done. Change the dressing is now at 20:00."),
+    })
+    device = Device("show", DeviceKind.SHOW, "maya", account="maya",
+                    context={"task": {"id": "t1", "title": "Change the dressing", "times": ["19:00"]}})
+    turn = await Orchestrator(pool).respond(device, "Alexa, move it to 8 pm")
+    assert pool.calls == [("update_task_time", {"task": "t1", "new_time": "8 pm"})]
+    assert turn.reply.startswith("Done. Change the dressing is now at 20:00.")
+
+
+def test_multiturn_conversation_end_to_end_live(careloop_server) -> None:
+    """Offer → guided review (time change, assign, pause, resume) → 'move it' → chained check-in."""
+    settings = AlexaSimSettings(mcp_url=careloop_server, planner="mock")
+    with TestClient(create_alexa_sim_app(settings, planner=MockReplay())) as client:
+        client.post("/api/link", json={"account": "maya"})
+        client.post("/api/link", json={"account": "sam"})
+        say = lambda device, text: client.post("/api/utterance", json={"device_id": device, "text": text}).json()
+
+        say("show", "Alexa, let Sam help with my tasks")
+        assert client.post("/api/invite/open").json()["accepted"] is True
+
+        imported = say("show", "Alexa, I got a new care plan from my clinic")
+        assert imported["reply"].endswith("Want to go through them now?") and imported["expects_reply"]
+
+        item1 = say("show", "yes")
+        assert item1["reply"] == ("Item 1 of 3: Take a short walk, at 08:00. Approve, change the time, "
+                                  "give it to someone, skip, or stop?") and item1["expects_reply"]
+        item2 = say("show", "make it 9")
+        assert item2["reply"].startswith("Item 2 of 3: Complete the evening check-in, at 19:00.")
+        item3 = say("show", "give it to Sam")
+        assert item3["reply"].startswith("Item 3 of 3: Alert rule:") and item3["reply"].endswith("Approve, skip, or stop?")
+        paused = say("show", "stop")
+        assert paused["reply"].startswith("Okay, I've saved your place. 1 item left.")
+
+        resumed = say("show", "Alexa, continue my review")
+        assert resumed["reply"].startswith("Item 3 of 3:")
+        done = say("show", "approve")
+        assert done["reply"].startswith("Done: 3 approved.")
+
+        mine = say("dot", "Alexa, what are my tasks for Maya?")
+        assert mine["reply"] == "You have 1 task to help with: Complete the evening check-in at 19:00."
+
+        say("show", "Alexa, Sam handles my evening task")  # one task in the reply → "it" now means this task
+        moved = say("show", "Alexa, move it to 8 pm")
+        assert moved["tools"] == ["update_task_time"]
+        assert moved["reply"].startswith("Done. Complete the evening check-in is now at 20:00.")
+
+        asked = say("show", "Alexa, do my check-in")
+        assert asked["reply"].startswith("On a scale from 0 to 10")
+        follow = say("show", "four")
+        assert follow["reply"] == "Did you do Take a short walk today?"
+        summary = say("show", "yes")
+        assert summary["reply"].startswith("Check-in recorded. You did 1 of 1 task. Sam has Complete the evening check-in at 20:00.")
+
+        methods = [e.get("method") for e in client.get("/api/state").json()["trace"]]
+        assert methods.count("elicitation/create") >= 4
+
+
+@pytest.mark.asyncio
+async def test_a_stray_yes_with_nothing_pending_is_just_acknowledged() -> None:
+    pool = FakePool(TOOLS, {})
+    turn = await Orchestrator(pool).respond(Device("show", DeviceKind.SHOW, "maya", account="maya"), "yes")
+    assert turn.reply == "Okay." and pool.calls == []
+
+
+@pytest.mark.asyncio
+async def test_new_alexa_request_interrupts_a_waiting_workflow() -> None:
+    pool = ElicitingPool()
+    pool.accounts["maya"].tools.append({"name": "list_care_tasks", "annotations": {"readOnlyHint": True}})
+    pool.responses["list_care_tasks"] = ok("You have 1 active task and 0 active follow-up rules.")
+    device = Device("show", DeviceKind.SHOW, "maya", account="maya")
+    orchestrator = Orchestrator(pool)
+    await orchestrator.respond(device, "Alexa, do my check-in")
+    assert device.awaiting is not None
+    turn = await orchestrator.respond(device, "Alexa, show my tasks")
+    assert pool.answers == [{"action": "decline"}] and device.awaiting is None
+    assert turn.reply.startswith("Okay, I skipped today's check-in. Nothing was recorded. You have 1 active task")
+    # Without the wake word, the same words would still be read as an answer attempt.
+    await orchestrator.respond(device, "Alexa, do my check-in")
+    still = await orchestrator.respond(device, "seven")
+    assert pool.answers[-1] == {"action": "accept", "content": {"pain_score": 7}} and still.reply.startswith("Check-in recorded.")

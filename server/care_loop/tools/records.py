@@ -25,7 +25,7 @@ from typing import Any, Literal, NotRequired, TypedDict
 from mcp.server.mcpserver import Context, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, create_model
 
 from ..core import AccessDenied
 
@@ -43,6 +43,8 @@ class Ref(TypedDict):
     scopes: NotRequired[list[str]]
     expires_at: NotRequired[int | None]
     name: NotRequired[str]  # the patient's own short name for a family member
+    title: NotRequired[str]  # a task's spoken name (the patient can edit it)
+    assignee_id: NotRequired[str]  # the caregiver_grant ref of the person doing the task
     times: NotRequired[list[str]]  # a task's scheduled local times, e.g. "20:00"
     assignee: NotRequired[str]
 
@@ -55,6 +57,13 @@ class Reminder(TypedDict):
     to: str  # "patient", or the family member's name
 
 
+class NextStep(TypedDict):
+    """An offer the host may make: if the person says yes, call exactly this tool. Never destructive."""
+    say: str
+    tool: str
+    arguments: dict[str, Any]
+
+
 class VoiceResult(TypedDict):
     status: Literal["ok"]
     speakable: str
@@ -62,6 +71,7 @@ class VoiceResult(TypedDict):
     view: str
     refs: list[Ref]
     reminders: NotRequired[list[Reminder]]
+    next_step: NotRequired[NextStep]
 
 
 def _view_uri(view: str) -> str:
@@ -69,8 +79,12 @@ def _view_uri(view: str) -> str:
 
 
 def _result(speakable: str, *, view: str, refs: list[Ref] | None = None, surface: Surface = "private_screen",
-            reminders: list[dict[str, Any]] | None = None) -> VoiceResult:
+            reminders: list[dict[str, Any]] | None = None, next_step: NextStep | None = None) -> VoiceResult:
+    if next_step:
+        speakable = f"{speakable} {next_step['say']}"
     result: VoiceResult = {"status": "ok", "speakable": speakable, "surface": surface, "view": _view_uri(view), "refs": refs or []}
+    if next_step:
+        result["next_step"] = next_step
     if reminders:
         result["reminders"] = [{"task_id": r["task_id"], "label": r["label"], "times": r["times"], "to": r["for"]}
                                for r in reminders]
@@ -118,6 +132,51 @@ class PainCheckIn(BaseModel):
 
 
 CHECKIN_QUESTION = "On a scale from 0 to 10, what's your pain score today?"
+
+
+class TaskDone(BaseModel):
+    """Elicitation schema for one check-in task question."""
+    done: bool = Field(description="yes if the task was done today")
+
+
+def _review_offer(service, identity) -> NextStep | None:
+    voice, _screen = service.voice_reviewable(identity)
+    if not voice:
+        return None
+    return {"say": "Want to go through them now?", "tool": "review_plan_by_voice", "arguments": {}}
+
+
+def _assign_offer(service, identity) -> NextStep | None:
+    found = service.assign_offer(identity)
+    if not found:
+        return None
+    task, grant = found
+    who = grant.get("display_name") or "your family member"
+    return {"say": f"Want {who} to handle {task.get('label') or 'that task'}?", "tool": "assign_task",
+            "arguments": {"task": task["id"], "assignee": grant["id"]}}
+
+
+def _describe(service, item: dict[str, Any]) -> str:
+    if item["type"] == "PLAN_RULE":
+        spec = service._rule_spec(item) or {}
+        if spec:
+            return (f"Alert rule: contact your clinic when your pain score is {spec['threshold']} or higher "
+                    f"for {spec['consecutive_days']} days in a row")
+        return "Follow-up rule"
+    text = item.get("text") or item.get("label") or "Care item"
+    if item["type"] == "PLAN_TASK" and item.get("times"):
+        text += f", at {_join(item['times'])}"
+    return text
+
+
+def _review_schema(is_task: bool, helpers: list[str]):
+    actions = ("approve", "change time", "skip", "stop") if is_task else ("approve", "skip", "stop")
+    fields: dict[str, Any] = {"action": (Literal[actions] | None, Field(None, description="What to do with this item"))}
+    if is_task:
+        fields["new_time"] = (str | None, Field(None, description="A new time, as spoken, e.g. '8 pm'"))
+        if helpers:
+            fields["who"] = (Literal[tuple(["me", *helpers])] | None, Field(None, description="Who will do it"))
+    return create_model("ReviewItem" + ("Task" if is_task else ""), **fields)
 
 
 def _date_bound(value: int | str, *, end_of_day: bool) -> int:
@@ -183,6 +242,11 @@ def _plan_refs(items: list[dict[str, Any]]) -> list[Ref]:
             ref["times"] = list(item["times"])
         if item.get("assignee_name"):
             ref["assignee"] = item["assignee_name"]
+        if item.get("assignee_grant_id"):
+            ref["assignee_id"] = item["assignee_grant_id"]
+        # The spoken name is shared only once the patient has approved the task (and its name).
+        if kind == "task" and item.get("label") and status == "active":
+            ref["title"] = item["label"]
         refs.append(ref)
     return refs
 
@@ -240,8 +304,10 @@ def register(mcp: MCPServer, deps) -> None:
         if intake["manual_review_required"]:
             speakable += " Some instructions need manual review before they can be approved."
         elif reviewable:
-            speakable += " Approve each item on your screen to activate it."
-        return _result(speakable, view="plan-review", refs=_plan_refs(drafts))
+            speakable += " You can approve them on your screen, or by voice."
+        identity = _patient(deps, ctx)
+        return _result(speakable, view="plan-review", refs=_plan_refs(drafts),
+                       next_step=_review_offer(deps.service, identity))
 
     @tool("approve_plan_item", "plan-review", _IDEMPOTENT_WRITE)
     @_safe_tool("That item needs your review on screen before it can be approved.")
@@ -253,8 +319,10 @@ def register(mcp: MCPServer, deps) -> None:
         item = deps.service.approve_plan_item(_patient(deps, ctx), record_id)
         reminders = deps.service.reminder_suggestions([item])
         kind = {"PLAN_RULE": "rule", "PLAN_NOTE": "note"}.get(item["type"], "task")
+        identity = _patient(deps, ctx)
+        offer = _assign_offer(deps.service, identity) if not deps.service.voice_reviewable(identity)[0] else None
         return _result(f"Plan {kind} approved and now active.", view="plan-review", refs=_plan_refs([item]),
-                       reminders=reminders)
+                       reminders=reminders, next_step=offer)
 
     @tool("list_care_tasks", "tasks", _READ)
     @_safe_tool("Care tasks are unavailable.")
@@ -327,7 +395,8 @@ def register(mcp: MCPServer, deps) -> None:
         speakable += f", and {flagged} {'is' if flagged == 1 else 'are'} flagged for a closer look." if flagged else "."
         if counts.get("medication_items"):
             speakable += " Medicine items are approved on your screen."
-        return _result(speakable, view="plan-review", refs=refs + _plan_refs(pending))
+        return _result(speakable, view="plan-review", refs=refs + _plan_refs(pending),
+                       next_step=_review_offer(deps.service, identity))
 
     @tool("review_plan_item", "", _IDEMPOTENT_WRITE, app_only=True)
     @_safe_tool("That item couldn't be updated. Check each flag and try again.")
@@ -347,17 +416,116 @@ def register(mcp: MCPServer, deps) -> None:
         return _result("Approved. It's now part of your plan.", view="plan-review", refs=_plan_refs([item]),
                        reminders=deps.service.reminder_suggestions([item]))
 
+    # ---- guided, resumable voice review ---------------------------------------------
+    @tool("review_plan_by_voice", "plan-review", _WRITE)
+    @_safe_tool("Voice review isn't available here. Review the items on your screen.")
+    async def review_plan_by_voice(ctx: Context) -> VoiceResult:
+        """Walk the patient through their draft plan items one at a time by voice, asking about each.
+
+        Starts a review, or continues a paused one ("continue my review"). For each item the
+        patient can approve it, change its time, give it to a family member, skip it, or stop
+        (their place is saved). Medicine items and flagged items stay on the screen.
+        """
+        service = deps.service
+        identity = _patient(deps, ctx)
+        voice, screen_only = service.voice_reviewable(identity)
+        workflow = service.active_workflow(identity, "plan_review")
+        if workflow is None:
+            if not voice:
+                tail = f" {_plural(screen_only, 'item')} {'is' if screen_only == 1 else 'are'} waiting on your screen." if screen_only else ""
+                return _result("There's nothing to review by voice." + tail, view="plan-review")
+            workflow = service.start_workflow(identity, "plan_review", [i["id"] for i in voice])
+        else:
+            # A paused review also picks up drafts imported since it started.
+            workflow["queue"] = workflow["queue"] + [i["id"] for i in voice if i["id"] not in workflow["queue"]]
+        queue = workflow["queue"]
+        helpers = service.task_helpers(identity)
+        while workflow["position"] < len(queue):
+            item = service.storage.get(identity.patient, queue[workflow["position"]])
+            if not item or item.get("status") != "draft":
+                workflow["position"] += 1
+                continue
+            is_task = item["type"] == "PLAN_TASK"
+            schema = _review_schema(is_task, helpers)
+            options = ("Approve, change the time, " + ("give it to someone, " if helpers else "") + "skip, or stop?"
+                       if is_task else "Approve, skip, or stop?")
+            prompt = f"Item {workflow['position'] + 1} of {len(queue)}: {_describe(service, item)}. {options}"
+            choice = None
+            for attempt in range(2):
+                reply = await ctx.elicit(prompt if attempt == 0 else
+                                         "Sorry, I didn't catch that. Say approve, skip, stop" +
+                                         (", or a new time." if is_task else "."), schema)
+                if reply.action != "accept":
+                    choice = "stop"
+                    break
+                data = reply.data
+                if data.action == "change time" and not getattr(data, "new_time", None):
+                    reply = await ctx.elicit("What time should it be?", schema)
+                    if reply.action != "accept":
+                        choice = "stop"
+                        break
+                    data = reply.data
+                    if not getattr(data, "new_time", None):
+                        continue
+                if getattr(data, "new_time", None) or getattr(data, "who", None) or data.action:
+                    choice = data
+                    break
+            if choice is None or choice == "stop" or getattr(choice, "action", None) == "stop":
+                service.save_workflow(identity, workflow)
+                left = len(queue) - workflow["position"]
+                return _result(f"Okay, I've saved your place. {_plural(left, 'item')} left. "
+                               'Say "continue my review" anytime.', view="plan-review")
+            if choice.action == "skip":
+                workflow["skipped"] += 1
+            else:
+                edits = {}
+                if getattr(choice, "new_time", None):
+                    from ..core import resolve_spoken_time
+                    edits["times"] = [resolve_spoken_time(choice.new_time, item.get("times"))]
+                service.approve_plan_item(identity, item["id"], edits=edits)
+                workflow["approved"] += 1
+                who = getattr(choice, "who", None)
+                if who and who != "me":
+                    grant = service.grant_for_name(identity, who)
+                    if grant:
+                        service.assign_task(identity, item["id"], grant["id"])
+                        workflow["assigned"].append(who)
+            workflow["position"] += 1
+            workflow = service.save_workflow(identity, workflow)
+        workflow["status"] = "done"
+        service.save_workflow(identity, workflow)
+        speakable = f"Done: {workflow['approved']} approved"
+        speakable += f", {workflow['skipped']} skipped." if workflow["skipped"] else "."
+        _voice, screen_only = service.voice_reviewable(identity)
+        if screen_only:
+            speakable += f" {_plural(screen_only, 'item')} {'is' if screen_only == 1 else 'are'} waiting on your screen."
+        active = [t for t in service.list_care_tasks(identity) if t["type"] == "PLAN_TASK" and t.get("status") == "active"]
+        offer = None if workflow["assigned"] else _assign_offer(service, identity)
+        return _result(speakable, view="plan-review", reminders=service.reminder_suggestions(active), next_step=offer)
+
+    @tool("update_task_time", "tasks", _IDEMPOTENT_WRITE)
+    @_safe_tool("That task's time couldn't be changed.")
+    def update_task_time(task: str, new_time: str, ctx: Context) -> VoiceResult:
+        """Patient moves an active task to a new time, as spoken: "8 pm", "20:00" or "9".
+
+        ``task`` = the task's name as the person said it ("the walk"); a ref id also works.
+        """
+        task = deps.service.update_task_time(_patient(deps, ctx), task, new_time)
+        return _result(f"Done. {task.get('label') or 'That task'} is now at {_join(task['times'])}.", view="tasks",
+                       refs=_plan_refs([task]), reminders=deps.service.reminder_suggestions([task]))
+
     # ---- family task assignment -------------------------------------------------
     @tool("assign_task", "tasks", _IDEMPOTENT_WRITE)
     @_safe_tool("That task can't be assigned. Check that the family member has permission to do tasks.")
-    def assign_task(task_id: str, ctx: Context, assignee_id: str | None = None) -> VoiceResult:
-        """Patient assigns an active task (ref id) to a family member, or back to themself.
+    def assign_task(task: str, ctx: Context, assignee: str | None = None) -> VoiceResult:
+        """Patient assigns an active task to a family member, or back to themself.
 
-        ``assignee_id`` = a caregiver_grant ref id from ``list_care_circle`` whose scopes include
-        perform_tasks; omit it to take the task back. The result carries reminder suggestions for
+        ``task`` = the task's name exactly as the person said it ("the dressing"); a ref id also works.
+        ``assignee`` = the family member's name ("Sam"), or a caregiver_grant ref id; they must
+        have perform_tasks. Omit it to take the task back. The result carries reminder suggestions for
         Alexa+ to create with its own reminders feature.
         """
-        task = deps.service.assign_task(_patient(deps, ctx), task_id, assignee_id)
+        task = deps.service.assign_task(_patient(deps, ctx), task, assignee)
         who = task.get("assignee_name")
         when = f" at {_join(task['times'])}" if task.get("times") else ""
         speakable = (f"Done. {who} will handle {task.get('label') or 'that task'}{when}." if who
@@ -494,8 +662,41 @@ def register(mcp: MCPServer, deps) -> None:
             return _result("Okay, I skipped today's check-in. Nothing was recorded.", view="check-in-trend")
         record = deps.service.record_observation(identity, pain_score=answer.data.pain_score,
                                                  idempotency_key=f"checkin-{uuid.uuid4().hex}")
-        return _result("Check-in recorded.", view="check-in-trend",
-                       refs=[{"id": record["id"], "kind": "observation", "label": "latest check-in"}])
+        refs: list[Ref] = [{"id": record["id"], "kind": "observation", "label": "latest check-in"}]
+        if identity.role == "caregiver":
+            return _result("Check-in recorded.", view="check-in-trend", refs=refs)
+        # Follow-up questions come from the approved plan: the patient's own tasks not yet done today.
+        mine, family = deps.service.checkin_tasks(identity)
+        done, todo, stopped = [], [], False
+        for task in mine:
+            label = task.get("label") or "your task"
+            try:
+                reply = await ctx.elicit(f"Did you do {label} today?", TaskDone)
+            except Exception:
+                break
+            if reply.action != "accept":
+                stopped = True
+                break
+            if reply.data.done:
+                deps.service.record_task_completion(identity, task["id"])
+                done.append(label)
+            else:
+                todo.append(label)
+        speakable = "Check-in recorded."
+        asked = len(done) + len(todo)
+        if asked:
+            speakable += f" You did {len(done)} of {_plural(asked, 'task')}."
+        if todo:
+            speakable += f" {_join(todo)} {'is' if len(todo) == 1 else 'are'} still to do."
+        if stopped:
+            speakable += " I saved what you told me."
+        by_person: dict[str, list[str]] = {}
+        for t in family[:4]:
+            by_person.setdefault(t.get("assignee_name") or "A family member", []).append(
+                (t.get("label") or "a task") + (f" at {_join(t['times'])}" if t.get("times") else ""))
+        if by_person:
+            speakable += " " + " ".join(f"{who} has {_join(items)}." for who, items in by_person.items())
+        return _result(speakable, view="check-in-trend", refs=refs)
 
     @tool("record_pain_observation", "check-in-trend", _IDEMPOTENT_WRITE)
     @_safe_tool("Observation is unavailable.")
