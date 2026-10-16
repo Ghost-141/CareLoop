@@ -151,6 +151,12 @@ def strip_wake_word(text: str) -> str:
     return _WAKE.sub("", text, count=1).strip()
 
 
+def _asked_a_question(device: Device) -> bool:
+    """True when the last thing the assistant said was a question, so a bare "yes" still has an answer to give."""
+    last = device.history[-1] if device.history else None
+    return bool(last and last.get("role") == "assistant" and str(last.get("content", "")).rstrip().endswith("?"))
+
+
 class Orchestrator:
     def __init__(self, pool: MCPClientPool, planner: Planner | None = None, *, fallback: Planner | None = None,
                  max_steps: int = 4, trace: Trace | None = None) -> None:
@@ -213,7 +219,8 @@ class Orchestrator:
                 return Turn("Okay.")
         if _CANCEL.fullmatch(text):
             return Turn("")
-        if re.fullmatch(r"(yes|yeah|yep|no|nope|ok(ay)?|sure|thanks?( you)?)[.!]?", text, re.IGNORECASE):
+        if (re.fullmatch(r"(yes|yeah|yep|no|nope|ok(ay)?|sure|thanks?( you)?)[.!]?", text, re.IGNORECASE)
+                and not _asked_a_question(device)):
             return Turn("Okay.")  # nothing is waiting on a yes or no
 
         # Deterministic safety responses win before any planner or model sees the request.

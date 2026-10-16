@@ -459,12 +459,12 @@
       text = `${entry.direction === "out" ? "→" : "←"} ${entry.method} ${who} ${detail}`;
       if (entry.result?.isError) cls = "err";
     } else if (entry.type === "turn") {
-      text = `◆ turn [${entry.device_id} · ${entry.planner}] tools: ${entry.tools.join(" → ") || "none"} · “${entry.reply}”`;
+      text = `◆ turn [${entry.device_id} · ${entry.planner}] heard “${entry.heard ?? ""}” · tools: ${entry.tools.join(" → ") || "none"} · “${entry.reply}”`;
     } else if (entry.type === "device") {
       return;
     } else {
       cls = entry.type === "error" || entry.type === "turn_error" ? "err" : "host";
-      text = entry.text || JSON.stringify(entry);
+      text = entry.text || (entry.type === "turn_error" ? `turn failed [${entry.device_id}] heard “${entry.heard ?? ""}” · ${entry.error}` : JSON.stringify(entry));
     }
     li.className = cls; li.textContent = text;
     $("#trace").prepend(li);

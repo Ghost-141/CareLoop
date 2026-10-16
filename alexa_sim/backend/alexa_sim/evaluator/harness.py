@@ -17,8 +17,8 @@ from care_loop.auth import AuthError, TokenAuth
 from care_loop.core import AccessDenied, CareLoopService
 
 from .agent import CareSimAgent
-from .config import FixedClock, personas
-from .hub import create_service
+from .fixtures import FixedClock, personas
+from .service import create_service
 
 
 ALLOWED_TOOLS = frozenset({

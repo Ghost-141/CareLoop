@@ -1,4 +1,4 @@
-"""Local speech for the simulator: Kokoro TTS and MLX Whisper STT, with browser fallback.
+"""Local speech for the simulator: Kokoro TTS and Whisper STT (MLX or faster-whisper), with browser fallback.
 
 Models load in a background thread at startup so the first spoken reply is not slow.
 The browser falls back to its own speech engines whenever these report unavailable.
@@ -20,8 +20,9 @@ class VoiceEngines:
         self.stt: Any = None
         self.status = {"tts": "browser", "stt": "browser"}
         self.errors: dict[str, str] = {}
+        self.engine_name = ""
         try:
-            from care_sim.local_voice import KokoroVoice, WhisperListener
+            from .local_voice import KokoroVoice, WhisperListener
         except ImportError:
             return
         if settings.voice == "kokoro":
@@ -44,13 +45,12 @@ class VoiceEngines:
                 self.tts, self.status["tts"], self.errors["tts"] = None, "browser", type(exc).__name__
         if self.stt is not None:
             try:
-                import mlx_whisper
-                import numpy as np
-                mlx_whisper.transcribe(np.zeros(16_000, dtype="float32"), path_or_hf_repo=self.stt.model)
+                self.engine_name = self.stt.warm()  # "mlx" or "faster", whichever this system can run
                 self.status["stt"] = "whisper"
             except Exception as exc:
                 self.stt, self.status["stt"], self.errors["stt"] = None, "browser", type(exc).__name__
 
     def describe(self) -> dict[str, Any]:
         return {**self.status, "errors": self.errors, "kokoro_voice": self.settings.kokoro_voice,
-                "whisper_model": self.settings.whisper_model if self.stt is not None else None}
+                "whisper_model": self.settings.whisper_model if self.stt is not None else None,
+                "whisper_engine": self.engine_name or None}

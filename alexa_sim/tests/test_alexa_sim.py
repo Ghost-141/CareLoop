@@ -709,3 +709,52 @@ def test_idle_demo_resets_itself(careloop_server) -> None:
             time.sleep(0.2)
         else:
             pytest.fail("the idle demo did not reset")
+
+
+class SayThenCall:
+    """A stub planner: the first request gets a spoken question, the next one calls a tool."""
+    name = "stub"
+
+    def __init__(self) -> None:
+        self.seen: list[str] = []
+
+    async def next(self, utterance, tools, history, steps, context=None):
+        from alexa_sim.planners import Action
+        self.seen.append(utterance)
+        if steps:
+            return Action(say="Done.")
+        if utterance == "yes":
+            return Action(tool="list_care_tasks", arguments={})
+        return Action(say="Do you want me to check your tasks?")
+
+
+@pytest.mark.asyncio
+async def test_a_bare_yes_reaches_the_planner_after_the_assistant_asked_a_question() -> None:
+    pool = FakePool(TOOLS, {"list_care_tasks": ok("You have 2 active tasks.")})
+    planner = SayThenCall()
+    orchestrator = Orchestrator(pool, planner, fallback=None)
+    device = Device("show", DeviceKind.SHOW, "maya", account="maya")
+    first = await orchestrator.respond(device, "Alexa, what is on my list?")
+    assert first.reply.endswith("?")
+    second = await orchestrator.respond(device, "yes")
+    assert planner.seen[-1] == "yes" and pool.calls == [("list_care_tasks", {})]
+    assert second.reply != "Okay."
+
+
+@pytest.mark.asyncio
+async def test_a_bare_yes_with_nothing_asked_is_still_just_okay() -> None:
+    pool = FakePool(TOOLS, {})
+    planner = SayThenCall()
+    turn = await Orchestrator(pool, planner, fallback=None).respond(Device("show", DeviceKind.SHOW, "maya", account="maya"), "yes")
+    assert turn.reply == "Okay." and planner.seen == []
+
+
+def test_the_inspector_records_exactly_what_the_device_heard() -> None:
+    class Pool:
+        accounts = {}
+        def linked(self, account): return False
+        async def close(self): pass
+    with TestClient(create_alexa_sim_app(AlexaSimSettings(), pool=Pool(), planner=MockReplay())) as client:
+        client.post("/api/utterance", json={"device_id": "show", "text": "Fine."})
+        turns = [e for e in client.get("/api/state").json()["trace"] if e.get("type") == "turn"]
+    assert turns and turns[-1]["heard"] == "Fine."

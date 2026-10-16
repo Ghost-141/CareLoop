@@ -36,7 +36,7 @@ class AlexaSimSettings:
     stt: str = "browser"  # browser | whisper
     kokoro_voice: str = "af_heart"
     kokoro_speed: float = 1.0
-    whisper_model: str = "mlx-community/whisper-small.en-mlx"
+    whisper_model: str = "small.en"  # a size name works on every engine; an MLX repo id also works
     voice_models_dir: Path | None = None
     idle_reset_minutes: float = 0  # shared demo: wipe and reseed after this long without use (0 = never)
 

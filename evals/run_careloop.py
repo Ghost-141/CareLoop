@@ -16,9 +16,9 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
-sys.path[:0] = [str(ROOT / "server"), str(ROOT / "care_sim" / "backend")]
+sys.path[:0] = [str(ROOT / "server"), str(ROOT / "alexa_sim" / "backend")]
 
-from care_sim.evals import compare, load_cases, run  # noqa: E402
+from alexa_sim.evaluator import compare, load_cases, run  # noqa: E402
 
 
 def main(argv: list[str] | None = None) -> int:

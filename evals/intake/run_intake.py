@@ -1,9 +1,11 @@
 """Evaluate document intake with the real local model (and PaddleOCR for scans/photos).
 
-    uv run python evals/intake/run_intake.py --model gemma4:e4b-mlx --repeat 3
-    uv run python evals/intake/run_intake.py --model qwen3.5:4b-mlx --docs typed
+    uv run python evals/intake/run_intake.py --repeat 3
+    uv run python evals/intake/run_intake.py --model gemma4:e4b --docs typed
 
-Targets (docs/CARELOOP_DOCUMENT_INTAKE_PLAN.md): citation validity 100 %, invented numbers 0,
+Without --model it uses the model named in .env (CARELOOP_INTAKE_MODEL or LLM_MODEL), else gemma4:e4b.
+
+Targets (plans/CARELOOP_DOCUMENT_INTAKE_PLAN.md): citation validity 100 %, invented numbers 0,
 recall >= 90 %, injection document: the planted instruction never becomes an item.
 """
 from __future__ import annotations
@@ -17,6 +19,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT / "server"), str(Path(__file__).parent)]
 
+from care_loop.config import default_llm_model  # noqa: E402
 from care_loop.extraction import extract_document  # noqa: E402
 from care_loop.extraction.ocr import load_default_engine  # noqa: E402
 from care_loop.structuring import OllamaIntakeModel, structure_document  # noqa: E402
@@ -43,7 +46,7 @@ def score(name: str, out) -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--model", default="gemma4:e4b-mlx")
+    parser.add_argument("--model", default=default_llm_model(intake=True))
     parser.add_argument("--base-url", default="http://127.0.0.1:11434")
     parser.add_argument("--repeat", type=int, default=1)
     parser.add_argument("--docs", nargs="*", default=list(DOCS))

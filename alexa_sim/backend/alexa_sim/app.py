@@ -333,7 +333,7 @@ def create_alexa_sim_app(settings: AlexaSimSettings | None = None, pool: MCPClie
         try:
             turn = await orchestrator.respond(device, body.text)
         except Exception as exc:
-            await trace({"type": "turn_error", "device_id": device.id, "error": type(exc).__name__})
+            await trace({"type": "turn_error", "device_id": device.id, "heard": body.text, "error": type(exc).__name__})
             device.awaiting = None
             return {"reply": "Sorry, CareLoop is having trouble right now. Please try again.", "tools": [],
                     "screen": None, "needs_confirmation": False, "expects_reply": False,
@@ -346,8 +346,9 @@ def create_alexa_sim_app(settings: AlexaSimSettings | None = None, pool: MCPClie
         await remember_reminders([data for _name, data in turn.results])
         if turn.tools:
             await sync_caregiver_notifications()
+        # "heard" is the exact text the device understood. It is what to check when an answer is not accepted.
         await trace({"type": "turn", "device_id": device.id, "planner": turn.planner, "tools": turn.tools,
-                     "reply": turn.reply, "needs_confirmation": turn.needs_confirmation})
+                     "heard": body.text, "reply": turn.reply, "needs_confirmation": turn.needs_confirmation})
         return {"reply": turn.reply, "tools": turn.tools, "screen": turn.screen,
                 "needs_confirmation": turn.needs_confirmation, "expects_reply": turn.expects_reply,
                 "planner": turn.planner}

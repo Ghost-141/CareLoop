@@ -5,7 +5,7 @@ import json
 
 import pytest
 
-from care_sim.evals import CareEvalHarness, load_cases, run, run_case
+from alexa_sim.evaluator.harness import CareEvalHarness, load_cases, run, run_case
 
 
 def cases_path():

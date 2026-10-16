@@ -6,7 +6,7 @@ from pathlib import Path
 from care_loop.core import CareLoopService
 from care_loop.storage import CareLoopStorage
 
-from .config import FixedClock
+from .fixtures import FixedClock
 
 
 def create_service(database: Path, clock: FixedClock) -> CareLoopService:
