@@ -21,7 +21,7 @@ The check-in dates are relative to the day you reset. **Reset on the day you rec
 ## Before recording
 
 ```bash
-ollama list                                   # gemma4:e4b-mlx should be listed
+ollama list                                   # a gemma4 model should be listed
 scripts/run_alexa_demo.sh --reset             # seeds the starting day, starts both servers
 ```
 

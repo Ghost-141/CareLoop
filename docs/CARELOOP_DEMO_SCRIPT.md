@@ -3,8 +3,6 @@
 Run the verified private workflow with no server process or existing database:
 
 ```bash
-scripts/run_careloop_demo.sh
-# or
 uv run python scripts/e2e_careloop_demo.py --out /tmp/careloop-demo
 ```
 

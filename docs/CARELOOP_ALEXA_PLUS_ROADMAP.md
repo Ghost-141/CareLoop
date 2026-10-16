@@ -33,7 +33,7 @@ Plan intake (text/PDF), approve plan item, invite/accept/revoke caregiver, list 
 | Plan document intake | Alexa+ accepts uploaded/emailed documents and recalls them | **Differentiate.** Alexa+ *remembers* documents; CareLoop *requires approval* of each item and keeps the citation. Add plan versioning and diffs (F6). |
 | `search_care_history` | Alexa+ memory recall | Keep it, but frame as an "attributable record lookup" with source and actor, not general recall. |
 | Caregiver alerts | Care Hub / Alexa Together activity alerts, fall detection | **Differentiate.** Those are activity alerts. CareLoop alerts are *plan-rule episodes* with scoped, revocable consent and an audit trail. |
-| Voice simulator (`care_sim/`) + Ollama intent router | Alexa+ NLU and response generation | **Retire from the demo path.** Keep it only as an offline regression harness for evals. Alexa+ is the voice layer. |
+| Old voice simulator (`care_sim/`, since removed) + Ollama intent router | Alexa+ NLU and response generation | **Retire from the demo path.** Only its offline eval harness was kept, now in `alexa_sim/evaluator/`. Alexa+ is the voice layer. |
 | Pain-score logging | Nothing structured | Keep and generalize (F2). |
 
 **Positioning line:** *"Alexa+ remembers. CareLoop proves: who approved it, who saw it, what triggered, and what the doctor gets."*

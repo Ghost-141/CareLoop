@@ -40,6 +40,16 @@ Status: **Resolved**, **Workaround** (we went around it), **Open** (still a prob
 | F-25 | Local LLM planner | Medium | Resolved | A 4B model picked the wrong task ID in multi-turn chats; tools now accept names, and gemma4 replaced qwen as planner |
 | F-26 | Local LLM planner | High | Resolved | The model invented plan text, a past expiry date, and extra permissions; the server now refuses or reads back |
 | F-27 | Alexa+ policy | Medium | Resolved | Policy requirements (disclosure before first use, crisis redirect, privacy/terms URLs) had to be built as product features |
+| F-28 | MCP 2026-07-28 | Medium | Open | Under the stateless 2026-07-28 revision, tools that elicit mid-call fail; they work under 2025-11-25 |
+| F-29 | Local LLM planner | Medium | Resolved | gemma4 asks the person for an `idempotency_key` when a pain score is spoken as a word ("four") |
+| F-30 | Local LLM planner | High | Resolved | "Remove Sam" gets a model-worded question instead of the confirmation flow, so the person's "yes" does nothing |
+| F-31 | Local LLM planner | Medium | Resolved | "Delete my last pain record" asks the person for a record ID instead of looking one up |
+| F-32 | Local LLM planner | Low | Resolved | Without a grant, a caregiver's question gets an invented explanation instead of the standard "records are unavailable" reply |
+| F-33 | Evaluation | Medium | Resolved | The built-in evals use a scripted planner, so no model failure could show up; a live-model runner was added |
+| F-34 | Local LLM planner | High | Resolved | In a longer conversation gemma called the export tool for "get me ready for my appointment" instead of the visit handoff |
+| F-35 | Local LLM planner | Medium | Resolved | "Who has access to my care?" was answered from the access log instead of the care circle |
+| F-36 | Local LLM planner | Medium | Resolved | After other turns, a family member's question about Maya's pain score got an invented excuse or a clarifying question, not a tool call |
+| F-37 | Local LLM planner | Medium | Resolved | Sam's "mark it seen" made gemma ask for an alert ID after an unrelated question |
 | F-24 | PDF/OCR tooling | Low | Resolved | `pypdf` can't render pages for OCR; PaddleOCR's first run downloads models; storage rejects floats |
 
 ---
@@ -140,6 +150,14 @@ Status: **Resolved**, **Workaround** (we went around it), **Open** (still a prob
 - **Got:** `WARNING: No supported WebSocket library detected` and HTTP 404 on `/ws`, so the inspector and device states never updated live.
 - **Resolution:** added an `alexa-sim` extra with `websockets`, plus a 4-second polling fallback in the page.
 
+### F-28: Elicitation fails under MCP 2026-07-28 · Medium · Open
+- **Doing:** checking the server against the 2026-07-28 spec pages (`modelcontextprotocol.io/docs/2026-07-28`) with a raw `server/discover`, `tools/list` and `tools/call` using the new per-request `_meta` and `Mcp-Method` / `Mcp-Name` headers.
+- **Expected:** every tool to behave as under the initialize handshake.
+- **Got:** discovery, the 30-tool listing (all titled and annotated) and plain tool calls work. `start_daily_checkin`, `review_plan_by_voice` and the confirm step of `invite_caregiver` return `The check-in couldn't be completed. Nothing was recorded.` because `ctx.elicit()` needs a server-to-client request on an open session. The 2026-07-28 revision is stateless and delivers elicitation as multi round-trip requests (an input-required result that the client answers by retrying the call).
+- **Impact:** none for the demo. The Alexa+ MCP client and our simulator use the initialize handshake (2025-03-26 to 2025-11-25), which is covered by the existing tests. Clients that speak only 2026-07-28 would lose the follow-up-question tools.
+- **Resolution / Workaround:** the README claims 2025-11-25 as the supported revision for elicitation. `test_care_loop_mcp_guidelines.py` pins the current behavior so it is noticed when it changes.
+- **Suggestion:** move the elicitation tools to the SDK's input-required pattern (`mcp/server/mcpserver/resolve.py`) once Alexa+ announces 2026-07-28 support.
+
 ## CareLoop design problems we caused and fixed
 
 ### F-16: Voice-safe results hid the IDs action tools need · High · Resolved
@@ -225,6 +243,68 @@ Status: **Resolved**, **Workaround** (we went around it), **Open** (still a prob
 - **Suggestion:** a toolkit pattern for "first-use consent" and a standard crisis-handling hook would save every health add-on from reinventing them.
 
 ---
+
+### F-29: The model asks the person for an idempotency key · Medium · Resolved
+- **Doing:** running `evals/run_llm_planner.py` with `gemma4:e4b-mlx` (3 runs per scenario, a live CareLoop server per run).
+- **Expected:** "record a pain level of four" records a 4, as "my pain is 6 today" does.
+- **Got:** 3 of 3 runs made no tool call and said `I need an idempotency key to record that pain observation. Could you please provide one?` Digits worked 3 of 3.
+- **Impact:** a spoken-word number never records, and an internal field is put to the person.
+- **Resolution:** `idempotency_key` is optional in `record_pain_observation` and `correct_pain_observation` (`server/care_loop/tools/records.py`); the server generates one when it is missing, and a supplied key still deduplicates retries. The planner prompt now says spelled-out numbers count and never to ask for another field. Spoken-word scores ("four", "ten", "seven") record 3 of 3.
+- **Suggestion:** make `idempotency_key` optional and let the server derive one from the person and time, or name it in the system prompt as "generate one yourself, never ask".
+
+### F-30: Destructive requests dead-end when the model words the question itself · High · Resolved
+- **Doing:** "Alexa, remove Sam", then "yes", with the same live-model runner.
+- **Expected:** the model calls `revoke_caregiver`, the simulator holds it and asks "Say confirm to continue", and the next "confirm" runs it.
+- **Got:** 3 of 3 runs made no tool call and answered `I cannot remove a caregiver without confirmation. Do you want to revoke Sam's access to your care data?` The person's "yes" got `Okay.` and nothing changed. The held-confirmation flow was never reached.
+- **Impact:** with the real model the demo's revocation step (steps 14 and 15) fails. The scripted planner hides this. A person is told something will happen and it doesn't. The test world had no active grant for Sam, so the model may also have lacked a caregiver id; it never called `list_care_circle` to find out.
+- **Resolution:**
+  - The descriptions of `revoke_caregiver` and `delete_care_record` no longer say "Confirm with the patient first", which is what made the model confirm in its own words. They now say the host confirms and to call the tool directly.
+  - `revoke_caregiver` takes a `caregiver` name ("Sam"); two people with the same name are refused rather than guessed (`CareLoopService.grant_by_name`).
+  - The planner prompt gives a worked example for both tools.
+  - A bare "yes" after the assistant asked a question now reaches the planner instead of the canned "Okay." (`alexa_sim/backend/alexa_sim/orchestrator.py`).
+  - Result with the granted-Sam world: "remove Sam", then "confirm" or "yes", revokes Sam 3 of 3; "cancel" changes nothing.
+- **Suggestion:** tell the model to call the destructive tool right away because the host asks for confirmation, and to look up ids with `list_care_circle`. As a safety net, treat a bare "yes" after a model-asked confirmation as a request to rerun the last proposed tool.
+
+### F-31: The model asks for a record ID that the person can't know · Medium · Resolved
+- **Doing:** "Alexa, delete my last pain record".
+- **Got:** 3 of 3 runs made no tool call and said `I can delete a specific pain record, but I need the record ID to do that. If you can provide the ID…`
+- **Impact:** deletion by voice can't be completed, and the person is asked for an internal identifier. Deletion is a data right, so this matters for the privacy story.
+- **Resolution:**
+  - `list_care_records` labels refs by kind and recency ("pain check-in 1", "latest pain check-in") with no values, and accepts plain kind names as `record_type` (the model passed its own label there and was refused at first).
+  - `delete_care_record` accepts the label as well as the opaque id; a label that matches nothing deletes nothing.
+  - Result: "delete my last pain record" lists, holds the delete for confirmation, and removes the record on "confirm", 3 of 3.
+- **Suggestion:** have the model call `list_care_records` first and pass the matching ref. Add that rule to the system prompt and a scenario to the runner that expects the list-then-delete chain.
+
+### F-32: Caregiver questions get an invented explanation · Low · Resolved
+- **Got:** a caregiver on a Dot asking "what was Maya's pain score?" got `I do not have access to a specific pain score for "Maya" unless you are the person whose data I am accessing. If you are the patient, I can check your records.` No tool was called. The reply leaks nothing, but it makes up a rule and invites a patient claim, where the scripted path says "CareLoop records are unavailable."
+- **Resolution:** the planner prompt now requires any question about the patient's records to go through a CareLoop tool and to speak only the tool's answer. The model now calls `search_care_history` and the server's generic reply is spoken, 3 of 3.
+- **Suggestion:** tell the model to call a CareLoop tool for any question about the patient's records and speak only its answer.
+
+### F-33: The built-in evals can't see model failures · Medium · Resolved
+- **Got:** `evals/run_careloop.py` reports `"model": "deterministic-mock"`; its 16 cases test server rules and runner mechanics, as documented. The simulator also falls back to the scripted planner whenever the model errors, which hides model mistakes in the demo.
+- **Resolution:** `evals/run_llm_planner.py` runs 36 spoken scenarios through the simulator's real orchestrator and `OllamaPlanner` against a fresh live server each time, with the fallback disabled. It checks tool choice, arguments, whether the server accepted the call, held confirmations, and forbidden words in replies. First run, `gemma4:e4b-mlx`: 96 of 108 runs passed (36 scenarios, 3 runs each); the four scenarios above failed every time and nothing was flaky (`evals/results/llm-planner-gemma4-e4b-mlx.json`). After the first fixes, with 6 more scenarios (a seeded caregiver, a seeded pain record, more spoken numbers): 126 of 126 passed (`evals/results/llm-planner-gemma4-e4b-mlx-after.json`). After the long-conversation fixes (F-34 to F-37) the set grew to 52 scenarios and 156 of 156 runs passed (`evals/results/llm-planner-gemma4-e4b-mlx-final.json`). The full 19-step demo story also runs clean on gemma with the scripted fallback off. The document intake eval also passed on gemma: recall 100%, no invented numbers, planted instruction not followed (2 runs per document type).
+- **Not covered:** the model never sees tool results that hold private data, so injection through results can't be tested here. An earlier injection scenario was removed because the injected sentence sat in the patient's own request.
+
+### F-34: A visit handoff request exported all the data · High · Resolved
+- **Doing:** running the full demo story with `gemma4:e4b-mlx` and the scripted fallback off.
+- **Got:** after a few turns, "Alexa, get me ready for my appointment" called `export_care_data` and said `Your export of 15 records is ready on your private screen.` "Prepare a summary for my doctor visit" did the same 3 of 3 times. The same phrase on a fresh conversation worked, so history made the model confuse the two tools.
+- **Impact:** the wrong screen at the key demo moment, and an export of everything where a dated, cited summary was wanted.
+- **Resolution:** the handoff description now names the appointment phrases and says not to use the export tool for them. The export description now says it is for exporting, downloading or copying all data and never for appointments. A planner prompt line repeats it. A control scenario ("download a copy of all my data") confirms export still works.
+
+### F-35: "Who has access" was answered from the access log · Medium · Resolved
+- **Got:** "Alexa, who has access to my care?" called `who_accessed_my_care_data` and said `No one else accessed your care data in the last 7 days.` The question is about who is allowed, which is `list_care_circle`. 3 of 3 runs.
+- **Resolution:** each description now says what it is for and points to the other ("who HAS access" versus "the access LOG"), and the prompt lists the phrases for each. "Who has seen my data" still goes to the log.
+
+### F-36: A family member's record question got an excuse, not a tool call · Medium · Resolved
+- **Got:** on Sam's Dot, after "any CareLoop updates?", "what was Maya's pain score?" made no tool call. Replies included `I do not have access to a specific pain score…`, `I need to know whose pain score you are asking about` and `I cannot answer… I do not have access to the patient's personal data`. This is F-32 returning in a longer conversation.
+- **What did not work:** a rule saying "never say you lack access" made the model say it anyway, and a rule against explaining made it ask who Maya is. Each rewording moved the excuse to a new phrase.
+- **Resolution:** the `search_care_history` description now says to call it for any question about a person's scores or history, including from family. The prompt gives one concrete example, `"what was Maya's pain score?"` → `search_care_history` with query `"pain score"`, and says to read back whatever the server returns. The server's own answer is what is spoken.
+- **Lesson:** small models follow a worked example better than a prohibition.
+
+### F-37: "Mark it seen" needed an id the person can't say · Medium · Resolved
+- **Got:** after an unrelated turn, gemma replied `I need a specific notification or alert ID to mark something as seen` and did not call `acknowledge_alert`. It had worked earlier when the update list was still the previous turn.
+- **Resolution:** a server-side fix only. `acknowledge_alert` now takes an optional `alert_id`. With no id it acknowledges the updates still waiting for that caregiver, and errors generically if none are waiting. A caregiver can still pass an id. The same pattern as F-29 and F-31: do not make the person or the model supply an id the server can find itself.
+- **Not baselined separately:** the failing evidence is from the story run. The eval scenarios for this were added together with the fix.
 
 ## Open questions for the Alexa+ team
 

@@ -8,7 +8,7 @@ or a tool argument.
 Run the complete baseline:
 
 ```bash
-uv run pytest -q care_sim/tests
+uv run pytest -q alexa_sim/tests/test_evals.py
 uv run python evals/run_careloop.py --repeat 3
 ```
 
@@ -40,3 +40,20 @@ and handoff content.
 Direct product contract tests remain under `server/tests/`; the evaluator does
 not replace those tests. Browser walkthrough coverage belongs to the separately
 scripted synthetic demo phase.
+
+## Evaluating the voice planner with a real model
+
+`run_careloop.py` uses a scripted planner, so it can't show model mistakes. To test the Alexa+-style
+tool selection with a local Ollama model:
+
+```bash
+uv run python evals/run_llm_planner.py --model gemma4:e4b --repeat 3
+uv run python evals/run_llm_planner.py --only pain-words,remove-caregiver
+```
+
+Each run starts a fresh CareLoop server and database, links Maya and Sam, and sends spoken
+utterances through the simulator's real orchestrator and planner. The scripted fallback is switched off.
+A scenario can require or forbid tools, check arguments, require that the server accepted a call,
+require a held confirmation, and match or reject patterns in the spoken reply. Reports go to
+`evals/results/llm-planner-*.json` and include tool names, arguments and replies (all synthetic).
+Seeded worlds (`world=["sam", "pain"]`) add a caregiver grant or a pain record straight through the service, and end-state checks (`state=["sam_revoked"]`) read the database afterwards. Failures are tracked in `docs/FRICTION_LOG.md` (F-29 to F-33).

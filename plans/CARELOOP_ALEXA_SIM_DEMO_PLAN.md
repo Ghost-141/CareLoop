@@ -96,7 +96,7 @@ Prefer the official `@modelcontextprotocol/ext-apps` AppBridge (see its basic-ho
 
 ## 3. Required CareLoop MCP server changes
 
-These come from the roadmap (`CARELOOP_ALEXA_PLUS_ROADMAP.md`) and are needed for this demo:
+These come from the roadmap (`docs/CARELOOP_ALEXA_PLUS_ROADMAP.md`) and are needed for this demo:
 
 | Change | Roadmap | Needed for |
 | --- | --- | --- |
@@ -152,7 +152,7 @@ The first useful milestone is **A + B + C with typed input and mock replay**. Th
 
 ## 7. Repo changes summary
 
-- New `alexa_sim/backend/alexa_sim/*` and `alexa_sim/frontend/*`. Keep `care_sim` only for the existing evals.
+- New `alexa_sim/backend/alexa_sim/*` and `alexa_sim/frontend/*`. `care_sim` has since been merged into `alexa_sim`: its eval harness is `alexa_sim/evaluator/`, and its voice page was removed.
 - `pyproject.toml`: new `alexa-sim` extra (`boto3` for Bedrock/Polly/Transcribe), script `careloop-alexa-sim`.
 - `server/care_loop/ui/` holds the MCP App HTML bundles. `server/care_loop/oauth.py` is new.
 - `scripts/run_alexa_demo.sh` starts both servers, seeds, and opens the browser.

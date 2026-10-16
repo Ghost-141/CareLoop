@@ -10,15 +10,15 @@ CareLoop is intentionally bounded. It does **not** diagnose, prescribe, adjust m
 
 | | |
 | --- | --- |
-| Protocol | MCP 2025-11-25 over Streamable HTTP at `/mcp`; MCP Apps views (`ui://careloop/*`); MCP elicitation |
+| Protocol | MCP 2025-11-25 over Streamable HTTP at `/mcp`; MCP Apps views (`ui://careloop/*`); MCP elicitation. Discovery, tool listing and tool calls also work under 2026-07-28; elicitation tools do not yet ([friction log F-28](docs/FRICTION_LOG.md)) |
 | Server | Python, FastAPI, official MCP Python SDK, SQLite/WAL |
 | Assistant simulator | Echo Show-style and Echo Dot-style devices, simulated Alexa app account linking, live MCP inspector |
-| Voice | Local Kokoro TTS and MLX Whisper STT (Apple Silicon), with browser speech fallback |
+| Voice | Local Kokoro TTS and Whisper STT on any system (MLX Whisper on Apple Silicon, faster-whisper on Windows, Linux and Intel Macs), with browser speech fallback |
 | Planner | Local tool-calling LLM via Ollama, or a deterministic mock for stage safety |
 | Identity | Credential-derived patient/caregiver identities; no caller-supplied patient scope |
 | Privacy | Voice-safe tool results, patient-owned expiring grants, generic caregiver notifications, deletion and purge |
 | Document intake | Prescription/plan upload: PDF text first, PaddleOCR fallback, local LLM proposes items, deterministic checks, patient approves each item |
-| Tests | 187 tests, including live end-to-end runs against a real server; an intake eval against the local model |
+| Tests | 212 tests, including live end-to-end runs against a real server; an intake eval against the local model |
 
 ## Contents
 
@@ -66,10 +66,10 @@ See [docs/CARELOOP_FEATURES.md](docs/CARELOOP_FEATURES.md) for the full story an
 | Python 3.12+ (uv can install it) | Everything | `uv python list` |
 | Git + access to this private repository | Cloning | `gh auth status` |
 | [Ollama](https://ollama.com) with a tool-calling model *(optional)* | LLM planner | `ollama list` |
-| Apple Silicon Mac *(optional)* | Local Whisper speech recognition | `uname -m` → `arm64` |
+| Any 64-bit Mac, Windows or Linux machine *(optional)* | Local speech: Kokoro and Whisper. Apple Silicon uses MLX Whisper, everything else uses faster-whisper (CPU, or an NVIDIA GPU if present). Models download on first use. | `uv run python -c "import platform; print(platform.machine())"` |
 | Chrome *(recommended)* | Microphone input and browser speech fallback | — |
 
-Without Ollama, the simulator uses its deterministic mock planner. Without Apple Silicon, use browser speech (`STT=browser`).
+Without Ollama, the simulator uses its deterministic mock planner. If local speech is not installed or fails to load, the simulator uses the browser's own speech (`STT=browser`).
 
 ## Setup, step by step
 
@@ -93,25 +93,28 @@ uv run python evals/intake/documents.py   # writes synthetic sample documents to
 cp .env.example .env
 ```
 
-On an Apple Silicon Mac, switch to local voice for much better speech:
+To use local voice (better speech, and nothing leaves the machine), open `.env` and set these two lines. This works the same on macOS, Windows and Linux:
 
-```bash
-sed -i '' 's/^VOICE=.*/VOICE=kokoro/; s/^STT=.*/STT=whisper/' .env
+```text
+VOICE=kokoro
+STT=whisper
 ```
+
+The first run downloads the voice models. The simulator picks the right Whisper engine for your system by itself.
 
 **4. (Optional) Pull the local planner model:**
 
 ```bash
-ollama pull gemma4:e4b-mlx     # voice planner (LLM_MODEL) and document intake (CARELOOP_INTAKE_MODEL)
+ollama pull gemma4:e4b     # voice planner (LLM_MODEL) and document intake (CARELOOP_INTAKE_MODEL)
 ```
 
-Skip this and set `CARELOOP_AGENT_LLM=mock` in `.env` to use the deterministic planner only.
+The demo also runs without any model. Set `CARELOOP_AGENT_LLM=mock` in `.env` to use the deterministic planner, and `CARELOOP_INTAKE_LLM=none` to read documents by pattern matching only (each item then needs review).
 
 **5. Run the tests** to confirm the install:
 
 ```bash
 uv run pytest -q
-# 187 passed
+# 212 passed
 ```
 
 ## Run the Alexa+ demo
@@ -139,7 +142,7 @@ Her prescription is *not* loaded: share it from the Alexa app panel. Because yes
 | Separate demo database | `CARELOOP_DB_PATH=/tmp/careloop-demo.db scripts/run_alexa_demo.sh` |
 | Shared machine: restore the demo after 15 idle minutes | `CARELOOP_DEMO_IDLE_RESET_MINUTES=15 scripts/run_alexa_demo.sh` |
 
-**First run:** Kokoro downloads its model (about 115 MB) to `~/.cache/careloop/voice`, which takes a minute or two. The top bar shows `Voice: Kokoro · Listening: Whisper` once both engines are ready; until then the page uses browser speech.
+**First run:** Kokoro downloads its model (about 115 MB) to `~/.cache/careloop/voice`, and Whisper downloads its model (`small.en` is a few hundred MB) to the Hugging Face cache. This takes a few minutes. The top bar shows `Voice: Kokoro · Listening: Whisper` once both engines are ready; until then the page uses browser speech.
 
 ### Using the simulator
 
@@ -204,8 +207,6 @@ If an assigned task isn't marked done within an hour of its time, Sam's ring lig
 | S | "Alexa, Sam handles my evening task" → "Alexa, move it to 8 pm" | "it" = the task just mentioned: "Done. Complete the evening check-in is now at 8 PM." |
 | T | "Alexa, do my check-in" → "four" → "yes" | Asks pain, then "Did you do Take a short walk today?", then "Check-in recorded. You did 1 of 1 task. Sam has Complete the evening check-in at 8 PM." |
 
-Design: [docs/CARELOOP_MULTITURN_PLAN.md](docs/CARELOOP_MULTITURN_PLAN.md).
-
 **Prescription intake (add-on).** In the Alexa app panel, pick **Share a document → Sample: typed PDF** (or *scanned PDF* / *photo* to show the OCR fallback):
 
 | # | Where | Action | Expected |
@@ -222,10 +223,9 @@ Design: [docs/CARELOOP_MULTITURN_PLAN.md](docs/CARELOOP_MULTITURN_PLAN.md).
 ## Testing
 
 ```bash
-uv run pytest -q                       # all 187 tests
+uv run pytest -q                       # all 212 tests
 uv run pytest -q server/tests          # MCP server, tools, consent, MCP Apps views, elicitation
-uv run pytest -q alexa_sim/tests       # simulator host, incl. a live run of the demo story above
-uv run pytest -q care_sim/tests        # evaluator and original voice simulator
+uv run pytest -q alexa_sim/tests       # simulator host and scripted evaluator, incl. a live run of the demo story above
 ```
 
 The `alexa_sim` live test (`test_full_demo_story_against_live_careloop`) starts a real CareLoop server process with a temporary database and drives the demo walkthrough through the simulator API: linking, approval, invite and accept, the elicitation check-in, caregiver privacy, acknowledgement, handoff, and confirmed revocation.
@@ -248,13 +248,25 @@ uv run careloop
 # open http://127.0.0.1:8010/care and sign in with: careloop-local-demo-token
 ```
 
+**Without bash** (Windows PowerShell or cmd, where `scripts/run_alexa_demo.sh` does not run; on Windows you can also use WSL or Git Bash). Not tested on Windows. Open two terminals in the repository folder:
+
+```powershell
+# terminal 1: the CareLoop server (seeds the demo day first)
+uv run python scripts/seed_careloop_demo.py
+$env:CARELOOP_DEMO_RESET = "true"   # cmd: set CARELOOP_DEMO_RESET=true
+uv run careloop
+
+# terminal 2: the simulator, then open http://127.0.0.1:8021
+uv run careloop-alexa-sim
+```
+
+On macOS and Linux, set the variable inline instead: `CARELOOP_DEMO_RESET=true uv run careloop`.
+
 **Seed the demo starting day** without running the servers (only into an empty demo patient; `--reset` wipes it first, `--empty` only wipes):
 
 ```bash
 uv run python scripts/seed_careloop_demo.py
 ```
-
-**Original single-device voice simulator** (`care_sim`, port 8020): `scripts/run_careloop_voice_demo.sh`. See [docs/CARELOOP_VOICE_SIM.md](docs/CARELOOP_VOICE_SIM.md).
 
 ## MCP surface
 
@@ -299,7 +311,7 @@ Patients, or family members the patient grants `upload_documents`, upload a pres
 
 1. **PDF text layer** (`pypdf`) per page; a quality check sends empty or garbled pages to OCR.
 2. **OCR fallback** (`PaddleOCR`, pages rendered with `pypdfium2`) for scanned pages and photos; each line keeps its confidence.
-3. **Local LLM** (Ollama, default `gemma4:e4b-mlx`) receives numbered lines (`p1:L12`) fenced as data and returns schema-constrained JSON items that cite their lines.
+3. **Local LLM** (Ollama, default `gemma4:e4b`) receives numbered lines (`p1:L12`) fenced as data and returns schema-constrained JSON items that cite their lines.
 4. **Deterministic checks:**
    - Citations must exist and the instruction must appear verbatim.
    - **Every number must appear in the source.**
@@ -311,10 +323,10 @@ Patients, or family members the patient grants `upload_documents`, upload a pres
 5. **Patient review** on screen: approve, edit the spoken name or times, or reject. Medicine and flagged items cannot be approved by voice. Raw extracted text expires after 24 h.
 
 ```bash
-uv run python evals/intake/run_intake.py --model gemma4:e4b-mlx --repeat 3
+uv run python evals/intake/run_intake.py --model gemma4:e4b --repeat 3
 ```
 
-On the synthetic set (typed, scanned, photo, injection), 3 runs each: recall 100%, invented numbers 0, citations valid, injection never followed. Median time per document: 8 s typed, 28 s photo, 41 s scanned (CPU OCR). Design: [docs/CARELOOP_DOCUMENT_INTAKE_PLAN.md](docs/CARELOOP_DOCUMENT_INTAKE_PLAN.md).
+On the synthetic set (typed, scanned, photo, injection), 3 runs each: recall 100%, invented numbers 0, citations valid, injection never followed. Median time per document: 8 s typed, 28 s photo, 41 s scanned (CPU OCR).
 
 ## Architecture
 
@@ -362,6 +374,9 @@ Settings come from environment variables; `.env` is loaded automatically and she
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `CARELOOP_HOST` / `CARELOOP_PORT` | `127.0.0.1` / `8010` | CareLoop server bind address |
+| `CARELOOP_ALLOW_DEMO_TOKENS` | `false` | The server refuses to start on a non-loopback host while the built-in demo tokens are active. Set `true` only for a deliberate local-network demo |
+| `CARELOOP_ALLOWED_HOSTS` | — | Comma-separated extra `Host` values accepted on `/mcp`, e.g. a tunnel hostname (`demo.example.com`, no port for HTTPS). Loopback is always allowed |
+| `CARELOOP_ALLOWED_ORIGINS` | — | Comma-separated extra browser `Origin` values accepted on `/mcp` (loopback origins always allowed) |
 | `CARELOOP_DB_PATH` | `data/careloop.db` | SQLite/WAL database |
 | `CARELOOP_API_TOKEN` | `careloop-local-demo-token` | Synthetic patient bearer token |
 | `CARELOOP_DEMO_PATIENT` | `demo-patient` | Patient identity for that token |
@@ -374,16 +389,16 @@ Settings come from environment variables; `.env` is loaded automatically and she
 | `LLM_BASE_URL` / `LLM_MODEL` | `http://127.0.0.1:11434` / — | Ollama endpoint and tool-calling model |
 | `VOICE` / `STT` | `browser` | `kokoro` / `whisper` for local speech |
 | `KOKORO_VOICE` / `KOKORO_SPEED` | `af_heart` / `1.0` | Kokoro voice settings |
-| `WHISPER_MODEL` | `mlx-community/whisper-small.en-mlx` | Whisper model |
+| `WHISPER_MODEL` | `small.en` | Whisper model. A size name (`tiny.en`, `base.en`, `small.en`, …) works on every system. An MLX repo id such as `mlx-community/whisper-small.en-mlx` also works and is translated for faster-whisper |
+| `WHISPER_BACKEND` | automatic | Force the engine: `mlx` or `faster`. By default Apple Silicon uses MLX Whisper and everything else uses faster-whisper |
 | `CARELOOP_VOICE_MODELS_DIR` | `~/.cache/careloop/voice` | Kokoro model cache |
-| `CARELOOP_SIM_PORT` | `8020` | Original `care_sim` port |
 | `CARELOOP_REQUIRE_CONSENT` | `true` | Ask patients to accept data use before voice tools store or read anything |
 | `CARELOOP_DEMO_PATIENT_NAME` | `Maya` | The demo patient's spoken name until they set their own |
 | `CARELOOP_DEMO_RESET` | `false` (`run_alexa_demo.sh`: `true`) | Enables `POST /api/care/demo/reset`, which wipes and reseeds the demo patient. Keep off anywhere real |
 | `CARELOOP_DEMO_IDLE_RESET_MINUTES` | `0` (off) | The simulator restores the seeded demo after this many minutes without use |
 | `CARELOOP_TIMEZONE` | this machine's zone | IANA zone for task times, reminders and missed-task checks (a patient's own setting wins) |
 | `CARELOOP_INTAKE_LLM` | `ollama` | Document intake model provider, or `none` for pattern matching only |
-| `CARELOOP_INTAKE_MODEL` | `LLM_MODEL` (`.env.example`: `gemma4:e4b-mlx`) | Local model that structures uploaded documents |
+| `CARELOOP_INTAKE_MODEL` | `LLM_MODEL` (`.env.example`: `gemma4:e4b`) | Local model that structures uploaded documents |
 | `CARELOOP_INTAKE_OCR` | `paddle` | OCR for scanned pages and photos (`none` sends them to manual review) |
 
 ## Troubleshooting
@@ -393,7 +408,7 @@ Settings come from environment variables; `.env` is loaded automatically and she
 | "CareLoop account linking failed" | The server isn't running on `:8010`. Use `scripts/run_alexa_demo.sh`, or check `curl http://127.0.0.1:8010/healthz` |
 | Port already in use | Stop the other process, or set `CARELOOP_PORT` / `CARELOOP_ALEXA_SIM_PORT` (and `CARELOOP_MCP_URL`) |
 | Planner shows `mock` although Ollama is set | Ollama isn't reachable or `LLM_MODEL` isn't pulled. The host falls back to mock per turn; the inspector logs `planner_fallback` |
-| Top bar says `Voice: browser` | Kokoro/Whisper still loading (first run downloads models), the `voice` extra is missing, or the machine isn't Apple Silicon |
+| Top bar says `Voice: browser` | Kokoro/Whisper still loading (first run downloads models), the `voice` extra is missing (`uv sync --extra voice`), or a model download failed. The page keeps working with browser speech. `/api/voice` on the simulator lists the error |
 | Mic does nothing | Allow microphone access for `127.0.0.1` in Chrome; typed input always works |
 | Replies differ from the walkthrough | Use `CARELOOP_AGENT_LLM=mock` and a fresh `CARELOOP_DB_PATH` |
 | Inspector not updating live | Install the `alexa-sim` extra (WebSockets); the page also polls every 4 s |
@@ -406,22 +421,25 @@ server/care_loop/        CareLoop MCP server: tools, MCP Apps views, auth, core 
   structuring/           local-LLM schema, prompt, deterministic checks, pattern fallback
   tools/records.py       MCP tools and the voice-safe result contract
   ui/                    ui://careloop views (static MCP App shell)
-alexa_sim/               Alexa+ behavior simulator
-  backend/alexa_sim/     host: MCP client pool, turn loop, planners, voice, MCP Apps bridge
+alexa_sim/               the one simulator folder: Alexa+ behavior simulator and scripted evaluator
+  backend/alexa_sim/     host: MCP client pool, turn loop, planners, voice engines, MCP Apps bridge
+    evaluator/           scripted, deterministic eval harness used by evals/run_careloop.py
   frontend/              devices, Alexa app panel, inspector, speech capture
-care_sim/                original voice simulator, local voice engines, evaluator
+  tests/                 simulator and evaluator tests
 evals/                   standalone eval cases; evals/intake/ synthetic documents + intake eval
 samples/                 synthetic prescription PDF, scan, photo and prompt-injection documents
 scripts/                 run, seed, and end-to-end scripts
-docs/                    features, roadmap, demo plans, friction log
+docs/                    features, roadmap, UI guide, simulator walkthrough, friction log, evals, project story
 ```
 
 Key documents:
 
-- [Hackathon demo plan](docs/CARELOOP_HACKATHON_DEMO_PLAN.md)
-- [Simulator design](docs/CARELOOP_ALEXA_SIM_DEMO_PLAN.md)
 - [Friction log](docs/FRICTION_LOG.md)
 - [Evals](docs/CARELOOP_EVALS.md)
+- [Click-by-click demo guide](docs/CARELOOP_UI_DEMO_GUIDE.md)
+- [Driving the simulator end to end](docs/CARELOOP_SIMULATOR_WALKTHROUGH.md)
+- [UI guide](docs/CARELOOP_UI_GUIDE.md)
+- [Project story](docs/CARELOOP_PROJECT_STORY.md)
 
 ## Safety and privacy boundaries
 
@@ -429,6 +447,15 @@ Key documents:
 - Self-harm or medical-emergency words get emergency guidance (local emergency number; 988 in the US) and never reach a tool or model.
 
 - Synthetic adult data only; no real patient records.
+
+**Security decisions (MCP).** Choices made against the [MCP security best practices](https://modelcontextprotocol.io/docs/2026-07-28/tutorials/security/security_best_practices):
+
+- **Static bearer tokens, not OAuth.** The Alexa+ MCP client doesn't support the `WWW-Authenticate` challenge yet, so `/mcp` answers 401 with a plain body. Account linking in a real deployment stays outside this adapter.
+- **Identity comes from the credential.** Tool arguments never select a patient or caregiver, and returned refs are opaque, so holding a ref is not authentication.
+- **Grants instead of protocol scopes.** Least privilege is enforced per patient through expiring caregiver grants.
+- **No demo tokens off loopback.** The server exits at startup if it listens on a non-loopback address with the built-in demo tokens (`CARELOOP_ALLOW_DEMO_TOKENS` overrides).
+- **Host and Origin allowlist.** DNS-rebinding protection is always on, including when bound to all interfaces. Add a tunnel hostname with `CARELOOP_ALLOWED_HOSTS`.
+- **No token passthrough or proxying.** The server calls no downstream API with caller tokens.
 - CareLoop is not medical advice and does not replace a clinician.
 - Only reviewed, patient-approved, source-backed rules can create alerts.
 - A notification is not confirmation that someone saw it, acted on it, or that care occurred.
