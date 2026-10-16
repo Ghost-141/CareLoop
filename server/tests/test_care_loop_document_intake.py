@@ -318,7 +318,7 @@ def test_mcp_status_and_screen_review(app_client) -> None:
     tools = {}
 
     class Collect:
-        def tool(self, *, name, annotations=None, meta=None):
+        def tool(self, *, name, title=None, annotations=None, meta=None):
             def register(fn):
                 tools[name] = fn
                 return fn

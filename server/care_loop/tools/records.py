@@ -312,6 +312,53 @@ def _plan_refs(items: list[dict[str, Any]]) -> list[Ref]:
     return refs
 
 
+_RECORD_NOUNS = {"OBSERVATION": "pain check-in", "PLAN_TASK": "care task", "PLAN_RULE": "follow-up rule", "CONSENT": "caregiver access",
+                 "ALERT": "update", "DOCUMENT": "document", "TASK_EVENT": "task update", "QUESTION": "clinician question",
+                 "HANDOFF": "visit handoff", "PLAN_NOTE": "plan note"}
+
+
+_RECORD_ALIASES = {**{noun: kind for kind, noun in _RECORD_NOUNS.items()},
+                   "pain": "OBSERVATION", "pain score": "OBSERVATION", "pain level": "OBSERVATION", "pain observation": "OBSERVATION",
+                   "check-in": "OBSERVATION", "checkin": "OBSERVATION", "task": "PLAN_TASK", "rule": "PLAN_RULE",
+                   "caregiver": "CONSENT", "question": "QUESTION", "handoff": "HANDOFF"}
+
+
+def _record_type(value: str | None) -> str | None:
+    """Accept a record type as the model may phrase it ("pain check-in") or as stored ("OBSERVATION")."""
+    if value is None or not str(value).strip():
+        return None
+    cleaned = " ".join(str(value).replace("_", " ").split()).casefold()
+    return _RECORD_ALIASES.get(cleaned) or str(value).strip().upper().replace(" ", "_")
+
+
+def _resolve_record(deps, patient, value: str) -> str:
+    """A record id, or the label list_care_records gave it ("latest pain check-in"), as the record id."""
+    records = deps.service.list_records(patient)
+    if any(record["id"] == value for record in records):
+        return value
+    wanted = " ".join(str(value).split()).casefold()
+    matches = [ref["id"] for ref in _record_refs(records) if ref["label"].casefold() == wanted]
+    if len(matches) != 1:
+        raise ValueError("record label matches no one record")
+    return matches[0]
+
+
+def _record_refs(records: list[dict[str, Any]]) -> list[Ref]:
+    """Opaque ids labelled by kind and position only; labels never carry values or dates."""
+    totals: dict[str, int] = {}
+    for record in records:
+        totals[record["type"]] = totals.get(record["type"], 0) + 1
+    seen: dict[str, int] = {}
+    refs: list[Ref] = []
+    for record in records:
+        kind = record["type"]
+        seen[kind] = seen.get(kind, 0) + 1
+        noun = _RECORD_NOUNS.get(kind, "record")
+        label = f"latest {noun}" if seen[kind] == totals[kind] else f"{noun} {seen[kind]}"
+        refs.append({"id": record["id"], "kind": kind.lower(), "label": label})
+    return refs
+
+
 def _grant_refs(grants: list[dict[str, Any]]) -> list[Ref]:
     refs: list[Ref] = []
     for index, grant in enumerate(grants, start=1):
@@ -340,6 +387,40 @@ _IDEMPOTENT_WRITE = ToolAnnotations(readOnlyHint=False, destructiveHint=False, i
 _DESTRUCTIVE = ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=True, openWorldHint=False)
 
 
+_TITLES: dict[str, str] = {
+    "import_care_plan_text": "Import care plan",
+    "approve_plan_item": "Approve plan item",
+    "list_care_tasks": "List care tasks",
+    "record_task_completion": "Record task completion",
+    "get_care_plan_source": "Open plan source",
+    "get_intake_status": "Check document intake",
+    "review_plan_item": "Review plan item",
+    "accept_data_use": "Accept data use",
+    "set_my_details": "Set my details",
+    "review_plan_by_voice": "Review plan by voice",
+    "update_task_time": "Change task time",
+    "assign_task": "Assign task to family",
+    "list_my_assigned_tasks": "List my assigned tasks",
+    "add_question_for_clinician": "Add question for clinician",
+    "who_accessed_my_care_data": "Who accessed my care data",
+    "list_care_circle": "List care circle",
+    "invite_caregiver": "Invite caregiver",
+    "accept_caregiver_invitation": "Accept caregiver invitation",
+    "revoke_caregiver": "Revoke caregiver access",
+    "list_generic_notifications": "List care updates",
+    "acknowledge_alert": "Acknowledge alert",
+    "start_daily_checkin": "Start daily check-in",
+    "record_pain_observation": "Record pain level",
+    "correct_pain_observation": "Correct pain level",
+    "list_care_records": "List care records",
+    "search_care_history": "Search care history",
+    "create_visit_handoff": "Create visit handoff",
+    "export_care_data": "Export care data",
+    "delete_care_record": "Delete care record",
+    "get_private_view": "Get private view",
+}
+
+
 def _ui(view: str, *, app_only: bool = False) -> dict[str, Any]:
     if app_only:
         # MCP Apps visibility: callable by a rendered view, hidden from the model.
@@ -349,7 +430,7 @@ def _ui(view: str, *, app_only: bool = False) -> dict[str, Any]:
 
 def register(mcp: MCPServer, deps) -> None:
     def tool(name: str, view: str, annotations: ToolAnnotations, *, app_only: bool = False):
-        return mcp.tool(name=name, annotations=annotations, meta=_ui(view, app_only=app_only))
+        return mcp.tool(name=name, title=_TITLES[name], annotations=annotations, meta=_ui(view, app_only=app_only))
 
     # ---- plan intake and review -------------------------------------------------
     @tool("import_care_plan_text", "plan-review", _WRITE)
@@ -666,7 +747,11 @@ def register(mcp: MCPServer, deps) -> None:
     @tool("who_accessed_my_care_data", "care-circle", _READ)
     @_safe_tool("The access log is unavailable.")
     def who_accessed_my_care_data(ctx: Context, from_date: int | str = "last_7_days", to_date: int | str | None = None) -> VoiceResult:
-        """Patient: who else looked at or acted on their care data, and how often. Defaults to the last 7 days."""
+        """The access LOG: what other people actually viewed or did with the patient's care data, and how often. Defaults to the last 7 days.
+
+        Use it for "who has seen my care data" or "who looked at my records". It does not list who is
+        allowed to see things; list_care_circle does that.
+        """
         from ..core import ACCESS_PHRASES
         start, end = _date_range(from_date, to_date, now=int(deps.service.clock()), required=False)
         now = int(deps.service.clock())
@@ -685,7 +770,11 @@ def register(mcp: MCPServer, deps) -> None:
     @tool("list_care_circle", "care-circle", _READ)
     @_safe_tool("Care circle is unavailable.")
     def list_care_circle(ctx: Context) -> VoiceResult:
-        """List the patient's caregiver invitations and grants with scopes and status."""
+        """Who HAS access: the people the patient invited, what each may do, and their status.
+
+        Use it for "who has access to my care", "who can see my tasks" or "who is in my care circle".
+        For what people actually looked at or did, use who_accessed_my_care_data instead.
+        """
         grants = deps.service.list_grants(_patient(deps, ctx))
         active = sum(1 for g in grants if g.get("status") == "active")
         pending = sum(1 for g in grants if g.get("status") == "pending")
@@ -743,9 +832,18 @@ def register(mcp: MCPServer, deps) -> None:
 
     @tool("revoke_caregiver", "care-circle", _DESTRUCTIVE)
     @_safe_tool("That caregiver access can't be revoked.")
-    def revoke_caregiver(invitation_id: str, ctx: Context) -> VoiceResult:
-        """Immediately revoke one caregiver invitation or grant (ref id). Confirm with the patient first."""
-        if not deps.service.revoke(_patient(deps, ctx), invitation_id=invitation_id):
+    def revoke_caregiver(ctx: Context, caregiver: str | None = None, invitation_id: str | None = None) -> VoiceResult:
+        """Revoke one family member's access. The host asks the person to confirm before this runs, so call it directly.
+
+        ``caregiver`` = the name the person used ("Sam"). Or pass ``invitation_id`` (a ref id from
+        list_care_circle). Never ask the person for an id.
+        """
+        patient = _patient(deps, ctx)
+        if invitation_id is None:
+            if not caregiver:
+                raise ValueError("a caregiver name or reference is required")
+            invitation_id = deps.service.grant_by_name(patient, caregiver)["id"]
+        if not deps.service.revoke(patient, invitation_id=invitation_id):
             raise ValueError("no matching grant")
         return _result("Caregiver access revoked. It stops on their next request.", view="care-circle")
 
@@ -764,12 +862,24 @@ def register(mcp: MCPServer, deps) -> None:
 
     @tool("acknowledge_alert", "notifications", _IDEMPOTENT_WRITE)
     @_safe_tool("That CareLoop update can't be acknowledged.")
-    def acknowledge_alert(alert_id: str, ctx: Context) -> VoiceResult:
-        """Caregiver: acknowledge one generic update (ref id) without reading its private detail."""
-        acknowledgement = deps.service.acknowledge_alert(_patient(deps, ctx), alert_id)
-        return _result("CareLoop update acknowledged.", view="notifications", surface="glance",
-                       refs=[{"id": acknowledgement["case_id"], "kind": "update", "status": acknowledgement["status"],
-                              "label": "acknowledged update"}])
+    def acknowledge_alert(ctx: Context, alert_id: str | None = None) -> VoiceResult:
+        """Caregiver: mark generic CareLoop updates as seen, without reading their private detail.
+
+        Call it with no arguments for "mark it seen" or "got it": it acknowledges the updates still waiting.
+        ``alert_id`` (a ref from list_generic_notifications) is optional. Never ask the person for an id.
+        """
+        identity = _patient(deps, ctx)
+        if alert_id is None:
+            alert_ids = [row["case_id"] for row in deps.service.notifications(identity) if row["status"] == "action_required"]
+            if not alert_ids:
+                raise ValueError("no update is waiting")
+        else:
+            alert_ids = [alert_id]
+        acknowledgements = [deps.service.acknowledge_alert(identity, one) for one in alert_ids]
+        return _result("CareLoop update acknowledged." if len(acknowledgements) == 1 else "CareLoop updates acknowledged.",
+                       view="notifications", surface="glance",
+                       refs=[{"id": ack["case_id"], "kind": "update", "status": ack["status"], "label": "acknowledged update"}
+                             for ack in acknowledgements])
 
     # ---- observations, history, handoff ------------------------------------------
     @tool("start_daily_checkin", "check-in-trend", _WRITE)
@@ -828,36 +938,50 @@ def register(mcp: MCPServer, deps) -> None:
 
     @tool("record_pain_observation", "check-in-trend", _IDEMPOTENT_WRITE)
     @_safe_tool("Observation is unavailable.")
-    def record_pain_observation(pain_score: int, idempotency_key: str, ctx: Context, observed_at: int | str | None = None) -> VoiceResult:
-        """Record a synthetic integer pain score from 0 through 10; this does not interpret it."""
+    def record_pain_observation(pain_score: int, ctx: Context, idempotency_key: str | None = None,
+                                observed_at: int | str | None = None) -> VoiceResult:
+        """Record a synthetic integer pain score from 0 through 10; this does not interpret it.
+
+        A spoken number word counts ("four" is 4). ``idempotency_key`` is optional: leave it out unless
+        you are retrying the same call. Never ask the person for it.
+        """
         when = None if observed_at is None else _date_bound(observed_at, end_of_day=False)
-        record = deps.service.record_observation(_patient(deps, ctx), pain_score=pain_score, observed_at=when, idempotency_key=idempotency_key)
+        record = deps.service.record_observation(_patient(deps, ctx), pain_score=pain_score, observed_at=when,
+                                                 idempotency_key=idempotency_key or f"voice-{uuid.uuid4().hex}")
         return _result("Check-in recorded.", view="check-in-trend",
                        refs=[{"id": record["id"], "kind": "observation", "label": "latest check-in"}])
 
     @tool("correct_pain_observation", "check-in-trend", _IDEMPOTENT_WRITE)
     @_safe_tool("Observation correction is unavailable.")
-    def correct_pain_observation(observation_id: str, pain_score: int, idempotency_key: str, ctx: Context, observed_at: int | str | None = None) -> VoiceResult:
-        """Create an immutable correction for one prior observation (ref id)."""
+    def correct_pain_observation(observation_id: str, pain_score: int, ctx: Context, idempotency_key: str | None = None,
+                                 observed_at: int | str | None = None) -> VoiceResult:
+        """Create an immutable correction for one prior observation (ref id). ``idempotency_key`` is optional; never ask for it."""
         when = None if observed_at is None else _date_bound(observed_at, end_of_day=False)
         record = deps.service.record_observation(_patient(deps, ctx), pain_score=pain_score, observed_at=when,
-                                                 idempotency_key=idempotency_key, corrects_id=observation_id)
+                                                 idempotency_key=idempotency_key or f"voice-{uuid.uuid4().hex}", corrects_id=observation_id)
         return _result("Correction recorded. The original stays in your history.", view="check-in-trend",
                        refs=[{"id": record["id"], "kind": "observation", "label": "correction"}])
 
     @tool("list_care_records", "records", _READ)
     @_safe_tool("CareLoop records are unavailable.")
     def list_care_records(ctx: Context, record_type: str | None = None) -> VoiceResult:
-        """List counts and ref ids of the caller's authorized CareLoop records."""
-        records = deps.service.list_records(_patient(deps, ctx), record_type)
-        return _result(f"Found {_plural(len(records), 'CareLoop record')}.", view="records",
-                       refs=[{"id": r["id"], "kind": r["type"].lower(), "label": f"record {i}"}
-                             for i, r in enumerate(records, start=1)])
+        """List counts and ref ids of the caller's authorized CareLoop records.
+
+        ``record_type`` is optional; a plain kind works ("pain check-in", "care task"). Refs are
+        labelled by kind, oldest first, with the newest of each kind called "latest ..." (for example
+        "latest pain check-in"). Use them to pick the record for delete_care_record.
+        """
+        records = deps.service.list_records(_patient(deps, ctx), _record_type(record_type))
+        return _result(f"Found {_plural(len(records), 'CareLoop record')}.", view="records", refs=_record_refs(records))
 
     @tool("search_care_history", "history", _READ)
     @_safe_tool("CareLoop history search is unavailable.")
     def search_care_history(query: str, ctx: Context, from_date: int | str | None = None, to_date: int | str | None = None) -> VoiceResult:
         """Search the caller's authorized, source-linked records.
+
+        Call this for ANY question about a person's pain scores, check-ins or history, including from a
+        family member on a shared speaker. The server decides what may be spoken; never answer such a
+        question yourself.
 
         Dates accept epoch, ISO-8601, or ``from_date="last_N_days"``.
         Matches are listed as refs and shown in the private history view.
@@ -872,7 +996,11 @@ def register(mcp: MCPServer, deps) -> None:
     @tool("create_visit_handoff", "visit-handoff", _WRITE)
     @_safe_tool("Visit handoff is unavailable.")
     def create_visit_handoff(from_date: int | str, ctx: Context, to_date: int | str | None = None) -> VoiceResult:
-        """Create a handoff from ISO dates, epochs, or a relative range like ``last_7_days``.
+        """Prepare the visit handoff: the dated, cited summary for a doctor or clinic appointment.
+
+        Use it for "get me ready for my appointment", "prepare for my doctor visit" or "a summary for
+        my clinician". Do not use export_care_data for that. For an appointment with no dates given,
+        call it with ``from_date="last_7_days"``.
 
         ISO calendar dates are inclusive UTC bounds.  A relative range ends
         now and must be supplied as ``from_date`` without ``to_date``.
@@ -890,15 +1018,23 @@ def register(mcp: MCPServer, deps) -> None:
     @tool("export_care_data", "export", _READ)
     @_safe_tool("CareLoop export is unavailable.")
     def export_care_data(ctx: Context) -> VoiceResult:
-        """Prepare an export of only the authenticated patient's active records in the private view."""
+        """Data rights only: prepare a copy of ALL of the patient's records when they ask to export, download or get a copy of their data.
+
+        Never use it to prepare for an appointment or a doctor visit (that is create_visit_handoff).
+        """
         exported = deps.service.export(_patient(deps, ctx))
         return _result(f"Your export of {_plural(exported['count'], 'record')} is ready on your private screen.", view="export")
 
     @tool("delete_care_record", "records", _DESTRUCTIVE)
     @_safe_tool("No active CareLoop record was deleted.")
     def delete_care_record(record_id: str, ctx: Context) -> VoiceResult:
-        """Delete one patient record (ref id) and its derived retrieval entries. Confirm with the patient first."""
-        if not deps.service.delete(_patient(deps, ctx), record_id):
+        """Delete one patient record and its derived retrieval entries. The host asks the person to confirm before this runs, so call it directly.
+
+        ``record_id`` = a ref id from list_care_records; its label (for example "latest pain check-in")
+        also works. Look it up first; never ask the person for an id.
+        """
+        patient = _patient(deps, ctx)
+        if not deps.service.delete(patient, _resolve_record(deps, patient, record_id)):
             raise ValueError("no active record")
         return _result("Care record deleted.", view="records")
 

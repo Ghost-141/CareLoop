@@ -21,6 +21,23 @@ def _load_dotenv() -> None:
             os.environ.setdefault(key, value.strip().strip('"').strip("'"))
 
 
+LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+
+
+def _csv(raw: str | None) -> tuple[str, ...]:
+    return tuple(part.strip() for part in (raw or "").split(",") if part.strip())
+
+
+def default_llm_model(intake: bool = False) -> str:
+    """The Ollama model named in ``.env`` or the environment, else ``gemma4:e4b``.
+
+    Follows the same order as the server: the intake model, when asked for, falls back to ``LLM_MODEL``.
+    """
+    _load_dotenv()
+    named = (os.environ.get("CARELOOP_INTAKE_MODEL") if intake else None) or os.environ.get("LLM_MODEL")
+    return (named or "gemma4:e4b").strip()
+
+
 @dataclass(frozen=True)
 class Settings:
     db_path: str = "data/careloop.db"
@@ -40,6 +57,13 @@ class Settings:
     patient_name: str = "Maya"  # the synthetic demo patient's spoken name
     require_consent: bool = True  # voice tools ask for data-use consent before first use
     demo_reset: bool = False  # allow POST /api/care/demo/reset to wipe and reseed the demo patient
+    allow_demo_tokens: bool = False  # permit the built-in demo tokens on a non-loopback host
+    allowed_hosts: tuple[str, ...] = ()  # extra Host header values accepted on /mcp (e.g. a tunnel hostname)
+    allowed_origins: tuple[str, ...] = ()  # extra browser Origin values accepted on /mcp
+
+    @property
+    def is_loopback(self) -> bool:
+        return self.host.strip().lower() in LOOPBACK_HOSTS
 
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> "Settings":
@@ -67,6 +91,9 @@ class Settings:
                 patient_name=value("CARELOOP_DEMO_PATIENT_NAME", "Maya"),
                 require_consent=value("CARELOOP_REQUIRE_CONSENT", "true").lower() not in {"0", "false", "no", "off"},
                 demo_reset=value("CARELOOP_DEMO_RESET", "false").lower() in {"1", "true", "yes", "on"},
+                allow_demo_tokens=value("CARELOOP_ALLOW_DEMO_TOKENS", "false").lower() in {"1", "true", "yes", "on"},
+                allowed_hosts=_csv(source.get("CARELOOP_ALLOWED_HOSTS")),
+                allowed_origins=_csv(source.get("CARELOOP_ALLOWED_ORIGINS")),
             )
         except ValueError as exc:
             raise ValueError("CareLoop port, retention, and rate limit must be integers") from exc

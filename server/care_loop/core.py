@@ -765,6 +765,20 @@ class CareLoopService:
                 return grant
         return None
 
+    def grant_by_name(self, identity: Identity, name: str) -> dict[str, Any]:
+        """The one not-yet-revoked grant or invitation the patient calls ``name`` ("Sam").
+
+        Raises ValueError when no one, or more than one person, has that name, so a spoken
+        name can never revoke the wrong person.
+        """
+        patient = self._require_patient(identity)
+        wanted = " ".join(str(name).split()).casefold()
+        matches = [g for g in self.storage.list(patient, "CONSENT")
+                   if wanted and g.get("display_name", "").casefold() == wanted and not g.get("revoked_at")]
+        if len(matches) != 1:
+            raise ValueError("caregiver name matches no one or several people")
+        return matches[0]
+
     def task_helpers(self, identity: Identity) -> list[str]:
         """Names of family members who can be given tasks."""
         patient = self._require_patient(identity)

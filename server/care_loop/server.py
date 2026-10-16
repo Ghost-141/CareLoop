@@ -5,12 +5,13 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any
 from mcp.server.mcpserver import MCPServer, Context
+from mcp.server.transport_security import TransportSecuritySettings
 from fastapi import FastAPI
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp
 from . import __version__
-from .auth import AuthError, BearerAuthMiddleware, Identity, TokenAuth
+from .auth import AuthError, BearerAuthMiddleware, Identity, TokenAuth, uses_demo_tokens
 from .config import Settings
 from .core import AccessDenied, CareLoopService
 from .storage import CareLoopStorage
@@ -68,9 +69,30 @@ def build_server(deps: Deps) -> MCPServer:
         return JSONResponse({"status":"ok","version":__version__,"service":"careloop"})
     return mcp
 
+class UnsafeDeploymentError(RuntimeError):
+    """The server was configured in a way that would expose the public demo tokens."""
+
+def check_deployment(settings: Settings) -> None:
+    """Refuse to serve the publicly documented demo tokens beyond this machine."""
+    if settings.is_loopback or settings.allow_demo_tokens or not uses_demo_tokens(settings):
+        return
+    raise UnsafeDeploymentError(
+        f"Refusing to listen on {settings.host!r} with the built-in demo tokens. Set CARELOOP_API_TOKEN and "
+        "CARELOOP_CAREGIVER_TOKEN to private values, or set CARELOOP_ALLOW_DEMO_TOKENS=true for a deliberate "
+        "local-network demo.")
+
+def transport_security(settings: Settings) -> TransportSecuritySettings:
+    """Host/Origin allowlist for /mcp. Always on, whatever address the server binds to."""
+    hosts=["127.0.0.1:*","localhost:*","[::1]:*",*settings.allowed_hosts]
+    origins=["http://127.0.0.1:*","http://localhost:*","http://[::1]:*",*settings.allowed_origins]
+    if not settings.is_loopback and settings.host not in ("0.0.0.0","::"):
+        hosts.append(f"{settings.host}:*")
+    return TransportSecuritySettings(enable_dns_rebinding_protection=True,allowed_hosts=hosts,allowed_origins=origins)
+
 def create_app(deps: Deps | None=None) -> ASGIApp:
-    deps=deps or build_deps(); mcp=build_server(deps)
-    mcp_app=mcp.streamable_http_app(streamable_http_path="/mcp",host=deps.settings.host,max_request_body_size=MAX_REQUEST_BYTES)
+    deps=deps or build_deps(); check_deployment(deps.settings); mcp=build_server(deps)
+    mcp_app=mcp.streamable_http_app(streamable_http_path="/mcp",host=deps.settings.host,max_request_body_size=MAX_REQUEST_BYTES,
+                                    transport_security=transport_security(deps.settings))
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
         # Mounted ASGI applications do not receive lifespan events by default.
@@ -89,6 +111,10 @@ def main() -> None:
     import uvicorn
     logging.basicConfig(level=logging.INFO,format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     settings=Settings.from_env()
-    uvicorn.run(create_app(build_deps(settings)),host=settings.host,port=settings.port,log_level="info")
+    try:
+        app=create_app(build_deps(settings))
+    except UnsafeDeploymentError as exc:
+        raise SystemExit(f"CareLoop: {exc}") from exc
+    uvicorn.run(app,host=settings.host,port=settings.port,log_level="info")
 
 if __name__ == "__main__": main()

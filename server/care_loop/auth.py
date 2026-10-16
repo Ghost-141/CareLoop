@@ -12,6 +12,14 @@ from .config import Settings
 LOCAL_DEMO_TOKEN = "careloop-local-demo-token"
 LOCAL_CAREGIVER_TOKEN = "careloop-local-caregiver-token"
 
+def uses_demo_tokens(settings: Settings) -> bool:
+    """True when the built-in, publicly documented demo tokens would be accepted."""
+    token = settings.api_token or LOCAL_DEMO_TOKEN
+    if token == LOCAL_DEMO_TOKEN or settings.caregiver_token == LOCAL_CAREGIVER_TOKEN:
+        return True
+    return False
+
+
 class AuthError(PermissionError):
     pass
 

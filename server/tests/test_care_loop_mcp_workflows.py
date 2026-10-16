@@ -21,7 +21,7 @@ class FakeMCP:
         self.meta = {}
         self.annotations = {}
 
-    def tool(self, *, name: str, annotations=None, meta=None):
+    def tool(self, *, name: str, title=None, annotations=None, meta=None):
         def decorator(function):
             self.tools[name] = function
             self.meta[name] = meta
@@ -122,11 +122,11 @@ def test_care_circle_invite_accept_and_revoke_through_mcp() -> None:
     deps.local_identity = patient()
     circle = mcp.tools["list_care_circle"](FakeContext())
     assert circle["speakable"] == "Your care circle has 1 active caregiver and 0 pending invitations."
-    assert_voice_contract(mcp.tools["revoke_caregiver"](invitation_id, FakeContext()), "care-circle")
+    assert_voice_contract(mcp.tools["revoke_caregiver"](FakeContext(), invitation_id=invitation_id), "care-circle")
     assert deps.service.storage.get("patient", invitation_id)["status"] == "revoked"
 
     with pytest.raises(ToolError, match="can't be revoked"):
-        mcp.tools["revoke_caregiver"]("missing", FakeContext())
+        mcp.tools["revoke_caregiver"](FakeContext(), invitation_id="missing")
 
 
 def test_handoff_accepts_iso_dates_and_relative_ranges() -> None:
@@ -191,12 +191,16 @@ def test_generic_notifications_count_and_acknowledge_without_detail() -> None:
     assert "pain" not in str(notifications).lower() and "medication" not in str(notifications).lower()
 
     with pytest.raises(ToolError, match="can't be acknowledged"):
-        mcp.tools["acknowledge_alert"](alert["id"], FakeContext())
+        mcp.tools["acknowledge_alert"](FakeContext(), alert_id=alert["id"])
     deps.local_identity = patient()
     deps.service.grant(patient(), "caregiver", ["acknowledge_alerts"])
     deps.local_identity = caregiver()
-    acknowledgement = mcp.tools["acknowledge_alert"](alert["id"], FakeContext())
+    acknowledgement = mcp.tools["acknowledge_alert"](FakeContext())  # "mark it seen": no id needed
     assert acknowledgement["speakable"] == "CareLoop update acknowledged."
+    assert acknowledgement["refs"][0]["id"] == alert["id"]
+    with pytest.raises(ToolError, match="can't be acknowledged"):  # nothing is waiting any more
+        mcp.tools["acknowledge_alert"](FakeContext())
+    assert mcp.tools["acknowledge_alert"](FakeContext(), alert_id=alert["id"])["speakable"] == "CareLoop update acknowledged."  # an id still works
     after = mcp.tools["list_generic_notifications"](FakeContext())
     assert after["speakable"] == "There are no new CareLoop updates."
     assert after["refs"][0]["status"] == "acknowledged"
@@ -218,7 +222,7 @@ def test_delete_of_missing_record_is_an_error() -> None:
 def test_search_returns_match_refs_and_accepts_relative_dates() -> None:
     now = [1_791_936_000]
     mcp, _deps = build(now, patient())
-    recorded = mcp.tools["record_pain_observation"](4, "search-1", FakeContext())
+    recorded = mcp.tools["record_pain_observation"](4, FakeContext(), idempotency_key="search-1")
     found = mcp.tools["search_care_history"]("pain", FakeContext(), "last_7_days")
     assert found["speakable"] == "Found 1 matching record."
     assert found["refs"][0]["id"] == recorded["refs"][0]["id"]
@@ -232,7 +236,7 @@ def test_sensitive_tool_details_are_never_in_model_results() -> None:
     secret = "PRIVATE-CARE-DETAIL-719"
     source = deps.service.create_document(patient(), "Synthetic plan", [{"page": 1, "excerpt": secret}], reviewed=True)
     results = [
-        mcp.tools["record_pain_observation"](9, "secret-observation", FakeContext()),
+        mcp.tools["record_pain_observation"](9, FakeContext(), idempotency_key="secret-observation"),
         mcp.tools["get_care_plan_source"](source["id"], FakeContext()),
         mcp.tools["create_visit_handoff"]("last_7_days", FakeContext()),
         mcp.tools["list_care_records"](FakeContext()),
@@ -249,7 +253,7 @@ def test_sensitive_tool_details_are_never_in_model_results() -> None:
 
 def test_private_view_respects_caregiver_scope() -> None:
     mcp, deps = build([100], patient())
-    mcp.tools["record_pain_observation"](6, "scope-1", FakeContext())
+    mcp.tools["record_pain_observation"](6, FakeContext(), idempotency_key="scope-1")
     deps.service.grant(patient(), "caregiver", ["read_tasks"])
     deps.local_identity = caregiver()
     assert mcp.tools["get_private_view"]("tasks", FakeContext())["data"] == {"items": []}
@@ -320,3 +324,69 @@ def test_daily_checkin_refuses_caregiver_without_write_scope_before_asking() -> 
     with pytest.raises(ToolError, match="check-in couldn't be completed"):
         asyncio.run(mcp.tools["start_daily_checkin"](ctx))
     assert ctx.messages == []
+
+
+def test_revoke_caregiver_by_spoken_name_and_ambiguity() -> None:
+    now = [1_700_000_000]
+    mcp, deps = build(now, patient())
+    sam = deps.service.invite(patient(), ["read_tasks"], None, "Sam")
+    other = deps.service.invite(patient(), ["read_tasks"], None, "Alex")
+    assert_voice_contract(mcp.tools["revoke_caregiver"](FakeContext(), caregiver="sam"), "care-circle")
+    grants = {g["id"]: g for g in deps.service.list_grants(patient())}
+    assert grants[sam["id"]]["revoked_at"] and not grants[other["id"]].get("revoked_at")
+    with pytest.raises(Exception):  # nobody left called Sam
+        mcp.tools["revoke_caregiver"](FakeContext(), caregiver="Sam")
+    with pytest.raises(Exception):  # neither a name nor a ref
+        mcp.tools["revoke_caregiver"](FakeContext())
+    deps.service.invite(patient(), ["read_tasks"], None, "Alex")
+    with pytest.raises(Exception):  # two Alexes: refuse to guess
+        mcp.tools["revoke_caregiver"](FakeContext(), caregiver="Alex")
+    assert not [g for g in deps.service.list_grants(patient()) if g.get("display_name") == "Alex" and g.get("revoked_at")]
+
+
+def test_pain_key_is_optional_and_a_supplied_key_still_deduplicates() -> None:
+    now = [1_700_000_000]
+    mcp, deps = build(now, patient())
+    first = mcp.tools["record_pain_observation"](4, FakeContext())
+    second = mcp.tools["record_pain_observation"](4, FakeContext())
+    assert first["refs"][0]["id"] != second["refs"][0]["id"]
+    assert len(deps.service.list_records(patient(), "OBSERVATION")) == 2
+    a = mcp.tools["record_pain_observation"](5, FakeContext(), idempotency_key="retry-1")
+    b = mcp.tools["record_pain_observation"](5, FakeContext(), idempotency_key="retry-1")
+    assert a["refs"][0]["id"] == b["refs"][0]["id"]
+    assert len(deps.service.list_records(patient(), "OBSERVATION")) == 3
+
+
+def test_record_labels_name_the_kind_and_mark_the_latest_without_values() -> None:
+    now = [1_700_000_000]
+    mcp, deps = build(now, patient())
+    for score in (9, 3):
+        deps.service.record_observation(patient(), pain_score=score, idempotency_key=f"k{score}")
+        now[0] += 60
+    result = mcp.tools["list_care_records"](FakeContext(), record_type="OBSERVATION")
+    labels = [ref["label"] for ref in result["refs"]]
+    assert labels == ["pain check-in 1", "latest pain check-in"]
+
+
+def test_delete_care_record_accepts_the_label_list_care_records_gave_it() -> None:
+    now = [1_700_000_000]
+    mcp, deps = build(now, patient())
+    for score in (9, 3):
+        deps.service.record_observation(patient(), pain_score=score, idempotency_key=f"d{score}")
+        now[0] += 60
+    older = [r["id"] for r in deps.service.list_records(patient(), "OBSERVATION")][0]
+    assert_voice_contract(mcp.tools["delete_care_record"]("latest pain check-in", FakeContext()), "records")
+    left = [r["id"] for r in deps.service.list_records(patient(), "OBSERVATION")]
+    assert left == [older]
+    with pytest.raises(Exception):  # a label that matches nothing deletes nothing
+        mcp.tools["delete_care_record"]("latest care task", FakeContext())
+    assert [r["id"] for r in deps.service.list_records(patient(), "OBSERVATION")] == [older]
+    assert_voice_contract(mcp.tools["delete_care_record"](older, FakeContext()), "records")  # a real id still works
+
+
+def test_list_care_records_accepts_plain_kind_names() -> None:
+    now = [1_700_000_000]
+    mcp, deps = build(now, patient())
+    deps.service.record_observation(patient(), pain_score=5, idempotency_key="p1")
+    for phrase in ("pain check-in", "pain", "OBSERVATION", "Pain Score"):
+        assert len(mcp.tools["list_care_records"](FakeContext(), record_type=phrase)["refs"]) == 1, phrase

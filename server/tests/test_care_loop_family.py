@@ -30,7 +30,7 @@ class FakeMCP:
     def __init__(self) -> None:
         self.tools = {}
 
-    def tool(self, *, name, annotations=None, meta=None):
+    def tool(self, *, name, title=None, annotations=None, meta=None):
         def register_tool(fn):
             self.tools[name] = fn
             return fn
