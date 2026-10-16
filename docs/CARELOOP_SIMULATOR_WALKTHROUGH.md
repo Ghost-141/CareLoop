@@ -1,6 +1,6 @@
 # Driving the CareLoop simulator end to end
 
-How to start the Alexa+ behavior simulator, what to say and click, what you should see, and why each step matters. For a description of every control on the page, see [CARELOOP_UI_GUIDE.md](CARELOOP_UI_GUIDE.md).
+How to start the Alexa+ behavior simulator, what to say and click, what you should see, and why each step matters. For a description of every control on the page, see [CARELOOP_UI_GUIDE.md](CARELOOP_UI_GUIDE.md). The step-by-step tables of expected replies (including family tasks, multi-turn and prescription intake) are in [CARELOOP_DEMO_WALKTHROUGH.md](CARELOOP_DEMO_WALKTHROUGH.md).
 
 The replies in the tables were captured from a real run on the seeded starting day with the **Mock replay** planner. With the local model (Ollama) the tools called are the same but the wording can differ slightly.
 

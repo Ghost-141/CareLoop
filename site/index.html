@@ -467,7 +467,7 @@ git clone https://github.com/Ghost-141/CareLoop.git
 cd CareLoop
 uv sync --extra dev --extra alexa-sim --extra voice \
         --extra intake --extra ocr
-cp .env.example .env
+cp .env.example .env   # optional: local model and voice
 uv run pytest -q
 scripts/run_alexa_demo.sh</pre>
         <ul class="stack">

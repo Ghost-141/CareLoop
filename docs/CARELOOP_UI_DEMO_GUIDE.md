@@ -2,7 +2,7 @@
 
 Exactly what to click, type and say, what you should see, and why. Steps 1 to 11 and 13 were driven in a real browser (Chrome, 1440 × 900) against a live server, with the **Mock replay** planner and the local model reading the document. Step 12 (removing Sam) was checked through the same simulator, not by clicking. All data is synthetic.
 
-For a description of every control, see [CARELOOP_UI_GUIDE.md](CARELOOP_UI_GUIDE.md). For the ideas behind each step, see [CARELOOP_SIMULATOR_WALKTHROUGH.md](CARELOOP_SIMULATOR_WALKTHROUGH.md).
+For a description of every control, see [CARELOOP_UI_GUIDE.md](CARELOOP_UI_GUIDE.md). The full tables of expected replies are in [CARELOOP_DEMO_WALKTHROUGH.md](CARELOOP_DEMO_WALKTHROUGH.md). For the ideas behind each step, see [CARELOOP_SIMULATOR_WALKTHROUGH.md](CARELOOP_SIMULATOR_WALKTHROUGH.md).
 
 ---
 
