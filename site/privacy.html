@@ -1,4 +1,4 @@
-<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>CareLoop · privacy policy</title><style>:root{color-scheme:light dark}body{font:16px/1.6 system-ui,-apple-system,sans-serif;max-width:46rem;margin:2rem auto;padding:0 1rem}h1{font-size:1.6rem}h2{font-size:1.1rem;margin-top:1.6rem}.note{border:1px solid #c9a227;padding:.6rem .9rem;border-radius:8px}</style></head><body><h1>CareLoop privacy policy</h1><p><a href='index.html'>Back to CareLoop</a></p><p class='note'>CareLoop is a hackathon demo that uses synthetic data. Don't enter real health information.</p>
+<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><link rel='icon' href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M26 16a10 10 0 1 1-4-8' fill='none' stroke='%23172338' stroke-width='4' stroke-linecap='round'/%3E%3Ccircle cx='25' cy='8' r='3' fill='%231690a6'/%3E%3C/svg%3E"><title>CareLoop · privacy policy</title><style>:root{color-scheme:light dark}body{font:16px/1.6 system-ui,-apple-system,sans-serif;max-width:46rem;margin:2rem auto;padding:0 1rem}h1{font-size:1.6rem}h2{font-size:1.1rem;margin-top:1.6rem}.note{border:1px solid #c9a227;padding:.6rem .9rem;border-radius:8px}</style></head><body><h1>CareLoop privacy policy</h1><p><a href='index.html'>Back to CareLoop</a></p><p class='note'>CareLoop is a hackathon demo that uses synthetic data. Don't enter real health information.</p>
 <p>Last updated: October 16, 2026.</p>
 <h2>What CareLoop keeps</h2>
 <ul>
@@ -11,7 +11,9 @@
 </ul>
 <h2>Uploaded documents</h2>
 <p>When you share a prescription or plan, CareLoop reads it on its own server (text extraction, and OCR for scans or
-photos) with a local AI model. The extracted text is kept for at most 24 hours while you review it. Only the lines
+photos) with an AI model. By default that model runs on the same computer as CareLoop. If the person running
+CareLoop has connected a hosted model instead, the text extracted from your document is sent to that service so it
+can be read. Lines that read like commands to an AI are never sent. The extracted text is kept for at most 24 hours while you review it. Only the lines
 behind items you approve are kept after that. The uploaded file itself is not stored.</p>
 <h2>Why</h2>
 <p>To let you and the people you choose coordinate your care, and to give your clinician an accurate summary.

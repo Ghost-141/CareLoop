@@ -1,6 +1,6 @@
 # Publishes site/ to GitHub Pages: https://ghost-141.github.io/CareLoop/
-# Skipped while the repository is private. After making it public, set
-# Settings > Pages > Source to "GitHub Actions", then re-run this workflow.
+# Runs on every push that changes site/, and by hand from the Actions tab.
+# One-time setup: Settings > Pages > Source = "GitHub Actions".
 name: Product page
 
 on:

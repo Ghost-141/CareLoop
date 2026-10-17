@@ -5,6 +5,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CareLoop · The accountable care loop for Alexa+</title>
 <meta name="description" content="CareLoop is an MCP add-on for Alexa+ that turns a clinician's plan into tasks the patient approves, family members can help with, and a clinician can trust. Every spoken instruction traces back to the line it came from.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M26 16a10 10 0 1 1-4-8' fill='none' stroke='%23172338' stroke-width='4' stroke-linecap='round'/%3E%3Ccircle cx='25' cy='8' r='3' fill='%231690a6'/%3E%3C/svg%3E">
+<meta name="theme-color" content="#172338">
+<link rel="canonical" href="https://ghost-141.github.io/CareLoop/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="CareLoop">
+<meta property="og:title" content="CareLoop · The accountable care loop for Alexa+">
+<meta property="og:description" content="CareLoop is an MCP add-on for Alexa+ that turns a clinician's plan into tasks the patient approves, family members can help with, and a clinician can trust. Every spoken instruction traces back to the line it came from.">
+<meta property="og:url" content="https://ghost-141.github.io/CareLoop/">
+<meta property="og:image" content="https://ghost-141.github.io/CareLoop/assets/simulator.png">
+<meta property="og:image:alt" content="The CareLoop simulator: Maya's Echo Show, Sam's Echo Dot and the Alexa app panel">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet">
@@ -335,7 +346,7 @@
 
             <!-- CareLoop -->
             <g class="node module" id="n-read"><rect x="645" y="72" width="310" height="70" rx="10"/>
-              <text x="665" y="100" class="name small">Read documents</text><text x="665" y="124" class="sub">PDF text, OCR, a local model, checks</text></g>
+              <text x="665" y="100" class="name small">Read documents</text><text x="665" y="124" class="sub">PDF text, OCR, an AI model, checks</text></g>
             <g class="node module" id="n-consent"><rect x="645" y="158" width="310" height="104" rx="10"/>
               <text x="665" y="186" class="name small">Approval and consent</text><text x="665" y="210" class="sub">source lines, permissions read back,</text><text x="665" y="230" class="sub">two-layer answers</text></g>
             <g class="node module" id="n-rules"><rect x="645" y="276" width="310" height="70" rx="10"/>
@@ -363,7 +374,7 @@
           <button type="button" class="play" id="dg-play" aria-pressed="false">Play</button>
           <ol class="steps" id="dg-steps">
             <li><button type="button" data-step="0">Maya shares her prescription in the Alexa app.</button></li>
-            <li><button type="button" data-step="1">CareLoop reads it on its own server: PDF text, OCR for scans, a local model proposes items, and code checks every number.</button></li>
+            <li><button type="button" data-step="1">CareLoop reads it on its own server: PDF text, OCR for scans, an AI model proposes items, and code checks every number.</button></li>
             <li><button type="button" data-step="2">Maya says "Alexa, go through them." Alexa+ chooses a CareLoop tool.</button></li>
             <li><button type="button" data-step="3">CareLoop answers in two layers: one safe sentence to speak, and private detail only for her screen.</button></li>
             <li><button type="button" data-step="4">Her approved rule fires after two high check-ins. Sam's speaker hears only "1 new update".</button></li>
@@ -413,7 +424,7 @@
           <div class="turn alexa"><span class="speaker alexa">Alexa</span><p>Your document is ready. 8 items need your approval, and 2 are flagged for a closer look. Medicine items are approved on your screen.</p></div>
           <div class="turn"><span class="speaker">Maya</span><p>Alexa, should I double my medication?</p></div>
           <div class="turn alexa"><span class="speaker alexa">Alexa</span><p>I can't give medical advice. Please contact your clinician, or emergency services in an emergency.</p></div>
-          <p class="why">A local model proposes the items; <mark>code checks every number against the source</mark>, and the patient decides.</p>
+          <p class="why">A model proposes the items; <mark>code checks every number against the source</mark>, and the patient decides.</p>
         </article>
       </div>
     </div>
@@ -450,8 +461,8 @@
         <ul class="facts">
           <li><strong>30 MCP tools</strong>Plans, documents, check-ins, family, consent, handoffs and data rights.</li>
           <li><strong>100% recall, 0 invented numbers</strong>Prescription reading on our synthetic test set: typed PDF, scan and photo, 3 runs each.</li>
-          <li><strong>212 automated tests</strong>Including complete conversations against a running server.</li>
-          <li><strong>Runs locally</strong>OCR, the language model and the voice all run on the laptop. No health text leaves it.</li>
+          <li><strong>241 automated tests</strong>Including complete conversations against a running server.</li>
+          <li><strong>Local by default</strong>OCR, the language model and the voice all run on the laptop, so no health text leaves it. Point the models at your own OpenAI-compatible endpoint and document text goes there instead.</li>
         </ul>
       </div>
     </div>
@@ -460,7 +471,7 @@
   <section id="developers" aria-labelledby="dev-title">
     <div class="wrap">
       <h2 id="dev-title">For developers</h2>
-      <p class="intro">CareLoop is a standard MCP server over Streamable HTTP. Any MCP client can use it, and the simulator shows how Alexa+ would.</p>
+      <p class="intro">CareLoop is a standard MCP server over Streamable HTTP. Any MCP client can use it, and the simulator shows how Alexa+ would. In production Alexa+ brings its own model. To run the simulator, point it at any OpenAI-compatible API, a local Ollama model, or the built-in scripted planner.</p>
       <div class="dev">
 <pre><span class="c"># Python 3.12+, uv, and optionally Ollama</span>
 git clone https://github.com/Ghost-141/CareLoop.git
@@ -473,7 +484,7 @@ scripts/run_alexa_demo.sh</pre>
         <ul class="stack">
           <li><strong>Voice-safe results.</strong> Every tool returns one sentence safe to say aloud, plus opaque references. Private detail goes to a sandboxed MCP Apps screen.</li>
           <li><strong>MCP elicitation.</strong> Check-ins, guided reviews and consent ask their own follow-up questions mid-call.</li>
-          <li><strong>Local intelligence.</strong> PaddleOCR and a local Ollama model, checked by deterministic code before anything is shown.</li>
+          <li><strong>Your choice of model.</strong> PaddleOCR, plus Ollama or any OpenAI-compatible endpoint, checked by deterministic code before anything is shown. Lines that read like commands to an AI are set aside.</li>
           <li><a href="https://github.com/Ghost-141/CareLoop#readme">Full setup, walkthrough and configuration in the README</a></li>
         </ul>
       </div>

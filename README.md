@@ -4,7 +4,7 @@
 
 > Built for the **Amazon Developer Hackathon 2026 ("Build, Ship, Shape"), Alexa+ track.** It includes an Alexa+ *behavior simulator* web app (`alexa_sim/`), which is **not an Amazon product**. All data is synthetic.
 
-**Product page:** [ghost-141.github.io/CareLoop](https://ghost-141.github.io/CareLoop/) (source in `site/`, published by `.github/workflows/pages.yml` once the repository is public).
+**Product page:** [ghost-141.github.io/CareLoop](https://ghost-141.github.io/CareLoop/) (source in `site/`, published by `.github/workflows/pages.yml`).
 
 CareLoop is intentionally bounded. It does **not** diagnose, prescribe, adjust medication, interpret missing data as normal, promise emergency monitoring, or use real patient data.
 
@@ -14,11 +14,11 @@ CareLoop is intentionally bounded. It does **not** diagnose, prescribe, adjust m
 | Server | Python, FastAPI, official MCP Python SDK, SQLite/WAL |
 | Assistant simulator | Echo Show-style and Echo Dot-style devices, simulated Alexa app account linking, live MCP inspector |
 | Voice | Local Kokoro TTS and Whisper STT on any system (MLX Whisper on Apple Silicon, faster-whisper on Windows, Linux and Intel Macs), with browser speech fallback |
-| Planner | Local tool-calling LLM via Ollama, or a deterministic mock for stage safety |
+| Planner | In production, Alexa+'s own model chooses the tools. The simulator stands in with any OpenAI-compatible API, a local Ollama model, or a deterministic mock for stage safety |
 | Identity | Credential-derived patient/caregiver identities; no caller-supplied patient scope |
 | Privacy | Voice-safe tool results, patient-owned expiring grants, generic caregiver notifications, deletion and purge |
 | Document intake | Prescription/plan upload: PDF text first, PaddleOCR fallback, local LLM proposes items, deterministic checks, patient approves each item |
-| Tests | 212 tests, including live end-to-end runs against a real server; an intake eval against the local model |
+| Tests | 241 tests, including live end-to-end runs against a real server; an intake eval against the configured model |
 
 ## Contents
 
@@ -63,7 +63,7 @@ See [docs/CARELOOP_FEATURES.md](docs/CARELOOP_FEATURES.md) for the full story an
 | --- | --- | --- |
 | [uv](https://docs.astral.sh/uv/getting-started/installation/) | Everything | `uv --version` |
 | Python 3.12+ (uv can install it) | Everything | `uv python list` |
-| Git + access to this private repository | Cloning | `gh auth status` |
+| Git | Cloning | `git --version` |
 | [Ollama](https://ollama.com) with a tool-calling model *(optional)* | LLM planner | `ollama list` |
 | Any 64-bit Mac, Windows or Linux machine *(optional)* | Local speech: Kokoro and Whisper. Apple Silicon uses MLX Whisper, everything else uses faster-whisper (CPU, or an NVIDIA GPU if present). Models download on first use. | `uv run python -c "import platform; print(platform.machine())"` |
 | Chrome *(recommended)* | Microphone input and browser speech fallback | — |
@@ -72,10 +72,10 @@ Without Ollama, the simulator uses its deterministic mock planner. If local spee
 
 ## Setup, step by step
 
-**1. Clone the repository** (private: ask the owner for access first):
+**1. Clone the repository:**
 
 ```bash
-git clone git@github.com:Ghost-141/CareLoop.git
+git clone https://github.com/Ghost-141/CareLoop.git
 cd CareLoop
 ```
 
@@ -92,14 +92,15 @@ uv run python evals/intake/documents.py   # writes synthetic sample documents to
 cp .env.example .env        # Windows: copy .env.example .env
 ```
 
-`.env` is Git-ignored and has two active lines and two optional ones:
+`.env` is Git-ignored and holds only three settings, the model and the two voice switches:
 
 ```text
-CARELOOP_AGENT_LLM=ollama
 LLM_MODEL=gemma4:e4b
 # VOICE=kokoro      # remove the # on these two lines for local voice
 # STT=whisper
 ```
+
+Setting `LLM_MODEL` turns on the local planner. Leave it out to use the scripted one.
 
 The first run downloads the voice models, and the simulator picks the right Whisper engine for your system. Every other setting has a default (see [Configuration](#configuration)).
 
@@ -115,7 +116,7 @@ Without a model the demo uses the scripted planner, and documents are read by pa
 
 ```bash
 uv run pytest -q
-# 212 passed
+# 241 passed
 ```
 
 ## Run the Alexa+ demo
@@ -162,7 +163,7 @@ uv run careloop-alexa-sim
 - **Devices:** *Maya's Echo Show* (patient, with a screen) and *Sam's Echo Dot* (caregiver, voice only).
 - **Talk:** tap the 🎤 on a device and speak, or tick **Hands-free "Alexa…"** and pick which device hears you. Saying "stop" interrupts speech. Typing in a device's box, or tapping a prompt chip, does the same as speaking.
 - **Alexa app panel:** **Enable CareLoop** links an account (synthetic credentials stay on the server). **Sam opens Maya's invitation link** simulates Sam accepting her invite.
-- **Backstage panel:** switch planner (Ollama ↔ mock), reset the conversation, ring the next simulated reminder, and **Reset demo data** (wipes only the demo patient and reseeds the starting day).
+- **Backstage panel:** switch the stand-in planner (OpenAI-compatible API ↔ Ollama ↔ mock), reset the conversation, ring the next simulated reminder, and **Reset demo data** (wipes only the demo patient and reseeds the starting day).
 - **MCP inspector:** every `tools/list`, `tools/call`, `resources/read` and `elicitation/create` message, live.
 
 ## Demo walkthrough
@@ -179,7 +180,7 @@ For exact buttons and screens with screenshots, use the [click-by-click demo gui
 ## Testing
 
 ```bash
-uv run pytest -q                       # all 212 tests
+uv run pytest -q                       # all 241 tests
 uv run pytest -q server/tests          # MCP server, tools, consent, MCP Apps views, elicitation
 uv run pytest -q alexa_sim/tests       # simulator host and scripted evaluator, incl. a live run of the demo story
 ```
@@ -238,7 +239,7 @@ Patients, or family members the patient grants `upload_documents`, upload a pres
 
 1. **PDF text layer** (`pypdf`) per page; a quality check sends empty or garbled pages to OCR.
 2. **OCR fallback** (`PaddleOCR`, pages rendered with `pypdfium2`) for scanned pages and photos; each line keeps its confidence.
-3. **Local LLM** (Ollama, default `gemma4:e4b`) receives numbered lines (`p1:L12`) fenced as data and returns schema-constrained JSON items that cite their lines.
+3. **LLM** (local Ollama by default, `gemma4:e4b`; or any OpenAI-compatible endpoint, see `CARELOOP_INTAKE_LLM`) receives numbered lines (`p1:L12`) fenced as data and returns schema-constrained JSON items that cite their lines.
 4. **Deterministic checks:**
    - Citations must exist and the instruction must appear verbatim.
    - **Every number must appear in the source.**
@@ -270,7 +271,7 @@ flowchart LR
     pool["MCP client pool<br/>1 session per account"]
     voice["Kokoro TTS · Whisper STT"]
   end
-  llm[("Ollama<br/>tool-calling LLM")]
+  llm[("Stand-in for Alexa+'s model<br/>OpenAI-compatible API or Ollama")]
   subgraph careloop["CareLoop MCP server :8010"]
     mcp["/mcp tools · ui:// views"]
     core["Approval · consent · rules · handoff"]
@@ -312,8 +313,10 @@ Settings come from environment variables. Everything has a default, and a `.env`
 | `CARELOOP_RETENTION_DAYS` | `365` | Retention for non-patient records |
 | `CARELOOP_MCP_URL` | `http://127.0.0.1:8010/mcp` | Where the simulators connect |
 | `CARELOOP_ALEXA_SIM_PORT` | `8021` | Alexa+ behavior simulator port |
-| `CARELOOP_AGENT_LLM` | `mock` (`.env.example`: `ollama`) | Planner: `mock` or `ollama` |
-| `LLM_BASE_URL` / `LLM_MODEL` | `http://127.0.0.1:11434` / — | Ollama endpoint and tool-calling model |
+| `CARELOOP_AGENT_LLM` | `ollama` if `LLM_MODEL` is set, else `mock` | Voice planner: `mock`, `ollama`, or `openai` (any OpenAI-compatible endpoint) |
+| `LLM_BASE_URL` / `LLM_MODEL` | `http://127.0.0.1:11434` / — | Planner endpoint and tool-calling model. For `openai`, a base like `https://host/v1` or the full `.../v1/chat/completions` URL |
+| `LLM_API_KEY` | — | Bearer key for the `openai` planner |
+| `CARELOOP_INTAKE_BASE_URL` | `LLM_BASE_URL` | A separate endpoint just for document reading (Ollama's address, or an OpenAI-compatible URL) |
 | `VOICE` / `STT` | `browser` | `kokoro` / `whisper` for local speech |
 | `KOKORO_VOICE` / `KOKORO_SPEED` | `af_heart` / `1.0` | Kokoro voice settings |
 | `WHISPER_MODEL` | `small.en` | Whisper model. A size name (`tiny.en`, `base.en`, `small.en`, …) works on every system. An MLX repo id such as `mlx-community/whisper-small.en-mlx` also works and is translated for faster-whisper |
@@ -324,8 +327,8 @@ Settings come from environment variables. Everything has a default, and a `.env`
 | `CARELOOP_DEMO_RESET` | `false` (`run_alexa_demo.sh`: `true`) | Enables `POST /api/care/demo/reset`, which wipes and reseeds the demo patient. Keep off anywhere real |
 | `CARELOOP_DEMO_IDLE_RESET_MINUTES` | `0` (off) | The simulator restores the seeded demo after this many minutes without use |
 | `CARELOOP_TIMEZONE` | this machine's zone | IANA zone for task times, reminders and missed-task checks (a patient's own setting wins) |
-| `CARELOOP_INTAKE_LLM` | `ollama` | Document intake model provider, or `none` for pattern matching only |
-| `CARELOOP_INTAKE_MODEL` | `LLM_MODEL` | Local model that structures uploaded documents |
+| `CARELOOP_INTAKE_LLM` | follows `CARELOOP_AGENT_LLM` (`openai` or `ollama`) | Document reading provider: `ollama`, `openai`, or `none` for pattern matching only. **With `openai`, the text extracted from a shared document is sent to that endpoint**; the privacy policy says so |
+| `CARELOOP_INTAKE_MODEL` | `LLM_MODEL` | Model that structures uploaded documents |
 | `CARELOOP_INTAKE_OCR` | `paddle` | OCR for scanned pages and photos (`none` sends them to manual review) |
 
 ## Troubleshooting
