@@ -28,9 +28,10 @@ class AlexaSimSettings:
     # They never reach the browser.
     patient_token: str = "careloop-local-demo-token"
     caregiver_token: str = "careloop-local-caregiver-token"
-    planner: str = "mock"  # mock | ollama
+    planner: str = "mock"  # mock | ollama | openai (any OpenAI-compatible endpoint)
     llm_base_url: str = "http://127.0.0.1:11434"
     llm_model: str = ""
+    llm_api_key: str = ""
     llm_timeout_seconds: float = 60.0
     voice: str = "browser"  # browser | kokoro
     stt: str = "browser"  # browser | whisper
@@ -44,7 +45,8 @@ class AlexaSimSettings:
     def from_env(cls) -> "AlexaSimSettings":
         _load_dotenv()
         env = os.environ
-        planner = env.get("CARELOOP_AGENT_LLM", cls.planner).strip().lower()
+        # Setting LLM_MODEL is enough to use Ollama; CARELOOP_AGENT_LLM=mock still forces the scripted planner.
+        planner = (env.get("CARELOOP_AGENT_LLM") or ("ollama" if env.get("LLM_MODEL", "").strip() else cls.planner)).strip().lower()
         return cls(
             mcp_url=env.get("CARELOOP_MCP_URL", cls.mcp_url),
             api_url=env.get("CARELOOP_SERVER_URL", ""),
@@ -53,9 +55,10 @@ class AlexaSimSettings:
             max_tool_steps=max(1, int(env.get("CARELOOP_ALEXA_SIM_MAX_TOOL_STEPS", "4"))),
             patient_token=env.get("CARELOOP_API_TOKEN") or cls.patient_token,
             caregiver_token=env.get("CARELOOP_CAREGIVER_TOKEN") or cls.caregiver_token,
-            planner=planner if planner in {"mock", "ollama"} else "mock",
+            planner=planner if planner in {"mock", "ollama", "openai"} else "mock",
             llm_base_url=env.get("LLM_BASE_URL", cls.llm_base_url),
             llm_model=env.get("LLM_MODEL", ""),
+            llm_api_key=env.get("LLM_API_KEY", ""),
             llm_timeout_seconds=float(env.get("LLM_TIMEOUT_SECONDS", "60") or 60),
             voice="kokoro" if env.get("VOICE", "").strip().lower() == "kokoro" else "browser",
             stt="whisper" if env.get("STT", "").strip().lower() == "whisper" else "browser",

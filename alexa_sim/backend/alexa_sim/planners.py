@@ -37,7 +37,7 @@ Rules:
 - "Who has access to my care" / "who can see my tasks" → list_care_circle. "Who has seen my data" / "who looked at my records" → who_accessed_my_care_data.
 - "Call me Maya" / "my time zone is …" → set_my_details.
 - Never give medical advice, diagnosis, dosage or emergency guidance. For those, do not call a tool; say CareLoop can't advise on that and to contact their clinician (or emergency services in an emergency).
-- If someone says they got a care plan or prescription but doesn't give its text, don't import anything: ask them to share the document in the Alexa app.
+- If someone says they got or shared a care plan, prescription or document but doesn't give its text, never import text: call get_intake_status first, which says whether a shared document is being read or is ready. Only if CareLoop says none has been shared, ask them to share it in the Alexa app.
 - Act when you have what a tool requires. Don't ask about optional details (like an expiry date); leave them out.
 - When you have the result you need, stop calling tools and answer in one short spoken sentence."""
 
@@ -256,6 +256,95 @@ def _context_note(context: dict[str, Any]) -> str:
     if person:
         parts.append(f"person '{person.get('name') or 'family member'}' (id={person['id']})")
     return ("Recently mentioned; use these ids when the person says it, that one, him or her: " + "; ".join(parts) + ".") if parts else ""
+
+
+def chat_completions_url(base_url: str) -> str:
+    """Accept a base ('https://host/v1'), a bare host, or the full '.../v1/chat/completions' URL."""
+    url = base_url.strip().rstrip("/")
+    if url.endswith("/chat/completions"):
+        return url
+    return f"{url}/chat/completions" if url.endswith("/v1") else f"{url}/v1/chat/completions"
+
+
+def _openai_history(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The device keeps tool calls in Ollama's shape (no ids, arguments as an object, ``tool_name``).
+    OpenAI-compatible endpoints need call ids, JSON-string arguments and ``tool_call_id``."""
+    converted: list[dict[str, Any]] = []
+    waiting: list[str] = []
+    for message in history:
+        if message.get("role") == "assistant" and message.get("tool_calls"):
+            calls = []
+            for call in message["tool_calls"]:
+                function = call.get("function", {})
+                call_id = f"hist_{len(converted)}_{len(calls)}"
+                waiting.append(call_id)
+                arguments = function.get("arguments") or {}
+                calls.append({"id": call_id, "type": "function", "function": {
+                    "name": function.get("name", ""),
+                    "arguments": arguments if isinstance(arguments, str) else json.dumps(arguments)}})
+            converted.append({"role": "assistant", "content": None, "tool_calls": calls})
+        elif message.get("role") == "tool":
+            converted.append({"role": "tool", "tool_call_id": waiting.pop(0) if waiting else "hist_unknown",
+                              "content": message.get("content", "")})
+        else:
+            converted.append({"role": message.get("role", "user"), "content": message.get("content", "")})
+    return converted
+
+
+class OpenAIPlanner:
+    """Tool-calling through any OpenAI-compatible chat completions endpoint (OpenAI, a gateway, vLLM, LM Studio…).
+
+    Like the Ollama planner, the model sees only the voice-safe parts of tool results.
+    """
+
+    name = "openai"
+
+    def __init__(self, base_url: str, model: str, api_key: str = "", timeout: float = 60.0, post=None) -> None:
+        self.url, self.model, self.api_key, self.timeout = chat_completions_url(base_url), model, api_key, timeout
+        self._post = post or self._http_post
+
+    async def next(self, utterance: str, tools: list[dict[str, Any]], history: list[dict[str, str]],
+                   steps: list[Step], context: dict[str, Any] | None = None) -> Action:
+        today = time.strftime("%A %Y-%m-%d", time.localtime())
+        # One system message, first: many endpoints (Claude-backed gateways among them) reject a later one.
+        system = "\n".join(part for part in (f"{SYSTEM_PROMPT}\nToday is {today}.", _context_note(context or {})) if part)
+        messages: list[dict[str, Any]] = [{"role": "system", "content": system}, *_openai_history(history)]
+        messages.append({"role": "user", "content": utterance})
+        for index, (name, arguments, result) in enumerate(steps):
+            call_id = f"step_{index}"
+            messages.append({"role": "assistant", "content": None, "tool_calls": [
+                {"id": call_id, "type": "function", "function": {"name": name, "arguments": json.dumps(arguments)}}]})
+            visible = ({"error": result.get("text") or "unavailable"} if result.get("isError")
+                       else {k: v for k, v in structured(result).items() if k in {"status", "speakable", "refs"}})
+            messages.append({"role": "tool", "tool_call_id": call_id, "content": json.dumps(visible)})
+        payload = {
+            "model": self.model, "messages": messages, "temperature": 0,
+            "tools": [{"type": "function", "function": {
+                "name": tool["name"], "description": tool.get("description", ""),
+                "parameters": tool.get("inputSchema") or {"type": "object", "properties": {}}}} for tool in tools],
+        }
+        raw = await asyncio.to_thread(self._post, self.url, json.dumps(payload).encode("utf-8"))
+        message = (json.loads(raw.decode("utf-8")).get("choices") or [{}])[0].get("message") or {}
+        calls = message.get("tool_calls") or []
+        if calls:
+            function = calls[0].get("function", {})
+            arguments = function.get("arguments") or {}
+            if isinstance(arguments, str):
+                try:
+                    arguments = json.loads(arguments or "{}")
+                except json.JSONDecodeError:
+                    arguments = {}
+            return Action(str(function.get("name", "")), arguments if isinstance(arguments, dict) else {})
+        content = message.get("content")
+        if isinstance(content, list):  # some gateways return content parts
+            content = "".join(part.get("text", "") for part in content if isinstance(part, dict))
+        return Action(say=(content or "").strip() or None)
+
+    def _http_post(self, url: str, body: bytes) -> bytes:
+        headers = {"Content-Type": "application/json", **({"Authorization": f"Bearer {self.api_key}"} if self.api_key else {})}
+        request = Request(url, data=body, headers=headers, method="POST")
+        with urlopen(request, timeout=self.timeout) as response:  # noqa: S310 - the operator's configured model URL
+            return response.read()
 
 
 class OllamaPlanner:

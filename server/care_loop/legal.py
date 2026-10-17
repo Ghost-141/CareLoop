@@ -27,7 +27,9 @@ PRIVACY_HTML = _page("privacy policy", """
 </ul>
 <h2>Uploaded documents</h2>
 <p>When you share a prescription or plan, CareLoop reads it on its own server (text extraction, and OCR for scans or
-photos) with a local AI model. The extracted text is kept for at most 24 hours while you review it. Only the lines
+photos) with an AI model. By default that model runs on the same computer as CareLoop. If the person running
+CareLoop has connected a hosted model instead, the text extracted from your document is sent to that service so it
+can be read. Lines that read like commands to an AI are never sent. The extracted text is kept for at most 24 hours while you review it. Only the lines
 behind items you approve are kept after that. The uploaded file itself is not stored.</p>
 <h2>Why</h2>
 <p>To let you and the people you choose coordinate your care, and to give your clinician an accurate summary.

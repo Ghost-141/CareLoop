@@ -408,8 +408,10 @@
       body.append(el("div", "title", "This document couldn't be read"), el("div", "meta", doc.error || "Try a clearer photo or the original PDF."));
     } else {
       const methods = Object.values(doc.pages || {}), ocr = methods.filter((m) => m === "ocr").length;
-      const how = (ocr ? `${ocr} page${ocr > 1 ? "s" : ""} read by OCR` : "Read from the PDF text") + (doc.engine ? ", organised by " + doc.engine : "");
-      body.append(el("div", "title", doc.title || "Uploaded document"), el("div", "meta", how));
+      const how = (ocr ? `${ocr} page${ocr > 1 ? "s" : ""} read by OCR` : "Read from the PDF text") + (doc.engine === "patterns" ? ", found by pattern matching" : doc.engine ? ", organised by an AI model" : "");
+      const meta = el("div", "meta", how);
+      if (doc.engine) meta.title = doc.engine;  // the exact engine, for anyone who hovers
+      body.append(el("div", "title", doc.title || "Uploaded document"), meta);
       if (doc.follow_up_date) body.append(el("div", "detail", "Follow-up in the document: " + doc.follow_up_date));
       (doc.notes || []).forEach((n) => { const f = el("p", "flag"); f.append(icon(FLAG), document.createTextNode(n)); body.append(f); });
     }

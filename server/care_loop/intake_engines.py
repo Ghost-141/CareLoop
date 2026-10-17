@@ -30,6 +30,10 @@ class IntakeEngines:
                 if self.settings.intake_llm == "ollama" and self.settings.intake_model:
                     from .structuring import OllamaIntakeModel
                     self._model = OllamaIntakeModel(self.settings.llm_base_url, self.settings.intake_model)
+                elif self.settings.intake_llm == "openai" and self.settings.intake_model:
+                    from .structuring import OpenAIIntakeModel
+                    self._model = OpenAIIntakeModel(self.settings.intake_base_url or self.settings.llm_url,
+                                                    self.settings.intake_model, self.settings.llm_api_key)
             return self._model
 
     def describe(self) -> dict[str, str]:

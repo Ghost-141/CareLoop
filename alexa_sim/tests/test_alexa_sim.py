@@ -21,7 +21,7 @@ from alexa_sim.config import AlexaSimSettings
 from alexa_sim.devices import Device, DeviceKind
 from alexa_sim.mcp_pool import AccountSession, Question, is_app_only, normalize_result, normalize_tool
 from alexa_sim.orchestrator import Orchestrator, parse_answer, strip_wake_word
-from alexa_sim.planners import MockReplay, OllamaPlanner
+from alexa_sim.planners import MockReplay, OllamaPlanner, OpenAIPlanner, chat_completions_url
 from alexa_sim.reply_policy import DISCLAIMER, compose_reply, screen_payload
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -178,6 +178,62 @@ async def test_ollama_planner_sees_schemas_and_only_voice_safe_results() -> None
     payload = sent[0]
     assert payload["tools"][0]["function"]["parameters"]["properties"]["record_id"] == {"type": "string"}
     assert "PRIVATE" not in json.dumps(payload["messages"])
+
+
+@pytest.mark.parametrize(("given", "expected"), [
+    ("https://gw.example/v1/chat/completions", "https://gw.example/v1/chat/completions"),
+    ("https://gw.example/v1", "https://gw.example/v1/chat/completions"),
+    ("https://gw.example/v1/", "https://gw.example/v1/chat/completions"),
+    ("http://localhost:1234", "http://localhost:1234/v1/chat/completions")])
+def test_openai_endpoint_url_accepts_base_or_full_url(given, expected) -> None:
+    assert chat_completions_url(given) == expected
+
+
+@pytest.mark.asyncio
+async def test_openai_planner_uses_the_openai_format_and_only_voice_safe_results() -> None:
+    sent = []
+    def post(url, body):
+        sent.append((url, json.loads(body)))
+        return json.dumps({"choices": [{"message": {"content": None, "tool_calls": [
+            {"id": "c1", "type": "function", "function": {"name": "approve_plan_item", "arguments": "{\"record_id\": \"d1\"}"}}]}}]}).encode()
+    planner = OpenAIPlanner("https://gw.example/v1", "any-model", "sk-test", post=post)
+    tools = [{"name": "approve_plan_item", "description": "Approve", "inputSchema": {"type": "object", "properties": {"record_id": {"type": "string"}}}}]
+    prior = ok("1 draft.", refs=[{"id": "d1", "label": "draft task 1"}], secret="PRIVATE")
+    action = await planner.next("approve it", tools, [], [("list_care_tasks", {}, prior)])
+    assert (action.tool, action.arguments) == ("approve_plan_item", {"record_id": "d1"})
+    url, payload = sent[0]
+    assert url == "https://gw.example/v1/chat/completions" and payload["model"] == "any-model"
+    assistant, tool_message = payload["messages"][-2:]
+    assert assistant["tool_calls"][0]["function"]["arguments"] == "{}"  # arguments travel as a JSON string
+    assert tool_message["tool_call_id"] == assistant["tool_calls"][0]["id"]
+    assert "PRIVATE" not in json.dumps(payload["messages"])
+
+
+@pytest.mark.asyncio
+async def test_openai_planner_translates_earlier_turns_stored_in_the_ollama_shape() -> None:
+    sent = []
+    planner = OpenAIPlanner("https://gw.example/v1", "m", post=lambda url, body: (sent.append(json.loads(body)),
+                            json.dumps({"choices": [{"message": {"content": "ok"}}]}).encode())[1])
+    history = [{"role": "user", "content": "my pain is 4"},
+               {"role": "assistant", "content": "", "tool_calls": [{"function": {"name": "record_pain_observation", "arguments": {"pain_score": 4}}}]},
+               {"role": "tool", "tool_name": "record_pain_observation", "content": "{\"speakable\": \"Check-in recorded.\"}"},
+               {"role": "assistant", "content": "Check-in recorded."}]
+    await planner.next("thanks", [], history, [], context={"task": {"id": "t1", "title": "Walk", "times": ["08:00"]}})
+    messages = sent[0]["messages"]
+    assert [m["role"] for m in messages].count("system") == 1 and messages[0]["role"] == "system"
+    assert "id=t1" in messages[0]["content"]  # the "it / that one" note travels inside the first system message
+    call = next(m for m in messages if m.get("tool_calls"))["tool_calls"][0]
+    result = next(m for m in messages if m["role"] == "tool")
+    assert call["type"] == "function" and call["function"]["arguments"] == "{\"pain_score\": 4}"
+    assert result["tool_call_id"] == call["id"] and "tool_name" not in result
+
+
+@pytest.mark.asyncio
+async def test_openai_planner_returns_plain_text_when_no_tool_is_called() -> None:
+    planner = OpenAIPlanner("https://gw.example/v1", "m", post=lambda url, body: json.dumps(
+        {"choices": [{"message": {"content": [{"type": "text", "text": "I can't advise on that."}]}}]}).encode())
+    action = await planner.next("should I double my dose", [], [], [])
+    assert (action.tool, action.say) == (None, "I can't advise on that.")
 
 
 # ---- follow-up questions (MCP elicitation) ---------------------------------------------
@@ -433,6 +489,53 @@ def test_family_member_shares_a_document_and_patient_is_told(careloop_server) ->
         status = say("show", "Alexa, is my document ready?")
         assert status["screen"]["resource_uri"] == "ui://careloop/plan-review"
         assert "Amoxicillin" not in status["reply"]
+
+
+def _wait_for(client, predicate, tries=120):
+    for _ in range(tries):
+        turns = [e for e in client.get("/api/state").json()["trace"] if e.get("type") == "turn" and e["planner"] == "host"]
+        if predicate(turns):
+            return turns
+        time.sleep(0.25)
+    pytest.fail("the expected announcement never came")
+
+
+def test_sharing_gets_an_immediate_answer_then_the_ready_message_which_can_be_fetched_again(careloop_server) -> None:
+    settings = AlexaSimSettings(mcp_url=careloop_server, planner="mock")
+    with TestClient(create_alexa_sim_app(settings, planner=MockReplay())) as client:
+        client.post("/api/link", json={"account": "maya"})
+        assert client.get("/api/state").json()["announce_seq"] == 0
+        client.post("/api/documents/share", params={"account": "maya", "sample": "typed", "doc_type": "prescription"})
+        turns = _wait_for(client, lambda t: sum(1 for x in t if x["device_id"] == "show") >= 2)
+        shows = [t["reply"] for t in turns if t["device_id"] == "show"]
+        assert shows[0].startswith("Got it. I'm reading your document now.")
+        assert shows[1].startswith("Your document is ready.")
+        # A page that missed the push can ask for anything newer than what it has seen.
+        everything = client.get("/api/announcements", params={"after": 0}).json()
+        assert [i["reply"][:8] for i in everything["items"]] == ["Got it. ", "Your doc"]
+        assert everything["items"][1]["screen"]["resource_uri"] == "ui://careloop/plan-review"
+        later = client.get("/api/announcements", params={"after": everything["items"][0]["id"]}).json()
+        assert [i["id"] for i in later["items"]] == [everything["items"][1]["id"]]
+        assert client.get("/api/state").json()["announce_seq"] == everything["latest"]
+
+
+def test_ready_message_waits_for_maya_to_enable_her_show(careloop_server) -> None:
+    settings = AlexaSimSettings(mcp_url=careloop_server, planner="mock")
+    with TestClient(create_alexa_sim_app(settings, planner=MockReplay())) as client:
+        client.post("/api/link", json={"account": "maya"})
+        client.post("/api/link", json={"account": "sam"})
+        say = lambda device, text: client.post("/api/utterance", json={"device_id": device, "text": text}).json()
+        say("show", "Alexa, let my brother Sam see my tasks and upload documents")
+        say("show", "yes")
+        client.post("/api/invite/open")
+        client.post("/api/unlink/maya")  # Maya's Show isn't enabled when Sam's document finishes
+        client.post("/api/documents/share", params={"account": "sam", "sample": "typed"})
+        time.sleep(8)
+        assert client.get("/api/announcements").json()["items"] == [] or all(
+            i["device_id"] == "dot" for i in client.get("/api/announcements").json()["items"])
+        client.post("/api/link", json={"account": "maya"})
+        turns = _wait_for(client, lambda t: any(x["device_id"] == "show" for x in t))
+        assert next(t for t in turns if t["device_id"] == "show")["reply"].startswith("Your document is ready.")
 
 
 def test_family_tasks_reminders_questions_and_access_log_live(careloop_server) -> None:

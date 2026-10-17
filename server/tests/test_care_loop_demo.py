@@ -74,3 +74,11 @@ def test_reset_endpoint_is_off_unless_enabled_and_patient_only(tmp_path) -> None
         response = client.post("/api/care/demo/reset", headers={"authorization": "Bearer p"})
     assert response.status_code == 200 and response.json()["seeded"]["care_circle"] == ["Sam"]
     assert is_seeded(on.service, "demo-patient")
+
+
+def test_document_reading_keeps_its_ollama_address_when_the_planner_is_openai_compatible() -> None:
+    gateway = "https://gw.example/v1/chat/completions"
+    assert Settings.from_env({"LLM_BASE_URL": gateway, "CARELOOP_AGENT_LLM": "openai"}).llm_base_url == "http://127.0.0.1:11434"
+    assert Settings.from_env({"LLM_BASE_URL": "http://box:11434"}).llm_base_url == "http://box:11434"
+    assert Settings.from_env({"LLM_BASE_URL": gateway, "CARELOOP_AGENT_LLM": "openai",
+                              "CARELOOP_INTAKE_BASE_URL": "http://box:11434"}).llm_base_url == "http://box:11434"

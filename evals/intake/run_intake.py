@@ -2,8 +2,10 @@
 
     uv run python evals/intake/run_intake.py --repeat 3
     uv run python evals/intake/run_intake.py --model gemma4:e4b --docs typed
+    uv run python evals/intake/run_intake.py --provider openai --repeat 3   # the endpoint in .env
 
 Without --model it uses the model named in .env (CARELOOP_INTAKE_MODEL or LLM_MODEL), else gemma4:e4b.
+Without --provider it follows CARELOOP_INTAKE_LLM from .env.
 
 Targets (plans/CARELOOP_DOCUMENT_INTAKE_PLAN.md): citation validity 100 %, invented numbers 0,
 recall >= 90 %, injection document: the planted instruction never becomes an item.
@@ -19,10 +21,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT / "server"), str(Path(__file__).parent)]
 
-from care_loop.config import default_llm_model  # noqa: E402
+from care_loop.config import Settings, default_llm_model  # noqa: E402
 from care_loop.extraction import extract_document  # noqa: E402
 from care_loop.extraction.ocr import load_default_engine  # noqa: E402
-from care_loop.structuring import OllamaIntakeModel, structure_document  # noqa: E402
+from care_loop.structuring import OllamaIntakeModel, OpenAIIntakeModel, structure_document  # noqa: E402
 from documents import EXPECTED_PRESCRIPTION, write_samples  # noqa: E402
 
 DOCS = {"typed": "prescription_typed.pdf", "scanned": "prescription_scanned.pdf",
@@ -47,14 +49,21 @@ def score(name: str, out) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", default=default_llm_model(intake=True))
-    parser.add_argument("--base-url", default="http://127.0.0.1:11434")
+    parser.add_argument("--provider", choices=["ollama", "openai"], default=None)
+    parser.add_argument("--base-url", default=None, help="default: the endpoint in .env, or local Ollama")
     parser.add_argument("--repeat", type=int, default=1)
     parser.add_argument("--docs", nargs="*", default=list(DOCS))
     args = parser.parse_args()
     samples = ROOT / "samples"
     if not all((samples / f).is_file() for f in DOCS.values()):
         write_samples(samples)
-    model, ocr = OllamaIntakeModel(args.base_url, args.model), load_default_engine()
+    settings = Settings.from_env()
+    provider = args.provider or ("openai" if settings.intake_llm == "openai" else "ollama")
+    if provider == "openai":
+        model = OpenAIIntakeModel(args.base_url or settings.intake_base_url or settings.llm_url, args.model, settings.llm_api_key)
+    else:
+        model = OllamaIntakeModel(args.base_url or "http://127.0.0.1:11434", args.model)
+    ocr = load_default_engine()
     failures = 0
     for name in args.docs:
         rows, seconds = [], []

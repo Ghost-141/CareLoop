@@ -49,10 +49,13 @@ class Settings:
     rate_limit_per_minute: int = 120
     caregiver_token: str | None = None
     caregiver_id: str = "demo-caregiver"
-    intake_llm: str = "ollama"  # ollama | none (pattern matching only)
+    intake_llm: str = "ollama"  # ollama | openai (any OpenAI-compatible endpoint) | none (pattern matching only)
     intake_model: str = ""
     intake_ocr: str = "paddle"  # paddle | none
-    llm_base_url: str = "http://127.0.0.1:11434"
+    llm_base_url: str = "http://127.0.0.1:11434"  # Ollama address (document reading)
+    llm_url: str = ""  # LLM_BASE_URL as given: the OpenAI-compatible endpoint
+    llm_api_key: str = ""
+    intake_base_url: str = ""  # CARELOOP_INTAKE_BASE_URL: a separate endpoint just for document reading
     timezone: str = ""  # IANA zone for the demo patient's local times; empty = this machine's zone
     patient_name: str = "Maya"  # the synthetic demo patient's spoken name
     require_consent: bool = True  # voice tools ask for data-use consent before first use
@@ -83,10 +86,18 @@ class Settings:
                 rate_limit_per_minute=int(value("CARELOOP_RATE_LIMIT_PER_MINUTE", "120")),
                 caregiver_token=source.get("CARELOOP_CAREGIVER_TOKEN") or None,
                 caregiver_id=value("CARELOOP_DEMO_CAREGIVER", "demo-caregiver"),
-                intake_llm=value("CARELOOP_INTAKE_LLM", "ollama").lower(),
+                # Document reading follows the voice planner's provider unless told otherwise.
+                intake_llm=value("CARELOOP_INTAKE_LLM", "openai" if value("CARELOOP_AGENT_LLM", "").lower() == "openai" else "ollama").lower(),
                 intake_model=(source.get("CARELOOP_INTAKE_MODEL") or source.get("LLM_MODEL") or "").strip(),
                 intake_ocr=value("CARELOOP_INTAKE_OCR", "paddle").lower(),
-                llm_base_url=value("LLM_BASE_URL", "http://127.0.0.1:11434"),
+                # Document reading talks to Ollama. LLM_BASE_URL is the shared setting, except when the voice
+                # planner uses an OpenAI-compatible endpoint, which isn't an Ollama address.
+                llm_base_url=(source.get("CARELOOP_INTAKE_BASE_URL")
+                              or ("" if value("CARELOOP_AGENT_LLM", "").lower() == "openai" else source.get("LLM_BASE_URL"))
+                              or "http://127.0.0.1:11434").strip(),
+                llm_url=(source.get("LLM_BASE_URL") or "").strip(),
+                llm_api_key=(source.get("LLM_API_KEY") or "").strip(),
+                intake_base_url=(source.get("CARELOOP_INTAKE_BASE_URL") or "").strip(),
                 timezone=(source.get("CARELOOP_TIMEZONE") or "").strip(),
                 patient_name=value("CARELOOP_DEMO_PATIENT_NAME", "Maya"),
                 require_consent=value("CARELOOP_REQUIRE_CONSENT", "true").lower() not in {"0", "false", "no", "off"},

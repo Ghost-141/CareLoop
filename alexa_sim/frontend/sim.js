@@ -400,6 +400,11 @@
     }
     $("#open-invite").disabled = !s.invitation_pending || !s.devices.find((d) => d.id === "dot").account;
     $("#planner").value = s.planner;
+    if (lastAnnounce === null) lastAnnounce = s.announce_seq;  // don't replay old messages on page load
+    else if (s.announce_seq > lastAnnounce) {
+      const missed = await api(`/api/announcements?after=${lastAnnounce}`);
+      missed.items.forEach((item) => announced(item));  // not awaited: speech must not stall the refresh
+    }
     if (s.idle_reset_minutes && $("#demo-reset-note").textContent === "Back to Maya's starting day")
       $("#demo-reset-note").textContent = `Back to Maya's starting day. Also resets itself after ${s.idle_reset_minutes} idle minutes.`;
     if (s.privacy_url) { $("#privacy-link").href = s.privacy_url; $("#terms-link").href = s.terms_url; }
@@ -495,7 +500,14 @@
   });
   $("#share-sample-go").addEventListener("click", () => share(null, $("#share-sample").value));
 
+  // The newest announcement this page has handled. A push can be missed (reload, reconnect,
+  // backgrounded tab), so refresh() also asks the host for anything newer.
+  let lastAnnounce = null;
   async function announced(msg) {
+    if (msg.id !== undefined) {
+      if (lastAnnounce !== null && msg.id <= lastAnnounce) return;  // already handled
+      lastAnnounce = msg.id;
+    }
     if (msg.device_id === "show") {
       bubble(msg.reply);
       if (msg.screen?.resource_uri) mountApp(msg.screen).catch(() => bubble("The private view couldn't load.", "system"));

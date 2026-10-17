@@ -17,7 +17,7 @@ from .config import AlexaSimSettings
 from .devices import Device, DeviceKind, DeviceState
 from .mcp_pool import MCPClientPool
 from .orchestrator import Orchestrator
-from .planners import MockReplay, OllamaPlanner, Planner
+from .planners import MockReplay, OllamaPlanner, OpenAIPlanner, Planner
 from .reply_policy import speakable, structured
 from .voice import VoiceEngines
 
@@ -53,11 +53,13 @@ MAX_AUDIO_BYTES = 30 * 16_000 * 2  # 30 s of 16 kHz mono PCM16
 
 
 class PlannerIn(BaseModel):
-    mode: str = Field(pattern="^(mock|ollama)$")
+    mode: str = Field(pattern="^(mock|ollama|openai)$")
 
 
 def build_planner(settings: AlexaSimSettings, mode: str | None = None) -> Planner:
     mode = mode or settings.planner
+    if mode == "openai" and settings.llm_model:
+        return OpenAIPlanner(settings.llm_base_url, settings.llm_model, settings.llm_api_key, settings.llm_timeout_seconds)
     if mode == "ollama" and settings.llm_model:
         return OllamaPlanner(settings.llm_base_url, settings.llm_model, settings.llm_timeout_seconds)
     return MockReplay()
@@ -70,7 +72,8 @@ def create_alexa_sim_app(settings: AlexaSimSettings | None = None, pool: MCPClie
     traces: list[dict[str, Any]] = []
     sockets: set[WebSocket] = set()
     devices = {"show": Device("show", DeviceKind.SHOW, owner="maya"), "dot": Device("dot", DeviceKind.DOT, owner="sam")}
-    host_state: dict[str, Any] = {"invitation_id": None, "reminders": [], "last_used": time.monotonic(), "used": False}
+    host_state: dict[str, Any] = {"invitation_id": None, "reminders": [], "last_used": time.monotonic(), "used": False,
+                                "announcements": [], "announce_seq": 0, "intake_ready_unannounced": False}
 
     async def broadcast(message: dict[str, Any]) -> None:
         for socket in list(sockets):
@@ -88,10 +91,16 @@ def create_alexa_sim_app(settings: AlexaSimSettings | None = None, pool: MCPClie
         await broadcast(device.event("device", **payload))
 
     async def announce(device_id: str, reply: str, screen: dict[str, Any] | None = None) -> None:
-        """Speak on a device without a user turn (document ready, invite accepted, …)."""
+        """Speak on a device without a user turn (document ready, invite accepted, …).
+
+        Pushed over the websocket and also kept briefly, numbered, so a page that missed the
+        push (reloading, reconnecting, a backgrounded tab) picks it up from /api/announcements."""
+        host_state["announce_seq"] += 1
+        entry = {"id": host_state["announce_seq"], "device_id": device_id, "reply": reply, "screen": screen}
+        host_state["announcements"] = (host_state["announcements"] + [entry])[-8:]
         await trace({"type": "turn", "device_id": device_id, "planner": "host", "tools": [], "reply": reply,
                      "needs_confirmation": False})
-        await broadcast({"type": "announce", "device_id": device_id, "reply": reply, "screen": screen})
+        await broadcast({"type": "announce", **entry})
 
     def careloop_http(method: str, path: str, account: str, body: bytes | None = None,
                       content_type: str | None = None) -> dict[str, Any]:
@@ -119,17 +128,25 @@ def create_alexa_sim_app(settings: AlexaSimSettings | None = None, pool: MCPClie
                 continue
             if job["status"] == "processing":
                 continue
-            show = devices["show"]
-            if pool.linked(show.account):
-                result = await pool.call_tool(show.account, "get_intake_status", {})
-                reply = speakable(result) or "Your document has been processed."
-                data = structured(result)
-                screen = ({"tool": "get_intake_status", "resource_uri": data["view"],
-                           "result": {"structuredContent": data, "isError": False}}
-                          if not result["isError"] and data.get("view") else None)
-                await announce("show", reply, screen)
+            await announce_intake_ready()
             await sync_caregiver_notifications()
             return
+
+    async def announce_intake_ready() -> None:
+        """Maya's Show says the document is ready and opens the review. If her Show isn't enabled
+        yet, remember it and say it as soon as she enables CareLoop."""
+        show = devices["show"]
+        if not pool.linked(show.account):
+            host_state["intake_ready_unannounced"] = True
+            return
+        host_state["intake_ready_unannounced"] = False
+        result = await pool.call_tool(show.account, "get_intake_status", {})
+        reply = speakable(result) or "Your document has been processed."
+        data = structured(result)
+        screen = ({"tool": "get_intake_status", "resource_uri": data["view"],
+                   "result": {"structuredContent": data, "isError": False}}
+                  if not result["isError"] and data.get("view") else None)
+        await announce("show", reply, screen)
 
     pool = pool or MCPClientPool(settings.mcp_url, trace)
     orchestrator = Orchestrator(pool, planner or build_planner(settings), max_steps=settings.max_tool_steps, trace=trace)
@@ -184,7 +201,8 @@ def create_alexa_sim_app(settings: AlexaSimSettings | None = None, pool: MCPClie
         seeded = (await asyncio.to_thread(careloop_http, "POST", "/api/care/demo/reset", "maya"))["seeded"]
         for device in devices.values():
             device.forget_conversation()
-        host_state.update(invitation_id=None, reminders=[], last_used=time.monotonic(), used=False)
+        host_state.update(invitation_id=None, reminders=[], last_used=time.monotonic(), used=False,
+                          announcements=[], intake_ready_unannounced=False)
         traces.clear()
         for account, device_id in ACCOUNTS.items():
             await pool.link(account, settings.token_for(account))
@@ -238,11 +256,18 @@ def create_alexa_sim_app(settings: AlexaSimSettings | None = None, pool: MCPClie
             "privacy_url": f"{settings.server_url}/privacy", "terms_url": f"{settings.server_url}/terms",
             "reminders": host_state["reminders"],
             "idle_reset_minutes": settings.idle_reset_minutes,
+            "announce_seq": host_state["announce_seq"],
             "devices": [{"id": d.id, "kind": d.kind, "owner": d.owner, "account": d.account, "state": d.state,
                          "notification": d.notification, "pending": bool(d.pending)} for d in devices.values()],
             "trace": traces[-60:],
             "tools": {account: [t["name"] for t in session.model_tools] for account, session in pool.accounts.items()},
         }
+
+    @app.get("/api/announcements")
+    async def announcements(after: int = 0) -> dict[str, Any]:
+        """Spoken-on-its-own messages newer than ``after`` (the page's fallback if a push was missed)."""
+        return {"latest": host_state["announce_seq"],
+                "items": [a for a in host_state["announcements"] if a["id"] > after]}
 
     @app.post("/api/link")
     async def link(body: LinkIn) -> dict[str, Any]:
@@ -255,6 +280,8 @@ def create_alexa_sim_app(settings: AlexaSimSettings | None = None, pool: MCPClie
         await sync_caregiver_notifications()
         if body.account == "sam":
             await tell_sam_about_invitation()  # an invitation sent before Sam linked his Dot
+        elif host_state["intake_ready_unannounced"]:
+            await announce_intake_ready()  # a document finished before Maya's Show was enabled
         return {"linked": body.account, "device_id": device.id, "tools": [t["name"] for t in session.model_tools]}
 
     @app.post("/api/unlink/{account}")
@@ -302,9 +329,14 @@ def create_alexa_sim_app(settings: AlexaSimSettings | None = None, pool: MCPClie
         out = await asyncio.to_thread(careloop_http, "POST", f"/api/care/documents/upload?{query}", account, data,
                                       "application/octet-stream")
         job = out["job"]
-        asyncio.create_task(watch_intake(account, job["id"]))
+        host_state["watchers"] = {t for t in host_state.get("watchers", set()) if not t.done()}
+        task = asyncio.create_task(watch_intake(account, job["id"]))
+        host_state["watchers"].add(task)  # keep a reference so the watcher can't be garbage-collected
         if account == "sam":
             await announce("dot", "Thanks. I've sent it to Maya to review.")
+        elif pool.linked(devices["show"].account):
+            # Answer at once; reading can take a minute with a local model.
+            await announce("show", "Got it. I'm reading your document now. I'll tell you as soon as it's ready.")
         return {"job": job}
 
     @app.post("/api/reminders/ring")

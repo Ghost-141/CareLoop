@@ -228,6 +228,22 @@ def validate(extraction: Extraction, lines: list[SourceLine], *, engine: str) ->
     return StructuredDocument(items, unused, extraction.follow_up_date, engine)
 
 
+# ---- lines that are commands to an AI, not care instructions --------------------------------------
+# A document is untrusted data. Whatever model reads it, these lines never reach it and can never
+# become items; the reviewer is told they were set aside.
+_AI_COMMANDS = [re.compile(p, re.I) for p in (
+    r"\b(ignore|disregard|forget|override)\b.{0,50}\b(previous|prior|above|earlier|all|your)\b.{0,40}\b(instructions?|prompts?|rules?|guidelines?)\b",
+    r"^\s*(system|assistant|developer|admin)\s*(prompt|message)?\s*:",
+    r"\b(mark|set|make)\b.{0,30}\b(every|all|each)\b.{0,25}\b(items?|tasks?|rules?)\b.{0,25}\b(approved|active|done|complete)",
+    r"\b(reveal|print|repeat|show)\b.{0,30}\b(system|hidden)\b.{0,15}\b(prompt|instructions?)\b",
+    r"\b(you are now|act as|pretend to be)\b.{0,40}\b(ai|assistant|model|llm|chatbot)\b",
+)]
+
+
+def command_like_lines(lines: list[SourceLine]) -> list[SourceLine]:
+    return [line for line in lines if any(p.search(line.text) for p in _AI_COMMANDS)]
+
+
 # ---- deterministic fallback (no model) ------------------------------------------------------------
 _MEDICINE_HINT = re.compile(r"\b(\d+\s*(mg|mcg|g|ml|units?)|tablets?|tabs?|capsules?|caps?|drops?|puffs?|syrup|injection)\b", re.I)
 _WARNING_HINT = re.compile(r"\b(call|contact|seek|go to|return to)\b.*\b(if|when)\b|\bemergency\b", re.I)
