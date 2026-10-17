@@ -7,7 +7,7 @@
 Without --model it uses the model named in .env (CARELOOP_INTAKE_MODEL or LLM_MODEL), else gemma4:e4b.
 Without --provider it follows CARELOOP_INTAKE_LLM from .env.
 
-Targets (plans/CARELOOP_DOCUMENT_INTAKE_PLAN.md): citation validity 100 %, invented numbers 0,
+Targets: citation validity 100 %, invented numbers 0,
 recall >= 90 %, injection document: the planted instruction never becomes an item.
 """
 from __future__ import annotations
