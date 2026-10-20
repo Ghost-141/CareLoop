@@ -132,7 +132,7 @@ These are the MCP Apps views. A tool result names a view in its metadata, the Sh
 | **Care tasks** | Listing or changing tasks | Active plan items sorted by time with their status, who handles each ("Sam handles this"), and the source line | **Mark done** on an active task |
 | **Plan source** | Opening a source | The document excerpts that approved items came from, under "From your clinician" | None |
 | **Care circle** | Inviting, listing or revoking caregivers | **People with access** with status, permissions and end date, and **Who looked at your care data** for the last 7 days (what each person viewed or did, never the content) | **Remove** on active or pending access |
-| **CareLoop updates** | Caregiver notifications | Generic updates only, with the note that details stay in the patient's record | **Mark as seen** |
+| **CareLoop updates** | Caregiver notifications | Generic updates, and a "New task" row when the patient has given you a task, with the note that the details come only when you ask | **Mark as seen** |
 | **Check-in trend** | Check-ins and rules | A pain chart from 0 to 10 with a dashed alert line from the approved rule, red points at or above it, and a list of check-ins newest first. Corrections are marked. Missing days are never filled in. | None |
 | **Visit handoff** | Preparing for an appointment | A row of totals (plan items, tasks done, missed, check-ins, alerts, questions, corrections), then questions for the clinician, the plan with its source lines, completed tasks, check-ins, alerts, and notes about gaps | None |
 | **CareLoop records** | Listing records | One row per record with its kind, status and date | None |

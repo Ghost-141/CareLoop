@@ -18,7 +18,7 @@ CareLoop is intentionally bounded. It does **not** diagnose, prescribe, adjust m
 | Identity | Credential-derived patient/caregiver identities; no caller-supplied patient scope |
 | Privacy | Voice-safe tool results, patient-owned expiring grants, generic caregiver notifications, deletion and purge |
 | Document intake | Prescription/plan upload: PDF text first, PaddleOCR fallback, local LLM proposes items, deterministic checks, patient approves each item |
-| Tests | 241 tests, including live end-to-end runs against a real server; an intake eval against the configured model |
+| Tests | 318 tests, including live end-to-end runs against a real server; an intake eval against the configured model |
 
 ## Contents
 
@@ -117,7 +117,7 @@ Without a model the demo uses the scripted planner, and documents are read by pa
 
 ```bash
 uv run pytest -q
-# 241 passed
+# 318 passed
 ```
 
 ## Run the Alexa+ demo
@@ -181,7 +181,7 @@ For exact buttons and screens with screenshots, use the [click-by-click demo gui
 ## Testing
 
 ```bash
-uv run pytest -q                       # all 241 tests
+uv run pytest -q                       # all 318 tests
 uv run pytest -q server/tests          # MCP server, tools, consent, MCP Apps views, elicitation
 uv run pytest -q alexa_sim/tests       # simulator host and scripted evaluator, incl. a live run of the demo story
 ```
