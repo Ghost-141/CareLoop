@@ -72,13 +72,14 @@ LINES = {
     "p1:L13": "Follow-up appointment on {follow_up} at Riverside Family Clinic.",
 }
 RULE = {"kind": "pain_score_at_or_above", "threshold": 7, "consecutive_days": 2}
-# (line, record type, fields): what Maya approved on her screen three days ago. Labels are what Alexa says aloud.
+# (line, record type, fields): what Maya approved on her screen three days ago. Labels are what Alexa says aloud;
+# medicines get the document reader's own "Medicine routine N", never a drug name.
 PLAN = [
-    ("p1:L5", "PLAN_TASK", {"item_kind": "medication_task", "label": "Antibiotic", "medication": {"name": "Amoxicillin"},
+    ("p1:L5", "PLAN_TASK", {"item_kind": "medication_task", "label": "Medicine routine 1", "medication": {"name": "Amoxicillin"},
                             "frequency": "three_times_daily", "times": ["08:00", "14:00", "20:00"]}),
-    ("p1:L6", "PLAN_TASK", {"item_kind": "medication_task", "label": "Stomach medicine", "medication": {"name": "Omeprazole"},
+    ("p1:L6", "PLAN_TASK", {"item_kind": "medication_task", "label": "Medicine routine 2", "medication": {"name": "Omeprazole"},
                             "frequency": "once_daily", "times": ["07:30"]}),
-    ("p1:L7", "PLAN_TASK", {"item_kind": "medication_task", "label": "Pain relief", "medication": {"name": "Ibuprofen"},
+    ("p1:L7", "PLAN_TASK", {"item_kind": "medication_task", "label": "Medicine routine 3", "medication": {"name": "Ibuprofen"},
                             "frequency": "as_needed", "times": []}),
     ("p1:L9", "PLAN_TASK", {"item_kind": "care_task", "label": "Morning walk", "frequency": "once_daily", "times": ["08:00"]}),
     # Maya moved the dressing to 9 PM, when Sam is home.
