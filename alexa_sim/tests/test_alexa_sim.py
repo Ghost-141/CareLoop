@@ -324,9 +324,9 @@ def careloop_server(tmp_path):
     yield from _careloop_server(tmp_path)
 
 
-def _careloop_server(tmp_path):
+def _careloop_server(tmp_path, db_name: str = "e2e.db", extra_env: dict | None = None):
     port = _free_port()
-    env = {**os.environ, "CARELOOP_DB_PATH": str(tmp_path / "e2e.db"), "CARELOOP_PORT": str(port),
+    env = {**os.environ, "CARELOOP_DB_PATH": str(tmp_path / db_name), "CARELOOP_PORT": str(port),
            "CARELOOP_API_TOKEN": "careloop-local-demo-token", "CARELOOP_DEMO_PATIENT": "demo-patient",
            "PYTHONPATH": str(ROOT / "server")}
     env.pop("CARELOOP_CAREGIVER_TOKEN", None)
@@ -334,7 +334,7 @@ def _careloop_server(tmp_path):
     env |= {"CARELOOP_INTAKE_LLM": "none", "CARELOOP_INTAKE_OCR": "none",
             # Feature tests start past the one-time data-use consent; it has its own live test below.
             "CARELOOP_REQUIRE_CONSENT": os.environ.get("CARELOOP_TEST_REQUIRE_CONSENT", "false"),
-            "CARELOOP_DEMO_RESET": "true"}
+            "CARELOOP_DEMO_RESET": "true"} | (extra_env or {})
     process = subprocess.Popen([sys.executable, "-m", "care_loop"], cwd=ROOT, env=env,
                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
@@ -350,6 +350,79 @@ def _careloop_server(tmp_path):
     finally:
         process.terminate()
         process.wait(timeout=10)
+
+
+@pytest.fixture
+def careloop_server_with_a_visit_coming_up(tmp_path):
+    """A real server on a database that already holds: a visit tomorrow, one saved question, a check-in yesterday."""
+    import time
+    from datetime import date, timedelta
+    from care_loop.auth import Identity
+    from care_loop.core import CareLoopService
+    from care_loop.storage import CareLoopStorage
+
+    storage = CareLoopStorage(str(tmp_path / "suggest.db"))
+    service = CareLoopService(storage, storage.clock, 365)
+    maya = Identity("demo-patient", "patient", "demo-patient")
+    tomorrow = (date.today() + timedelta(days=1)).isoformat()
+    service.write(maya, "PLAN_NOTE", {"item_kind": "appointment", "label": "Follow-up visit", "status": "active",
+                                      "text": f"Follow-up appointment on {tomorrow}.", "due_date": tomorrow}, reviewed=True)
+    service.add_clinician_question(maya, "can I stop my medicine early")
+    service.record_observation(maya, pain_score=4, observed_at=int(time.time()) - 86_400, idempotency_key="seed-yesterday")
+    storage.close()
+    # hour 0 so "you haven't checked in today" applies whatever the time of day the test runs
+    yield from _careloop_server(tmp_path, db_name="suggest.db", extra_env={"CARELOOP_SUGGEST_CHECKIN_HOUR": "0"})
+
+
+def test_suggestions_end_to_end_against_live_careloop(careloop_server_with_a_visit_coming_up) -> None:
+    settings = AlexaSimSettings(mcp_url=careloop_server_with_a_visit_coming_up, planner="mock")
+    with TestClient(create_alexa_sim_app(settings, planner=MockReplay())) as client:
+        client.post("/api/link", json={"account": "maya"})
+        client.post("/api/link", json={"account": "sam"})
+        say = lambda device, text: client.post("/api/utterance", json={"device_id": device, "text": text}).json()
+
+        # 1. Maya asks: both things that apply are raised, the offer is last, no private text is spoken.
+        asked = say("show", "Alexa, anything I should know?")
+        assert asked["tools"] == ["get_suggestions"] and asked["expects_reply"] is True
+        reply = asked["reply"]
+        assert reply.startswith("You have 2 things worth a look. You haven't checked in today. Your visit is tomorrow. "
+                                "You have 1 question saved for your clinician.")
+        assert reply.endswith("Want me to prepare the handoff?")
+        assert "medicine" not in reply.lower() and "4" not in reply  # neither the saved question nor a score
+
+        # 2. "yes" runs exactly the step that was offered.
+        handoff = say("show", "yes")
+        assert handoff["tools"] == ["create_visit_handoff"]
+        assert handoff["reply"].startswith("Your visit handoff is ready on your private screen. It includes 1 question for your clinician.")
+        assert handoff["screen"]["resource_uri"] == "ui://careloop/visit-handoff"
+
+        # 3. A family member gets nothing: suggestions are for the patient.
+        sam = say("dot", "Alexa, anything I should know?")["reply"]
+        assert sam == "Suggestions are unavailable." and "visit" not in sam.lower()
+
+        # 4. The patient can turn them off and back on by voice.
+        assert "suggestions are off" in say("show", "Alexa, turn suggestions off")["reply"]
+        assert say("show", "Alexa, anything I should know?")["reply"].startswith("Suggestions are turned off.")
+        assert "suggestions are on" in say("show", "Alexa, turn suggestions on")["reply"]
+        assert "Your visit is tomorrow" in say("show", "Alexa, anything I should know?")["reply"]
+
+        # 5. Checking in clears that suggestion, and the visit alone remains.
+        say("show", "Alexa, my pain is 5 today")
+        again = say("show", "Alexa, anything I should know?")["reply"]
+        assert again.startswith("Your visit is tomorrow.") and "checked in" not in again
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("phrase, tool", [
+    ("Alexa, anything I should know?", "get_suggestions"), ("anything coming up", "get_suggestions"),
+    ("what's next", "get_suggestions"), ("what needs my attention", "get_suggestions"),
+    ("Alexa, turn suggestions off", "set_my_details"), ("turn my suggestions on", "set_my_details"),
+    ("what do I need to do today", "list_my_assigned_tasks"),  # the task list is not a suggestion
+])
+async def test_scripted_planner_routes_suggestion_phrases(phrase, tool) -> None:
+    tools = [{"name": n, "annotations": {}} for n in ("get_suggestions", "set_my_details", "list_my_assigned_tasks")]
+    action = await MockReplay().next(phrase, tools, [], [], {})
+    assert action.tool == tool
 
 
 def test_full_demo_story_against_live_careloop(careloop_server) -> None:

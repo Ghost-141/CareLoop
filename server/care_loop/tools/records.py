@@ -585,8 +585,8 @@ def register(mcp: MCPServer, deps) -> None:
     def get_suggestions(ctx: Context) -> VoiceResult:
         """PATIENT ONLY: things worth raising right now, drawn from the patient's own records.
 
-        Call it for "anything I should know", "what should I do", "what's next" or "anything I need to do today".
-        Each suggestion is computed by code from approved records: a visit coming up, a missed task, no
+        Call it for "anything I should know", "anything coming up", "what's next" or "what needs my attention".
+        It is not the task list: "what do I need to do today" is list_care_tasks. Each suggestion is computed by code from approved records: a visit coming up, a missed task, no
         check-in today, plan items waiting for review. Speak only what this returns, never add a suggestion of
         your own, and when nothing applies say so. If a suggestion carries a question, ask it and run that tool on yes.
         """
