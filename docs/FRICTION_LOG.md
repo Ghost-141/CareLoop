@@ -51,6 +51,10 @@ Status: **Resolved**, **Workaround** (we went around it), **Open** (still a prob
 | F-36 | Local LLM planner | Medium | Resolved | After other turns, a family member's question about Maya's pain score got an invented excuse or a clarifying question, not a tool call |
 | F-37 | Local LLM planner | Medium | Resolved | Sam's "mark it seen" made gemma ask for an alert ID after an unrelated question |
 | F-38 | Caregiver notifications | Medium | Resolved | Nothing told a family member that a task was assigned; "any updates?" said none while their task list was not empty |
+| F-39 | Simulator, voice | Medium | Resolved | The simulator page treated any "stop" as "stop talking", so a voice review or teach-back could never be paused from the browser |
+| F-40 | Document intake | Medium | Resolved | The no-model fallback named a numbered medicine "1.", which a spoken question would have read out |
+| F-41 | Alexa+ elicitation | Medium | Open | Teach-back needs the person's own words in an elicitation answer; how Alexa+ fills a free-text field by voice is undocumented |
+| F-42 | Hosted LLM planner | Low | Resolved | "What medicines do I take?" went to history search, which answered "No matching record found." |
 | F-24 | PDF/OCR tooling | Low | Resolved | `pypdf` can't render pages for OCR; PaddleOCR's first run downloads models; storage rejects floats |
 
 ---
@@ -317,6 +321,27 @@ Status: **Resolved**, **Workaround** (we went around it), **Open** (still a prob
   - **The simulator announces it once** on Sam's Dot, in generic words. The ring stays for care alerts, so the high-check-in moment in the demo is unchanged.
 - **Not verified:** whether real Alexa+ would push the notice. The server keeps it pending and returns it the next time Sam's account asks, and `assign_task` still returns the reminder suggestion for Alexa+ to create.
 
+### F-39: "Stop" never reached a waiting workflow in the simulator · Medium · Resolved
+- **Doing:** in a real browser, answering a teach-back question with "stop".
+- **Got:** nothing happened. The Show kept its question, and the server log showed no request. The page matched "stop", "quiet" and "cancel that" before sending anything and treated them as "stop talking". The same was true for the guided voice review, whose own options include "stop".
+- **Why the tests missed it:** the simulator's backend tests post utterances straight to its API, so they never ran the page's own check.
+- **Resolution:** "stop" now cuts off speech only while that device is talking. Otherwise it is sent as an answer.
+
+### F-40: A numbered medicine was named "1." · Medium · Resolved
+- **Doing:** sharing the typed sample prescription with the model switched off (`CARELOOP_INTAKE_LLM=none`) and starting a teach-back.
+- **Got:** the pattern fallback took the first word of `1. Amoxicillin 500 mg capsule: …` as the medicine name, so the question would have been "How often do you take 1.?". Earlier, nothing spoke the medicine name, so it went unnoticed.
+- **Resolution:** the fallback takes the first real word, skipping list numbering, and teach-back uses the patient's spoken label if a name has no letters. The read-back also drops a document's list numbering ("2. Omeprazole…").
+
+### F-41: Free-text answers to an elicitation · Medium · Open
+- **Context:** teach-back asks "How often do you take Amoxicillin?" through MCP elicitation and needs the person's own words back ("every 8 hours", "three times a day"), so the server can check them. The schema is one free-text string field, and all interpretation happens in server code.
+- **Unknown:** whether Alexa+ fills a free-text elicitation field from speech, and whether it passes the words through unchanged. The simulator does (its parser copies the transcript into a plain string field). It also depends on elicitation, so it fails under the stateless 2026-07-28 revision like the check-in (F-28).
+- **Also:** in the simulator, a new "Alexa, …" request during a free-text question is now treated as a new request, not as the answer, as it already was for the other workflows.
+
+### F-42: "What medicines do I take?" went to history search · Low · Resolved
+- **Doing:** a negative eval for teach-back, checking that a plain question about medicines does not start a quiz.
+- **Got:** with the hosted model, 3 of 3 runs called `search_care_history` and answered `No matching record found.` Teach-back was correctly not started, but the answer was useless.
+- **Resolution:** one prompt line: the patient asking about their tasks, medicines or plan goes to `list_care_tasks`. Then 3 of 3 passed, and the history and task-list scenarios still passed.
+
 ## Open questions for the Alexa+ team
 
 1. How do hackathon entrants, and developers outside the US, get add-on Private Preview access? (F-01)
@@ -327,6 +352,7 @@ Status: **Resolved**, **Workaround** (we went around it), **Open** (still a prob
 6. Does Alexa+ honor MCP Apps `visibility: ["app"]` (tools hidden from the model)? CareLoop relies on it to keep private view data away from the model.
 7. Can a user hand a file they shared with Alexa+ to an add-on, with consent? (F-21)
 8. Does a patient's own transcribed prescription count as "drug dosage content"? (F-22)
+9. Does Alexa+ fill a free-text elicitation field from speech, and pass the words through unchanged? (F-41)
 
 ## Adding a new entry
 

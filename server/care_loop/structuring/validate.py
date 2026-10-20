@@ -269,7 +269,9 @@ def pattern_extraction(lines: list[SourceLine]) -> Extraction:
                                        source_lines=[line.id]))
         elif detect_frequency(text):
             medicine = bool(_MEDICINE_HINT.search(text))
-            name = text.split()[0].strip(",:;") if medicine else None
+            # The first real word, skipping list numbering such as "1." or "a)".
+            words = (w.strip(",:;.()") for w in text.split())
+            name = next((w for w in words if re.fullmatch(r"[A-Za-z][A-Za-z-]{2,}", w)), None) if medicine else None
             items.append(ExtractedItem(
                 kind="medication_task" if medicine else "care_task", label="Care task", instruction_verbatim=text,
                 source_lines=[line.id], medication=Medication(name=name) if medicine else None,

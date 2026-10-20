@@ -412,6 +412,90 @@ def test_suggestions_end_to_end_against_live_careloop(careloop_server_with_a_vis
         assert again.startswith("Your visit is tomorrow.") and "checked in" not in again
 
 
+@pytest.fixture
+def careloop_server_with_approved_medicines(tmp_path):
+    """A real server whose database holds an approved, cited plan: two medicines and a fever warning."""
+    from care_loop.auth import Identity
+    from care_loop.core import CareLoopService
+    from care_loop.storage import CareLoopStorage
+
+    storage = CareLoopStorage(str(tmp_path / "teach.db"))
+    service = CareLoopService(storage, storage.clock, 365)
+    maya = Identity("demo-patient", "patient", "demo-patient")
+    service.accept_data_use(maya)
+    lines = {"p1:L3": "Amoxicillin 500 mg by mouth every 8 hours for 7 days.",
+             "p1:L5": "Ibuprofen 400 mg every 6 hours as needed for pain.",
+             "p1:L8": "Seek emergency care if you have a fever above 39 C."}
+    doc = service.create_document(maya, "Discharge plan", [{"page": 1, "excerpt": t, "line_id": i} for i, t in lines.items()],
+                                  reviewed=True)
+
+    def item(record_type, line, **fields):
+        source = [{"id": line, "page": 1, "text": lines[line], "method": "text", "confidence_pct": 100}]
+        service.write(maya, record_type, {"status": "active", "text": lines[line], "source": source, "page": 1} | fields,
+                      source_id=doc["id"], reviewed=True)
+
+    item("PLAN_TASK", "p1:L3", item_kind="medication_task", label="Antibiotic", medication={"name": "Amoxicillin"},
+         frequency="three_times_daily", times=["08:00", "14:00", "20:00"])
+    item("PLAN_TASK", "p1:L5", item_kind="medication_task", label="Pain relief", medication={"name": "Ibuprofen"},
+         frequency="as_needed", times=[])
+    item("PLAN_NOTE", "p1:L8", item_kind="warning_sign", label="Fever warning")
+    storage.close()
+    yield from _careloop_server(tmp_path, db_name="teach.db")
+
+
+def test_teach_back_end_to_end_against_live_careloop(careloop_server_with_approved_medicines) -> None:
+    settings = AlexaSimSettings(mcp_url=careloop_server_with_approved_medicines, planner="mock")
+    with TestClient(create_alexa_sim_app(settings, planner=MockReplay())) as client:
+        client.post("/api/link", json={"account": "maya"})
+        client.post("/api/link", json={"account": "sam"})
+        say = lambda device, text: client.post("/api/utterance", json={"device_id": device, "text": text}).json()
+
+        # 1. The server asks its own questions; a wrong answer gets one more try, then the next question.
+        first = say("show", "Alexa, check I understood my plan")
+        assert first["tools"] == ["start_teach_back"] and first["expects_reply"] is True
+        assert first["reply"] == "Let's check 3 things. How often do you take Amoxicillin?"
+        assert say("show", "twice a day")["reply"] == "Not quite. Try again: How often do you take Amoxicillin?"
+        assert say("show", "every 8 hours")["reply"] == ("That's right. Do you take Ibuprofen at set times, "
+                                                          "or only when you need it?")
+
+        # 2. A new "Alexa, …" request is not taken as an answer: the place is saved and the request is handled.
+        interrupted = say("show", "Alexa, anything I should know?")
+        assert interrupted["reply"].startswith("Okay, I've saved your place. 2 questions left.")
+        assert "get_suggestions" in interrupted["tools"]
+
+        # 3. "Check my understanding" picks up where it stopped; "I don't know" reads the plan back and moves on.
+        resumed = say("show", "Alexa, check my understanding")
+        assert resumed["reply"] == ("Let's pick up where we left off. Do you take Ibuprofen at set times, "
+                                    "or only when you need it?")
+        unsure = say("show", "I don't know")["reply"]
+        assert unsure == ("That's okay. Your plan says: Ibuprofen 400 mg every 6 hours as needed for pain. "
+                          "Next: At what temperature does your plan say to get help?")
+        done = say("show", "39 degrees")
+        assert done["reply"] == ("That's right. Done. You got 2 of 3 right. The one to look at again is on your screen, "
+                                 "with the line it came from.")
+        assert done["screen"]["resource_uri"] == "ui://careloop/teach-back"
+
+        # 4. The miss now shows up as a suggestion, and a family member can't start a teach-back.
+        assert "Part of your plan needs another look." in say("show", "Alexa, anything I should know?")["reply"]
+        sam = say("dot", "Alexa, check I understood my plan")["reply"]
+        assert "Amoxicillin" not in sam and "Ibuprofen" not in sam
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("phrase", ["Alexa, check I understood my plan", "quiz me on my plan", "let's do a teach-back",
+                                    "check my understanding", "check that I understand my medicines"])
+async def test_scripted_planner_routes_teach_back_phrases(phrase) -> None:
+    tools = [{"name": n, "annotations": {}} for n in ("start_teach_back", "start_daily_checkin", "list_care_tasks")]
+    assert (await MockReplay().next(phrase, tools, [], [], {})).tool == "start_teach_back"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("phrase, tool", [("Alexa, do my check-in", "start_daily_checkin"), ("what's on my plan", "list_care_tasks")])
+async def test_check_in_and_the_task_list_are_not_teach_back(phrase, tool) -> None:
+    tools = [{"name": n, "annotations": {}} for n in ("start_teach_back", "start_daily_checkin", "list_care_tasks")]
+    assert (await MockReplay().next(phrase, tools, [], [], {})).tool == tool
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("phrase, tool", [
     ("Alexa, anything I should know?", "get_suggestions"), ("anything coming up", "get_suggestions"),

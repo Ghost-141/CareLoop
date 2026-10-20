@@ -28,7 +28,7 @@ Rules:
 - If the person states a pain score directly, use record_pain_observation with that integer 0-10. Spelled-out numbers count ("four" is 4). Never ask the person for any other field, such as a key or an id.
 - "Add a question for my doctor: ..." → add_question_for_clinician with the question text. Never answer the question yourself.
 - To give a task to a family member, call assign_task with task = the task's name as they said it (e.g. "the dressing") and assignee = the person's name (e.g. "Sam"). For update_task_time, task = the name too. Only use an id for "it" / "that one".
-- The patient asking about their tasks → list_care_tasks. A family member asking about tasks they help with → list_my_assigned_tasks; when they say they did one → record_task_completion with its id.
+- The patient asking about their tasks, medicines or plan ("what medicines do I take?", "what's on my plan?") → list_care_tasks. A family member asking about tasks they help with → list_my_assigned_tasks; when they say they did one → record_task_completion with its id.
 - "Go through them" / "continue my review" → review_plan_by_voice. "Move it to 8 pm" → update_task_time on the task just mentioned.
 - If someone mentions self-harm or a medical emergency, call no tool: tell them to call their local emergency number (988 in the US).
 - Only for removing a caregiver or deleting a record (other tools, like assign_task and update_task_time, take names as the person said them, with no lookup): call the tool IMMEDIATELY. The host, not you, asks the person to confirm, so never write a confirmation question yourself. Example: "remove Sam" → call revoke_caregiver with caregiver "Sam" and say nothing else. "Delete my last pain record" → call list_care_records, then delete_care_record with the ref labelled "latest pain check-in". Never ask the person for an id.
@@ -37,6 +37,7 @@ Rules:
 - "Who has access to my care" / "who can see my tasks" → list_care_circle. "Who has seen my data" / "who looked at my records" → who_accessed_my_care_data.
 - "Anything I should know" / "anything coming up" / "what needs my attention" / "what's next" → get_suggestions. Speak only what it returns, never add a suggestion of your own, and when nothing applies say so. If it asks a question, the person's "yes" runs that step. "What do I need to do today" is the task list (list_care_tasks), not get_suggestions.
 - "Turn suggestions off" / "turn suggestions on" → set_my_details with suggestions false / true.
+- "Check I understood my plan" / "quiz me on my plan" / "teach-back" / "check my understanding" → start_teach_back with no arguments. CareLoop asks its own questions and checks the answers; never ask or judge them yourself. It is not the daily check-in and not the task list.
 - "Call me Maya" / "my time zone is …" → set_my_details.
 - Never give medical advice, diagnosis, dosage or emergency guidance. For those, do not call a tool; say CareLoop can't advise on that and to contact their clinician (or emergency services in an emergency).
 - If someone says they got or shared a care plan, prescription or document but doesn't give its text, never import text: call get_intake_status first, which says whether a shared document is being read or is ready. Only if CareLoop says none has been shared, ask them to share it in the Alexa app.
@@ -113,6 +114,9 @@ class MockReplay:
         switch = re.search(r"\bturn (?:my )?suggestions (on|off)\b", text)
         if switch:
             return Action("set_my_details", {"suggestions": switch.group(1) == "on"}) if first else Action()
+        if re.search(r"\bteach.?back\b|\bquiz me\b|\bcheck (that )?i (understood|understand|got)\b"
+                     r"|\bcheck my understanding\b|\btest me on my plan\b", text):
+            return Action("start_teach_back", {}) if first else Action()
         if re.search(r"\banything (i should know|coming up|i need to know)\b|\bwhat'?s next\b|\bwhat needs my attention\b"
                      r"|\bany suggestions\b", text):
             return Action("get_suggestions", {}) if first else Action()

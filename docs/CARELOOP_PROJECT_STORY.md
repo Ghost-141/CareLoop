@@ -19,12 +19,13 @@ $$s_{t-k+1}, \dots, s_t \ge \theta, \qquad s_i \in \{0, 1, \dots, 10\}.$$
 
 - **Shared speakers:** Sam's Echo Dot hears "You have 1 new CareLoop update", never the pain score.
 - **Family:** tasks can be given to a named person, with reminders.
-- **Handoff:** a dated, cited summary for the clinician, including questions the patient saved.
+- **Teach-back:** the patient says back when they take each medicine and the alert rule's numbers; code checks each answer against the cited line, and a miss is answered by reading the plan back, never by explaining.
+- **Handoff:** a dated, cited summary for the clinician, including questions the patient saved and what the teach-back found.
 - **Data rights:** export, delete, and revoke access by voice.
 
 ## How we built it
 
-CareLoop is a Python MCP server (FastAPI, the official MCP SDK, SQLite) that exposes 31 tools over Streamable HTTP. Identity comes from the credential, so no tool argument can select another patient.
+CareLoop is a Python MCP server (FastAPI, the official MCP SDK, SQLite) that exposes 32 tools over Streamable HTTP. Identity comes from the credential, so no tool argument can select another patient.
 
 **Voice-safe results.** Every tool returns a short `speakable` sentence plus opaque references. Detail reaches the patient only through MCP Apps screens on the Echo Show.
 

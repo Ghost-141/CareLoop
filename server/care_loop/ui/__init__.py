@@ -27,6 +27,7 @@ VIEWS = {
     "history": "History search",
     "check-in-trend": "Check-in trend",
     "visit-handoff": "Visit handoff",
+    "teach-back": "Understanding check",
     "export": "Data export",
 }
 
@@ -74,9 +75,59 @@ def _document_order(item: dict[str, Any]) -> tuple:
     return (item.get("created_at", 0) // 60, first.get("page", 0), number, item.get("order", 0), item.get("created_at", 0))
 
 
+def _active_rules(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [item for item in items if item["type"] == "PLAN_RULE" and item.get("status") == "active" and item.get("rule_spec")]
+
+
 def _rule_thresholds(items: list[dict[str, Any]]) -> list[int]:
-    return sorted({item["rule_spec"]["threshold"] for item in items
-                   if item["type"] == "PLAN_RULE" and item.get("status") == "active" and item.get("rule_spec")})
+    return sorted({item["rule_spec"]["threshold"] for item in _active_rules(items)})
+
+
+def _citation(service: Any, identity: Any, record: dict[str, Any] | None) -> dict[str, Any] | None:
+    """A record's document lines in the shape the screen renders (title and excerpts)."""
+    found = service.citation(identity.patient, record)
+    return {"title": found["title"], "excerpts": found["page_excerpts"]} if found else None
+
+
+def _because(service: Any, identity: Any, suggestion: dict[str, Any]) -> dict[str, Any]:
+    """Why a suggestion was raised: the record it was computed from, and that record's document lines."""
+    source = suggestion.get("source") or {}
+    record = service.storage.get(identity.patient, source["id"]) if source.get("id") else None
+    kind = suggestion["kind"]
+    if kind == "visit_soon" and record:
+        return {"label": "Your follow-up visit, " + str(record.get("due_date")), "record": source,
+                "citation": _citation(service, identity, record)}
+    if kind == "missed_task" and record:
+        task = service.storage.get(identity.patient, record.get("task_id")) if record.get("task_id") else None
+        return {"label": f"{record.get('task_label') or 'A task'} was due", "when": record.get("due_at"), "record": source,
+                "citation": _citation(service, identity, task)}
+    if kind == "no_checkin" and record:
+        return {"label": "Your last check-in", "when": record.get("observed_at"), "record": source}
+    if kind == "teach_back_due" and record:
+        return {"label": "From your approved plan", "record": source, "citation": _citation(service, identity, record)}
+    return {"label": "Plan items from your documents that you haven't reviewed yet"}
+
+
+def _recorded_by(service: Any, identity: Any, row: dict[str, Any]) -> str:
+    actor = row.get("actor_id")
+    if actor == identity.patient:
+        return "you"
+    return service._display_name(identity.patient, actor) if actor else "unknown"
+
+
+def _teach_back_view(service: Any, identity: Any) -> dict[str, Any]:
+    """Each checkable value of the plan: its latest result, or not checked yet, with its document lines."""
+    from ..teach_back import expected_for, question_for
+    results = {(r["item_id"], r["check"]): r for r in service.teach_back_results(identity)}
+    rows = []
+    for entry in service.teach_back_checks(identity):
+        item, check = entry["item"], entry["check"]
+        result = results.get((item["id"], check))
+        rows.append({"item_id": item["id"], "check": check, "label": item.get("label"), "question": question_for(item, check),
+                     "expected": expected_for(item, check), "result": result["result"] if result else "not_checked",
+                     "heard": result.get("heard") if result else None, "asked_at": result.get("asked_at") if result else None,
+                     "citation": _citation(service, identity, item)})
+    return {"checks": rows}
 
 
 def view_details(deps: Any, identity: Any, view: str, record_ids: list[str]) -> Any:
@@ -85,6 +136,9 @@ def view_details(deps: Any, identity: Any, view: str, record_ids: list[str]) -> 
     if view in {"plan-review", "tasks"}:
         items = sorted(service.list_care_tasks(identity), key=_document_order)
         data: dict[str, Any] = {"items": _with_citations(deps, identity, items)}
+        if view == "tasks" and identity.role == "patient":
+            data["suggestions"] = [{"kind": s["kind"], "say": s["say"], "because": _because(service, identity, s)}
+                                   for s in service.suggestions(identity)]
         if view == "plan-review" and identity.role == "patient":
             jobs = service.intake_jobs(identity)
             if jobs:
@@ -101,7 +155,7 @@ def view_details(deps: Any, identity: Any, view: str, record_ids: list[str]) -> 
     if view == "care-circle":
         now = int(service.clock())
         from ..core import ACCESS_PHRASES
-        access = [{"name": person["name"],
+        access = [{"name": person["name"], "last_at": person.get("last_at"),
                    "actions": [f"{ACCESS_PHRASES[action]}{'' if n == 1 else f' ({n} times)'}"
                                for action, n in person["actions"].items()]}
                   for person in service.access_summary(identity, now - 7 * 86_400, now)]
@@ -115,10 +169,16 @@ def view_details(deps: Any, identity: Any, view: str, record_ids: list[str]) -> 
         return {"records": [r for r in service.list_records(identity) if r["id"] in wanted]}
     if view == "check-in-trend":
         try:
-            thresholds = _rule_thresholds(service.list_care_tasks(identity))
+            rules = _active_rules(service.list_care_tasks(identity))
         except AccessDenied:
-            thresholds = []
-        return {"observations": service.list_observations(identity), "thresholds": thresholds}
+            rules = []
+        observations = service.list_observations(identity)
+        data = {"observations": observations, "thresholds": _rule_thresholds(rules)}
+        if identity.role == "patient":  # who recorded each value, and the rule's own words and lines; a family member sees only the chart
+            data["observations"] = [dict(o) | {"recorded_by": _recorded_by(service, identity, o)} for o in observations]
+            data["rules"] = [{"threshold": r["rule_spec"]["threshold"], "consecutive_days": r["rule_spec"]["consecutive_days"],
+                              "text": r.get("text"), "citation": _citation(service, identity, r)} for r in rules]
+        return data
     if view == "visit-handoff":
         if identity.role != "patient":
             raise AccessDenied()
@@ -128,6 +188,8 @@ def view_details(deps: Any, identity: Any, view: str, record_ids: list[str]) -> 
         if not handoffs:
             raise AccessDenied()
         return {"handoff": max(handoffs, key=lambda h: h.get("created_at", 0))}
+    if view == "teach-back":
+        return _teach_back_view(service, identity)
     if view == "export":
         return service.export(identity)
     raise AccessDenied()
