@@ -116,17 +116,22 @@ def test_assignment_needs_the_perform_tasks_permission() -> None:
         service.assigned_tasks(SAM)
 
 
+def alerts_only(rows):
+    """Assigning also tells Sam he has a new task; this test is about alerts."""
+    return [row for row in rows if row.get("kind") != "task_assigned"]
+
+
 def test_missed_assigned_task_raises_one_generic_update_and_survives_rule_cleanup() -> None:
     clock, service, _deps, tools, invitation, tasks = setup()
     tools["assign_task"](tasks["morning"]["id"], Ctx(), invitation["id"])  # assigned at 7 AM for 08:00
     clock[0] = at(8, 30)
-    assert service.notifications(SAM) == []  # still inside the one-hour grace period
+    assert alerts_only(service.notifications(SAM)) == []  # still inside the one-hour grace period
     clock[0] = at(9, 5)
-    updates = service.notifications(SAM)
+    updates = alerts_only(service.notifications(SAM))
     assert len(updates) == 1 and set(updates[0]) == {"case_id", "status"}
-    assert service.notifications(SAM) == updates  # one alert per missed slot, not one per check
+    assert alerts_only(service.notifications(SAM)) == updates  # one alert per missed slot, not one per check
     service.record_observation(PATIENT, pain_score=2, idempotency_key="k1")  # runs pain-rule cleanup
-    assert len(service.notifications(SAM)) == 1
+    assert len(alerts_only(service.notifications(SAM))) == 1
 
     handoff = service.create_visit_handoff(PATIENT, at(0), at(23))
     assert handoff["totals"]["missed_tasks"] == 1

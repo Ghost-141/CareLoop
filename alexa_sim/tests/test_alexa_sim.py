@@ -576,6 +576,52 @@ def test_family_tasks_reminders_questions_and_access_log_live(careloop_server) -
         assert log.startswith("In the last 7 days, Sam") and "completed a task" in log
 
 
+def test_assigning_a_task_tells_sam_without_the_details_until_he_asks_live(careloop_server) -> None:
+    settings = AlexaSimSettings(mcp_url=careloop_server, planner="mock")
+    with TestClient(create_alexa_sim_app(settings, planner=MockReplay())) as client:
+        client.post("/api/link", json={"account": "maya"})
+        client.post("/api/link", json={"account": "sam"})
+        say = lambda device, text: client.post("/api/utterance", json={"device_id": device, "text": text}).json()
+        state = lambda: client.get("/api/state").json()
+        dot = lambda: next(d for d in state()["devices"] if d["id"] == "dot")
+        spoken_on_dot = lambda: [a["reply"] for a in client.get("/api/announcements?after=0").json()["items"] if a["device_id"] == "dot"]
+
+        say("show", "Alexa, I got a new care plan from my clinic")
+        say("show", "Alexa, approve my plan")
+        say("show", "Alexa, let Sam help with my tasks")
+        say("show", "yes")
+        assert client.post("/api/invite/open").json()["accepted"] is True  # Sam holds see-tasks and do-tasks, not alert rights
+        assert "Maya gave you a new task." not in spoken_on_dot()
+
+        # 1. Maya assigns a task: Sam's Dot is told, in generic words, and the ring stays dark.
+        say("show", "Alexa, Sam handles my evening task")
+        told = spoken_on_dot()
+        assert told.count("Maya gave you a new task.") == 1
+        assert not any("evening" in line.lower() or "check-in" in line.lower() for line in told if line.startswith("Maya gave"))
+        assert dot()["notification"] is False
+
+        # 2. Sam asks for updates: counts only, still no task name.
+        updates = say("dot", "Alexa, any CareLoop updates?")["reply"]
+        assert updates == "You have 1 new task from Maya." and "evening" not in updates.lower()
+        say("show", "Alexa, do my check-in")  # unrelated Maya activity must not announce the same notice again
+        assert spoken_on_dot().count("Maya gave you a new task.") == 1
+
+        # 3. Sam asks for the task: the details arrive and the notice clears.
+        assert say("dot", "Alexa, what are my tasks for Maya?")["reply"] == \
+            "You have 1 task to help Maya with: Complete the evening check-in at 7 PM."
+        assert say("dot", "Alexa, any CareLoop updates?")["reply"] == "There are no new CareLoop updates."
+
+        # 4. Repeating the same assignment says nothing new. A different task is told, and "mark it seen"
+        #    clears it without any detail.
+        say("show", "Alexa, Sam handles my evening task")
+        assert say("dot", "Alexa, any CareLoop updates?")["reply"] == "There are no new CareLoop updates."
+        say("show", "Alexa, Sam handles my walk task")
+        assert spoken_on_dot().count("Maya gave you a new task.") == 2
+        assert say("dot", "Alexa, any CareLoop updates?")["reply"] == "You have 1 new task from Maya."
+        assert say("dot", "Alexa, mark it seen")["reply"] == "Marked as seen."
+        assert say("dot", "Alexa, any CareLoop updates?")["reply"] == "There are no new CareLoop updates."
+
+
 # ---- multi-turn: answer parsing, offers, "it" ------------------------------------------------------
 REVIEW_SCHEMA = {"type": "object", "properties": {
     "action": {"anyOf": [{"type": "string", "enum": ["approve", "change time", "skip", "stop"]}, {"type": "null"}]},

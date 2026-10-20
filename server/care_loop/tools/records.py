@@ -713,7 +713,8 @@ def register(mcp: MCPServer, deps) -> None:
     def list_my_assigned_tasks(ctx: Context) -> VoiceResult:
         """FAMILY MEMBERS ONLY: the patient's tasks assigned to you, with their times.
 
-        The patient asking about their own tasks should use list_care_tasks.
+        Asking for these also clears any new-task notice. The patient asking about their own tasks
+        should use list_care_tasks.
         """
         identity = _patient(deps, ctx)
         if identity.role == "patient":
@@ -851,21 +852,34 @@ def register(mcp: MCPServer, deps) -> None:
     @tool("list_generic_notifications", "notifications", _READ)
     @_safe_tool("CareLoop notifications are unavailable.")
     def list_generic_notifications(ctx: Context) -> VoiceResult:
-        """Caregiver: list generic CareLoop update cases (no alert detail is ever included)."""
-        cases = deps.service.notifications(_patient(deps, ctx))
-        new = [case for case in cases if case["status"] == "action_required"]
-        speakable = (f"You have {_plural(len(new), 'new CareLoop update')}." if new
-                     else "There are no new CareLoop updates.")
-        return _result(speakable, view="notifications", surface="glance",
-                       refs=[{"id": case["case_id"], "kind": "update", "status": case["status"], "label": f"update {i}"}
-                             for i, case in enumerate(cases, start=1)])
+        """Caregiver: what is new for you, as counts only: CareLoop updates, and new tasks the patient gave you.
+
+        No alert detail and no task name is ever included. For the task itself, call list_my_assigned_tasks.
+        """
+        identity = _patient(deps, ctx)
+        cases = deps.service.notifications(identity)
+        updates = [c for c in cases if c.get("kind") != "task_assigned"]
+        notices = [c for c in cases if c.get("kind") == "task_assigned"]
+        new_updates = [c for c in updates if c["status"] == "action_required"]
+        new_tasks = [c for c in notices if c["status"] == "action_required"]
+        parts = []
+        if new_updates:
+            parts.append(_plural(len(new_updates), "new CareLoop update"))
+        if new_tasks:
+            parts.append(f"{_plural(len(new_tasks), 'new task')} from {deps.service.patient_name(identity.patient)}")
+        speakable = f"You have {' and '.join(parts)}." if parts else "There are no new CareLoop updates."
+        refs = [{"id": c["case_id"], "kind": "update", "status": c["status"], "label": f"update {i}"}
+                for i, c in enumerate(updates, start=1)]
+        refs += [{"id": c["case_id"], "kind": "assigned_task", "status": c["status"], "label": f"new task {i}"}
+                 for i, c in enumerate(notices, start=1)]
+        return _result(speakable, view="notifications", surface="glance", refs=refs)
 
     @tool("acknowledge_alert", "notifications", _IDEMPOTENT_WRITE)
     @_safe_tool("That CareLoop update can't be acknowledged.")
     def acknowledge_alert(ctx: Context, alert_id: str | None = None) -> VoiceResult:
         """Caregiver: mark generic CareLoop updates as seen, without reading their private detail.
 
-        Call it with no arguments for "mark it seen" or "got it": it acknowledges the updates still waiting.
+        Call it with no arguments for "mark it seen" or "got it": it marks the updates and new-task notices still waiting.
         ``alert_id`` (a ref from list_generic_notifications) is optional. Never ask the person for an id.
         """
         identity = _patient(deps, ctx)
@@ -876,9 +890,12 @@ def register(mcp: MCPServer, deps) -> None:
         else:
             alert_ids = [alert_id]
         acknowledgements = [deps.service.acknowledge_alert(identity, one) for one in alert_ids]
-        return _result("CareLoop update acknowledged." if len(acknowledgements) == 1 else "CareLoop updates acknowledged.",
-                       view="notifications", surface="glance",
-                       refs=[{"id": ack["case_id"], "kind": "update", "status": ack["status"], "label": "acknowledged update"}
+        only_tasks = all(ack.get("kind") == "task_assigned" for ack in acknowledgements)
+        speakable = ("Marked as seen." if only_tasks else
+                     "CareLoop update acknowledged." if len(acknowledgements) == 1 else "CareLoop updates acknowledged.")
+        return _result(speakable, view="notifications", surface="glance",
+                       refs=[{"id": ack["case_id"], "kind": "assigned_task" if ack.get("kind") == "task_assigned" else "update",
+                              "status": ack["status"], "label": "seen" if ack.get("kind") == "task_assigned" else "acknowledged update"}
                              for ack in acknowledgements])
 
     # ---- observations, history, handoff ------------------------------------------

@@ -77,6 +77,7 @@ MAX_QUESTION_CHARS = 300
 PLAN_TYPES = frozenset({"PLAN_TASK", "PLAN_RULE", "PLAN_NOTE"})
 REVIEWABLE = frozenset({"draft", "needs_review"})
 INTAKE_JOB_TTL_SECONDS = 24 * 3600
+ASSIGNMENT_NOTICE_TTL_SECONDS = 7 * 86_400
 _CLOCK_TIME = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 AUDIT_OUTCOMES = frozenset({"success", "denied", "failed"})
 
@@ -525,8 +526,11 @@ class CareLoopService:
                 "created_at": now, "updated_at": now, "reviewed": True, "source_id": task.get("source_id"),
                 "actor_id": identity.subject_id})
             self._log_access(patient, identity.subject_id, "task_completed")
+            self._withdraw_assignment_notices(patient, task_id)
             return saved
-        return self.write(identity, "TASK_EVENT", event, source_id=task.get("source_id"), reviewed=True)
+        saved = self.write(identity, "TASK_EVENT", event, source_id=task.get("source_id"), reviewed=True)
+        self._withdraw_assignment_notices(patient, task_id)
+        return saved
 
     # ---- family task assignment and reminder suggestions ---------------------------
     def _active_grant(self, patient: str, grant_id: str, scope: str) -> dict[str, Any]:
@@ -551,6 +555,7 @@ class CareLoopService:
         task_id = task["id"]
         if task.get("status", "active") != "active":
             raise ValueError("active care task is unavailable")
+        previous_assignee = task.get("assignee_id")
         if grant_id:
             found = self.find_helper(identity, grant_id)
             grant = self._active_grant(patient, found["id"] if found else grant_id, "perform_tasks")
@@ -563,13 +568,45 @@ class CareLoopService:
             task["assigned_at"] = self._now()
         task["updated_at"] = self._now()
         saved = self.storage.put(patient, task_id, "PLAN_TASK", task)
+        if not (grant_id and previous_assignee == saved.get("assignee_id")):  # a repeat for the same person says nothing new
+            self._withdraw_assignment_notices(patient, task_id)  # any earlier notice for this task is out of date
+            if grant_id:
+                self._notify_assignee(patient, saved)
         self.audit(identity, "task_assigned", "success")
         return saved
+
+    # ---- the assignee is told they have a task; the task itself stays private until they ask ----------
+    def _notify_assignee(self, patient: str, task: dict[str, Any]) -> dict[str, Any]:
+        """A generic notice for the family member: it names no task, time or care content."""
+        now = self._now()
+        return self.storage.put(patient, self._id(), "ALERT", {
+            "created_at": now, "updated_at": now, "reviewed": True, "actor_id": "careloop-assignment",
+            "kind": "task_assigned", "task_id": task["id"], "assignee_id": task["assignee_id"],
+            "episode_key": f"assigned:{task['id']}:{task.get('assigned_at', now)}", "status": "active",
+            "acknowledgements": []}, expires_at=now + ASSIGNMENT_NOTICE_TTL_SECONDS)
+
+    def _withdraw_assignment_notices(self, patient: str, task_id: str) -> None:
+        """Reassigned, taken back or done: the notice no longer applies."""
+        for alert in self.storage.list(patient, "ALERT"):
+            if alert.get("kind") == "task_assigned" and alert.get("task_id") == task_id and alert.get("status") == "active":
+                alert |= {"status": "superseded", "updated_at": self._now()}
+                self.storage.put(patient, alert["id"], "ALERT", alert, expires_at=self._now() + ASSIGNMENT_NOTICE_TTL_SECONDS)
+
+    def _mark_assignment_notices_seen(self, patient: str, identity: Identity) -> None:
+        for alert in self.storage.list(patient, "ALERT"):
+            if (alert.get("kind") == "task_assigned" and alert.get("status") == "active"
+                    and alert.get("assignee_id") == identity.subject_id
+                    and not any(row.get("caregiver_id") == identity.subject_id for row in alert.get("acknowledgements", []))):
+                alert["acknowledgements"] = list(alert.get("acknowledgements", [])) + [
+                    {"caregiver_id": identity.subject_id, "acknowledged_at": self._now()}]
+                alert["updated_at"] = self._now()
+                self.storage.put(patient, alert["id"], "ALERT", alert, expires_at=self._now() + ASSIGNMENT_NOTICE_TTL_SECONDS)
 
     def assigned_tasks(self, identity: Identity) -> list[dict[str, Any]]:
         """A family member's own assigned tasks: label and times only (never the cited instruction)."""
         patient = self.patient_for(identity, "perform_tasks")
         self.evaluate_missed_tasks(patient)
+        self._mark_assignment_notices_seen(patient, identity)  # asking for the details is what clears the notice
         keep = {"id", "label", "times", "frequency", "status", "type", "assignee_name"}
         return [{k: v for k, v in task.items() if k in keep}
                 for task in self.storage.list(patient, "PLAN_TASK")
@@ -857,7 +894,8 @@ class CareLoopService:
         all_observations = self.storage.list(patient, "OBSERVATION")
         corrections = [{"correction_id": row["id"], "corrects_id": row["corrects_id"]} for row in all_observations if row.get("corrects_id") and from_date <= row.get("observed_at", 0) <= to_date]
         self.evaluate_missed_tasks(patient)
-        alerts = [row for row in self.storage.list(patient, "ALERT") if row.get("status", "active") == "active" and from_date <= row.get("created_at", 0) <= to_date]
+        alerts = [row for row in self.storage.list(patient, "ALERT") if row.get("status", "active") == "active"
+                  and row.get("kind") != "task_assigned" and from_date <= row.get("created_at", 0) <= to_date]
         questions = [{"text": q["text"], "asked_at": q["created_at"]} for q in self.clinician_questions(identity)
                      if q.get("status", "open") == "open"]
         data = {"label": "Patient-generated factual summary for clinician discussion", "from_date": from_date, "to_date": to_date,
@@ -1010,29 +1048,60 @@ class CareLoopService:
         return count
 
     def notifications(self, identity: Identity) -> list[dict[str, str]]:
-        """Return generic notification state only; alert content stays private."""
-        patient = self.patient_for(identity, "receive_alerts")
+        """Generic notification state only; alert content and task details stay private.
+
+        Rule and missed-task alerts need ``receive_alerts``. A notice that a task was assigned needs
+        ``perform_tasks``, since the people most likely to be assigned a task are invited with only
+        "see tasks" and "do tasks".
+        """
         if identity.role != "caregiver":
             raise AccessDenied("Notifications are routed to authorized caregivers")
-        self.evaluate_missed_tasks(patient)
+        patient, denied, can_alerts, can_tasks = identity.patient, None, False, False
+        for scope in ("receive_alerts", "perform_tasks"):
+            try:
+                patient = self.patient_for(identity, scope)
+                can_alerts, can_tasks = can_alerts or scope == "receive_alerts", can_tasks or scope == "perform_tasks"
+            except AccessDenied as exc:
+                denied = denied or exc
+        if not (can_alerts or can_tasks):
+            raise denied or AccessDenied("Notifications are routed to authorized caregivers")
         def state(alert: dict[str, Any]) -> str:
             acknowledged = any(row.get("caregiver_id") == identity.subject_id for row in alert.get("acknowledgements", []))
             return "acknowledged" if acknowledged else "action_required"
-        return [{"case_id": alert["id"], "status": state(alert)}
-                for alert in self.storage.list(patient, "ALERT") if alert.get("status", "active") == "active"]
+        rows: list[dict[str, str]] = []
+        if can_alerts:
+            self.evaluate_missed_tasks(patient)
+            rows += [{"case_id": alert["id"], "status": state(alert)}
+                     for alert in self.storage.list(patient, "ALERT")
+                     if alert.get("status", "active") == "active" and alert.get("kind") != "task_assigned"]
+        if can_tasks:
+            rows += [{"case_id": alert["id"], "status": state(alert), "kind": "task_assigned"}
+                     for alert in self.storage.list(patient, "ALERT")
+                     if alert.get("kind") == "task_assigned" and alert.get("status") == "active"
+                     and alert.get("assignee_id") == identity.subject_id]
+        return rows
 
     def acknowledge_alert(self, identity: Identity, alert_id: str) -> dict[str, Any]:
-        patient = self.patient_for(identity, "acknowledge_alerts")
+        try:
+            patient, via_alert_scope = self.patient_for(identity, "acknowledge_alerts"), True
+        except AccessDenied:
+            patient, via_alert_scope = self.patient_for(identity, "perform_tasks"), False
         alert = self.storage.get(patient, alert_id)
         if not alert or alert["type"] != "ALERT" or alert.get("status", "active") != "active":
             raise AccessDenied("Alert is unavailable")
+        notice = alert.get("kind") == "task_assigned"
+        if notice and alert.get("assignee_id") != identity.subject_id:
+            raise AccessDenied("Alert is unavailable")
+        if not notice and not via_alert_scope:
+            raise AccessDenied("Caregiver access does not include this")
         acknowledgements = list(alert.get("acknowledgements", []))
         if not any(row.get("caregiver_id") == identity.subject_id for row in acknowledgements):
             acknowledgements.append({"caregiver_id": identity.subject_id, "acknowledged_at": self._now()})
         alert |= {"acknowledgements": acknowledgements, "updated_at": self._now()}
-        self.storage.put(patient, alert_id, "ALERT", alert, expires_at=None)
+        self.storage.put(patient, alert_id, "ALERT", alert,
+                         expires_at=(self._now() + ASSIGNMENT_NOTICE_TTL_SECONDS) if notice else None)
         # The stored audit action has a closed vocabulary and no alert content.
         self._log_access(patient, identity.subject_id, "alert_acknowledged")
         # Do not return the ALERT record: acknowledgement permission is not
         # permission to read the alert's clinical details.
-        return {"case_id": alert_id, "status": "acknowledged"}
+        return {"case_id": alert_id, "status": "acknowledged", **({"kind": "task_assigned"} if notice else {})}
