@@ -29,7 +29,7 @@ Alexa+ can remember a document, set reminders and alert family about activity. C
 
 ## Operating Context
 
-- **Surfaces:** voice on Echo devices; MCP Apps views (`ui://careloop/*`) on the Echo Show's private screen (plan review, tasks, plan source, care circle, notifications, check-in trend, visit handoff, records, history, export); the Alexa app for account linking and document sharing; a product page (`site/`).
+- **Surfaces:** voice on Echo devices; MCP Apps views (`ui://careloop/*`) on the Echo Show's private screen (plan review, tasks, plan source, care circle, notifications, check-in trend, visit handoff, understanding check, records, history, export); the Alexa app for account linking and document sharing; a product page (`site/`).
 - **Simulator:** with no Echo device or Alexa+ preview access, `alexa_sim/` simulates an Echo Show, an Echo Dot, the Alexa app and a live MCP inspector in the browser. It is not an Amazon product.
 - **Documents:** typed PDFs, scanned PDFs and phone photos of prescriptions and discharge plans. PDF text is read first, PaddleOCR is the fallback, a local or OpenAI-compatible model proposes items, and deterministic checks decide what survives.
 - **Rituals:** the clinic visit, taking medicines at set times, daily pain check-ins, family helping with tasks, and preparing for the next appointment.
@@ -54,8 +54,8 @@ Alexa+ can remember a document, set reminders and alert family about activity. C
 
 - Synthetic sample documents: `samples/prescription_typed.pdf`, `samples/prescription_scanned.pdf`, `samples/prescription_photo.png`, `samples/prompt_injection.pdf`.
 - Intake evaluation on the synthetic set: 100% recall, zero invented numbers, every citation valid, planted instruction never followed (`evals/intake/`, `docs/CARELOOP_EVALS.md`).
-- Live-model voice evaluation: 126/126 scenario runs passing after fixes (first run 96/108); failures recorded in `docs/FRICTION_LOG.md`.
-- Automated test suite in `server/tests/` and `alexa_sim/tests/`.
+- Live-model voice evaluation: first 96/108, then 126/126 after fixes with a local model; latest 207/210 across 70 scenarios with a hosted model (the one failing scenario had an out-of-date expectation and now passes 3/3). Failures recorded in `docs/FRICTION_LOG.md`.
+- Automated test suite in `server/tests/` and `alexa_sim/tests/` (400 tests), including a check that every card on the patient's screen carries a citation or a "because".
 - Absent, and not to be fabricated: real users, patients, clinicians, testimonials, partner organizations, clinical validation, pricing, or certification claims.
 
 ## Product Principles
