@@ -49,8 +49,7 @@ uv run pytest -q       # 410 tests, including live runs against a real server
 | The first visit | `scripts/run_alexa_demo.sh --reset` | Share the prescription, review and approve it, then everything that follows |
 | Day four at home | `scripts/run_alexa_demo.sh --reset --story=history` | Three days of history: suggestions, teach-back, the rule firing, the handoff |
 
-- [Three-minute video plan](docs/CARELOOP_3MIN_VIDEO_DEMO.md)
-- [Click-by-click demo guide](docs/CARELOOP_UI_DEMO_GUIDE.md)
+The [click-by-click demo guide](docs/CARELOOP_UI_DEMO_GUIDE.md) walks through the first visit with screenshots.
 
 ## Documentation
 
@@ -61,7 +60,6 @@ uv run pytest -q       # 410 tests, including live runs against a real server
 | [Architecture](docs/CARELOOP_ARCHITECTURE.md) | Components, the MCP tools and voice-safe results, document intake, repository layout |
 | [Safety, privacy and security](docs/CARELOOP_SECURITY.md) | What CareLoop never does, and the MCP security decisions |
 | [Features](docs/CARELOOP_FEATURES.md) | Every capability, and how it fits Alexa+ |
-| [Demo walkthrough](docs/CARELOOP_DEMO_WALKTHROUGH.md) | Every line to say, with the reply you should hear |
 | [UI guide](docs/CARELOOP_UI_GUIDE.md) | Every screen and control |
 | [Simulator walkthrough](docs/CARELOOP_SIMULATOR_WALKTHROUGH.md) | Driving the simulator end to end |
 | [Evals](docs/CARELOOP_EVALS.md) | Document-reading and live-model voice evaluations |

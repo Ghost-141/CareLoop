@@ -79,15 +79,15 @@ This starts the CareLoop MCP server on `:8010`, waits until it is healthy, then 
 - Pain check-ins of 3, 4 and 7 are logged for the last three days.
 - One question is saved for her clinician.
 
-Her prescription is *not* loaded: share it from the Alexa app panel. Because yesterday was a 7, a check-in of 7 or more today fires her approved rule. In Backstage, **Reset demo data** (click twice) restores this starting day at any time, with both devices linked. The video script is in [docs/CARELOOP_3MIN_VIDEO_DEMO.md](CARELOOP_3MIN_VIDEO_DEMO.md).
+Her prescription is *not* loaded: share it from the Alexa app panel. Because yesterday was a 7, a check-in of 7 or more today fires her approved rule. In Backstage, **Reset demo data** (click twice) restores this starting day at any time, with both devices linked.
 
 | Variant | Command |
 | --- | --- |
-| Deterministic planner (stage-safe, exact replies as in the demo walkthrough) | `CARELOOP_AGENT_LLM=mock scripts/run_alexa_demo.sh` |
+| Deterministic planner (stage-safe, the same replies every run) | `CARELOOP_AGENT_LLM=mock scripts/run_alexa_demo.sh` |
 | Browser speech instead of Kokoro/Whisper | `VOICE=browser STT=browser scripts/run_alexa_demo.sh` |
 | Restore the seeded starting day | `scripts/run_alexa_demo.sh --reset` |
-| Day four at home: an approved plan with three days of history, for the [3-minute video](CARELOOP_3MIN_VIDEO_DEMO.md) (suggestions, teach-back, handoff) | `scripts/run_alexa_demo.sh --reset --story=history` |
-| Start with nothing (for the [demo walkthrough](CARELOOP_DEMO_WALKTHROUGH.md) tables) | `scripts/run_alexa_demo.sh --empty` |
+| Day four at home: an approved plan with three days of history (suggestions, teach-back, handoff) | `scripts/run_alexa_demo.sh --reset --story=history` |
+| Start with nothing: no consent, no care circle, no records | `scripts/run_alexa_demo.sh --empty` |
 | Separate demo database | `CARELOOP_DB_PATH=/tmp/careloop-demo.db scripts/run_alexa_demo.sh` |
 | Shared machine: restore the demo after 15 idle minutes | `CARELOOP_DEMO_IDLE_RESET_MINUTES=15 scripts/run_alexa_demo.sh` |
 
@@ -121,7 +121,7 @@ uv run pytest -q server/tests          # MCP server, tools, consent, MCP Apps vi
 uv run pytest -q alexa_sim/tests       # simulator host and scripted evaluator, incl. a live run of the demo story
 ```
 
-The `alexa_sim` live test (`test_full_demo_story_against_live_careloop`) starts a real CareLoop server process with a temporary database and drives the demo walkthrough through the simulator API: linking, approval, invite and accept, the elicitation check-in, caregiver privacy, acknowledgement, handoff, and confirmed revocation.
+The `alexa_sim` live test (`test_full_demo_story_against_live_careloop`) starts a real CareLoop server process with a temporary database and drives the whole demo story through the simulator API: linking, approval, invite and accept, the elicitation check-in, caregiver privacy, acknowledgement, handoff, and confirmed revocation.
 
 Other checks:
 

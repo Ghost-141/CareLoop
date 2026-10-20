@@ -1,6 +1,6 @@
 # Driving the CareLoop simulator end to end
 
-How to start the Alexa+ behavior simulator, what to say and click, what you should see, and why each step matters. For a description of every control on the page, see [CARELOOP_UI_GUIDE.md](CARELOOP_UI_GUIDE.md). The step-by-step tables of expected replies (including family tasks, multi-turn and prescription intake) are in [CARELOOP_DEMO_WALKTHROUGH.md](CARELOOP_DEMO_WALKTHROUGH.md).
+How to start the Alexa+ behavior simulator, what to say and click, what you should see, and why each step matters. For a description of every control on the page, see [CARELOOP_UI_GUIDE.md](CARELOOP_UI_GUIDE.md).
 
 The replies in the tables were captured from a real run on the seeded starting day with the **Mock replay** planner. With the local model (Ollama) the tools called are the same but the wording can differ slightly.
 
@@ -165,11 +165,11 @@ Asking for the details ("what are my tasks for Maya?") or saying "mark it seen" 
 
 ### 6.2b Suggestions
 
-Maya asks "Alexa, anything I should know?" The server works out what is worth a look from her own records and the assistant only phrases it: a visit within 3 days, a missed task, no check-in today after 6 PM, or plan items waiting for review. If a suggestion carries a question, "yes" runs it. Nothing applies gives "Nothing needs your attention right now." "Turn suggestions off" switches them off. They are for the patient only, and they never quote a saved question or a score. The full table of replies is in [CARELOOP_DEMO_WALKTHROUGH.md](CARELOOP_DEMO_WALKTHROUGH.md).
+Maya asks "Alexa, anything I should know?" The server works out what is worth a look from her own records and the assistant only phrases it: a visit within 3 days, a missed task, no check-in today after 6 PM, or plan items waiting for review. If a suggestion carries a question, "yes" runs it. Nothing applies gives "Nothing needs your attention right now." "Turn suggestions off" switches them off. They are for the patient only, and they never quote a saved question or a score.
 
 ### 6.2c Teach-back: checking Maya understood her plan
 
-After 6.1 (the medicines approved on the screen), Maya says "check I understood my plan" (or "quiz me on my plan"). The **server** asks each question through MCP elicitation and checks the answer in code: how often or when each medicine is taken, whether the as-needed one has set times, the alert rule's two numbers, and the fever warning's number. "Every 8 hours" and "three times a day" both count. A wrong answer gets one more try; a second miss, or "I don't know", reads the plan back in its own words and moves on. It never explains why. "Stop" pauses it and "check my understanding" resumes it. The **Understanding check** screen shows each question, its result, and the source line; the visit handoff gets the same section. Watch the inspector: one `elicitation/create` line per question, and no planner call while Maya answers. On Sam's Dot it is refused. The replies are in [CARELOOP_DEMO_WALKTHROUGH.md](CARELOOP_DEMO_WALKTHROUGH.md).
+After 6.1 (the medicines approved on the screen), Maya says "check I understood my plan" (or "quiz me on my plan"). The **server** asks each question through MCP elicitation and checks the answer in code: how often or when each medicine is taken, whether the as-needed one has set times, the alert rule's two numbers, and the fever warning's number. "Every 8 hours" and "three times a day" both count. A wrong answer gets one more try; a second miss, or "I don't know", reads the plan back in its own words and moves on. It never explains why. "Stop" pauses it and "check my understanding" resumes it. The **Understanding check** screen shows each question, its result, and the source line; the visit handoff gets the same section. Watch the inspector: one `elicitation/create` line per question, and no planner call while Maya answers. On Sam's Dot it is refused.
 
 ### 6.2d Where every claim on the screen came from
 

@@ -4,8 +4,8 @@
 #   CARELOOP_AGENT_LLM=mock scripts/run_alexa_demo.sh   # stage-safe deterministic planner
 #   VOICE=browser STT=browser scripts/run_alexa_demo.sh # browser speech instead of Kokoro/Whisper
 #   scripts/run_alexa_demo.sh --reset    # wipe the demo patient and start from the seeded starting day
-#   scripts/run_alexa_demo.sh --empty    # wipe the demo patient and start with nothing (docs/CARELOOP_DEMO_WALKTHROUGH.md)
-#   scripts/run_alexa_demo.sh --reset --story=history   # day four at home, for the 3-minute video (docs/CARELOOP_3MIN_VIDEO_DEMO.md)
+#   scripts/run_alexa_demo.sh --empty    # wipe the demo patient and start with nothing
+#   scripts/run_alexa_demo.sh --reset --story=history   # day four at home: an approved plan with three days of history
 # The demo patient is seeded with synthetic starting data when it has no records yet.
 # If a port is taken (by another app or an old run), the next free port is used and printed.
 set -euo pipefail

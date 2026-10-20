@@ -8,7 +8,7 @@ check-ins are logged (yesterday's was 7). Her prescription is not loaded yet.
     uv run python scripts/seed_careloop_demo.py --reset    # wipe the demo patient, then seed
     uv run python scripts/seed_careloop_demo.py --empty    # wipe the demo patient, seed nothing
     uv run python scripts/seed_careloop_demo.py --db /tmp/careloop-video.db --reset
-    uv run python scripts/seed_careloop_demo.py --reset --story history   # day four at home (3-minute video)
+    uv run python scripts/seed_careloop_demo.py --reset --story history   # day four at home
 
 --story history seeds an approved, cited plan with three days of history instead (see care_loop/demo.py).
 It can also be set with CARELOOP_DEMO_STORY=history, which Reset demo data in the simulator follows too.
