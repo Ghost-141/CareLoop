@@ -147,6 +147,14 @@ def parse_answer(text: str, schema: dict[str, Any]) -> tuple[dict[str, Any] | No
     return content, None
 
 
+def free_text_only(schema: dict[str, Any]) -> bool:
+    """True when every field takes the person's own words, so any utterance would fill it."""
+    props = (schema.get("properties") or {}).values()
+    plain = [p for p in props if (p.get("type") or next((a.get("type") for a in p.get("anyOf", []) if a.get("type") != "null"), None))
+             == "string" and not p.get("enum")]
+    return bool(props) and len(plain) == len(list(props))
+
+
 def strip_wake_word(text: str) -> str:
     return _WAKE.sub("", text, count=1).strip()
 
@@ -176,7 +184,7 @@ class Orchestrator:
         paused = None
         if device.awaiting is not None:
             content, _reprompt = parse_answer(text, device.awaiting.question.schema)
-            if woke and not content:
+            if woke and (not content or free_text_only(device.awaiting.question.schema)):
                 # A new "Alexa, …" request while a workflow waits: save its place, then handle the request.
                 paused = await self._interrupt(device, account)
             else:
