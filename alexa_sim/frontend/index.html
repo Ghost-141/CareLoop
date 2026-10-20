@@ -15,10 +15,8 @@
   <header class="top">
     <div class="brand">
       <svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><path d="M26 16a10 10 0 1 1-4-8" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"/><circle cx="25" cy="8" r="3" class="mark-dot"/></svg>
-      <div>
-        <h1>CareLoop</h1>
-        <p class="sub">Alexa+ behavior simulator. Not an Amazon product. Synthetic data only.</p>
-      </div>
+      <h1>CareLoop</h1>
+      <p class="sub">Alexa+ behavior simulator. Not an Amazon product. Synthetic data only.</p>
     </div>
     <div class="voicebar">
       <label class="switch"><input type="checkbox" id="wake"><span class="track" aria-hidden="true"></span> Hands-free “Alexa”</label>
@@ -30,104 +28,138 @@
     </div>
   </header>
 
-  <section class="stage">
-    <article class="device show" id="device-show" data-state="idle" aria-label="Maya’s Echo Show">
-      <div class="device-head"><h2>Maya’s Echo Show</h2><span class="state" id="show-state">idle</span></div>
-      <div class="bezel">
-        <span class="camera" aria-hidden="true"></span>
-        <div class="screen" id="screen">
-          <div class="home" id="home">
-            <div class="clock" id="clock"></div>
-            <div class="date" id="date"></div>
-            <p>Enable CareLoop in the Alexa app, then say “Alexa, …” or pick a prompt below.</p>
+  <section class="stage" aria-label="Devices">
+    <div class="table">
+      <!-- Maya's Echo Show -->
+      <article class="device show" id="device-show" data-state="idle" aria-label="Maya’s Echo Show">
+        <div class="object">
+          <div class="bezel">
+            <span class="camera" aria-hidden="true"></span>
+            <div class="screen" id="screen">
+              <div class="home" id="home">
+                <div class="clock" id="clock"></div>
+                <div class="date" id="date"></div>
+                <p>Enable CareLoop in the Alexa app, then say “Alexa, …” or open <b>Things to say</b>.</p>
+              </div>
+              <div class="convo" id="convo" hidden></div>
+              <div class="app-slot" id="app-slot"></div>
+              <div class="lightbar" aria-hidden="true"><span></span></div>
+            </div>
           </div>
-          <div class="convo" id="convo" hidden></div>
-          <div class="app-slot" id="app-slot"></div>
+          <div class="foot" aria-hidden="true"></div>
         </div>
-        <div class="lightbar" aria-hidden="true"><span></span></div>
-      </div>
-      <form class="composer" data-device="show">
-        <button type="button" class="mic" data-mic="show" aria-label="Talk to Maya’s Show"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="7" y="2" width="6" height="11" rx="3"/><path d="M4 10a6 6 0 0 0 12 0M10 16v2"/></svg></button>
-        <input aria-label="Say something to Maya’s Show" placeholder="Say to Maya’s Show…">
-        <button class="send">Send</button>
-      </form>
-      <div class="chips" id="show-chips" aria-label="Things Maya can say"></div>
-    </article>
+        <div class="nameplate"><h2>Maya’s Echo Show</h2><span>Patient</span><span class="state" id="show-state">idle</span></div>
+        <form class="composer" data-device="show">
+          <button type="button" class="mic" data-mic="show" aria-label="Talk to Maya’s Show"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="7" y="2" width="6" height="11" rx="3"/><path d="M4 10a6 6 0 0 0 12 0M10 16v2"/></svg></button>
+          <input aria-label="Say something to Maya’s Show" placeholder="Say to Maya’s Show…">
+          <details class="prompts" data-device="show">
+            <summary title="Things to say"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h9"/></svg><span>Things to say</span></summary>
+            <div class="chips" id="show-chips" aria-label="Things Maya can say"></div>
+          </details>
+          <button class="send">Send</button>
+        </form>
+      </article>
 
-    <div class="middle">
+      <!-- Sam's Echo Dot -->
       <article class="device dot" id="device-dot" data-state="idle" aria-label="Sam’s Echo Dot">
-        <div class="device-head"><h2>Sam’s Echo Dot</h2><span class="state" id="dot-state">idle</span></div>
-        <div class="ring-wrap"><div class="ring" id="ring" role="img" aria-label="Light ring"></div></div>
-        <p class="caption" id="dot-caption" aria-live="polite">Voice only. This caption shows exactly what Sam hears.</p>
+        <div class="heard">
+          <p class="caption" id="dot-caption" aria-live="polite">Voice only. This caption shows exactly what Sam hears.</p>
+        </div>
+        <div class="object">
+          <svg class="dot-svg" id="ring" viewBox="0 0 200 224" role="img" aria-label="Sam's Echo Dot and its light ring">
+            <defs>
+              <radialGradient id="dot-fabric" cx="38%" cy="30%" r="78%"><stop offset="0" stop-color="#666e77"/><stop offset=".45" stop-color="#3a3f45"/><stop offset=".82" stop-color="#23272c"/><stop offset="1" stop-color="#191c20"/></radialGradient>
+              <pattern id="dot-weave" width="4" height="4" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r=".75" fill="#fff" opacity=".08"/></pattern>
+              <radialGradient id="dot-sheen" cx="34%" cy="20%" r="38%"><stop offset="0" stop-color="#fff" stop-opacity=".16"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+              <radialGradient id="dot-pool-cyan"><stop offset="0" stop-color="#19c3f0" stop-opacity=".6"/><stop offset="1" stop-color="#19c3f0" stop-opacity="0"/></radialGradient>
+              <radialGradient id="dot-pool-yellow"><stop offset="0" stop-color="#f5c400" stop-opacity=".6"/><stop offset="1" stop-color="#f5c400" stop-opacity="0"/></radialGradient>
+              <filter id="dot-bloom" x="-30%" y="-300%" width="160%" height="700%"><feGaussianBlur stdDeviation="5"/></filter>
+              <filter id="dot-soft" x="-20%" y="-100%" width="140%" height="300%"><feGaussianBlur stdDeviation="3"/></filter>
+            </defs>
+            <ellipse class="pool" cx="100" cy="207" rx="98" ry="14"/>
+            <ellipse class="contact" cx="100" cy="199" rx="68" ry="6" filter="url(#dot-soft)"/>
+            <circle cx="100" cy="104" r="92" fill="url(#dot-fabric)"/>
+            <circle cx="100" cy="104" r="92" fill="url(#dot-weave)"/>
+            <circle cx="100" cy="104" r="92" fill="url(#dot-sheen)"/>
+            <path class="band-bed" d="M179.5 146.3 A90 90 0 0 1 20.5 146.3"/>
+            <path class="bloom" d="M179.5 146.3 A90 90 0 0 1 20.5 146.3" pathLength="100" filter="url(#dot-bloom)"/>
+            <path class="band" d="M179.5 146.3 A90 90 0 0 1 20.5 146.3" pathLength="100"/>
+            <path class="glint" d="M179.5 146.3 A90 90 0 0 1 20.5 146.3" pathLength="100"/>
+          </svg>
+        </div>
+        <div class="nameplate"><h2>Sam’s Echo Dot</h2><span>Family, shared speaker</span><span class="state" id="dot-state">idle</span></div>
         <form class="composer" data-device="dot">
           <button type="button" class="mic" data-mic="dot" aria-label="Talk to Sam’s Dot"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="7" y="2" width="6" height="11" rx="3"/><path d="M4 10a6 6 0 0 0 12 0M10 16v2"/></svg></button>
           <input aria-label="Say something to Sam’s Dot" placeholder="Say to Sam’s Dot…">
+          <details class="prompts" data-device="dot">
+            <summary title="Things to say"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h9"/></svg><span>Things to say</span></summary>
+            <div class="chips" id="dot-chips" aria-label="Things Sam can say"></div>
+          </details>
           <button class="send">Send</button>
         </form>
-        <div class="chips" id="dot-chips" aria-label="Things Sam can say"></div>
       </article>
-
     </div>
 
-    <div class="right">
-      <section class="phone" aria-label="Alexa app, simulated">
-        <div class="phone-head"><h2>Alexa app</h2><span class="tag">Simulated</span></div>
-        <div class="account" data-account="maya">
-          <div><strong>Maya</strong><span class="who">Patient, Echo Show</span></div>
-          <button data-link="maya">Enable CareLoop</button>
-        </div>
-        <div class="account" data-account="sam">
-          <div><strong>Sam</strong><span class="who">Caregiver, Echo Dot</span></div>
-          <button data-link="sam">Enable CareLoop</button>
-        </div>
-        <button id="open-invite" class="quiet wide" disabled>Open Maya’s invitation as Sam</button>
-        <div class="share">
-          <h3>Share a document with CareLoop</h3>
-          <div class="pair">
-            <label class="small">From <select id="share-as"><option value="maya">Maya</option><option value="sam">Sam</option></select></label>
-            <label class="small">Type <select id="share-type"><option value="prescription">Prescription</option><option value="discharge_plan">Discharge plan</option></select></label>
-          </div>
-          <label class="file"><input type="file" id="share-file" accept="application/pdf,image/png,image/jpeg" aria-label="Document file"><span>Choose a PDF or photo</span></label>
-          <button id="share-upload" class="wide">Share file</button>
-          <div class="or"><span>or use a sample</span></div>
-          <div class="pair">
-            <select id="share-sample" aria-label="Sample document"><option value="typed">Typed PDF</option><option value="scanned">Scanned PDF (OCR)</option><option value="photo">Phone photo (OCR)</option><option value="injection">Prompt-injection test</option></select>
-            <button id="share-sample-go" class="quiet">Share sample</button>
-          </div>
-          <p id="share-status" class="small muted" aria-live="polite"></p>
-        </div>
-        <p class="fine">Linking uses synthetic credentials held by this host. They never reach the browser or the app views.</p>
-        <p class="fine">CareLoop <a id="privacy-link" href="#" target="_blank" rel="noopener">privacy policy</a> ·
-          <a id="terms-link" href="#" target="_blank" rel="noopener">terms of use</a></p>
-      </section>
-    <aside class="backstage" aria-label="Demo controls">
-      <div class="bs-head">
-        <h2>Backstage</h2>
-        <p>Demo controls. Not part of the product.</p>
-      </div>
-      <section class="bs-block">
-        <label class="bs-label" for="planner">Planner</label>
-        <div class="bs-row">
-          <select id="planner"><option value="ollama">Alexa+ stand-in: Ollama</option><option value="openai">Alexa+ stand-in: OpenAI-compatible API</option><option value="mock">Mock replay</option></select>
-          <button id="reset" class="ghost">Reset conversation</button>
-        </div>
-        <div class="bs-row">
-          <button id="ring-reminder" class="ghost" disabled>Ring next reminder</button>
-          <span id="reminder-count" class="small">No reminders set</span>
-        </div>
-        <div class="bs-row">
-          <button id="demo-reset" class="ghost">Reset demo data</button>
-          <span id="demo-reset-note" class="small" aria-live="polite">Back to Maya's starting day</span>
-        </div>
-        <label class="switch small"><input type="checkbox" id="show-inspector" checked><span class="track" aria-hidden="true"></span> Show MCP inspector</label>
-      </section>
-      <section class="bs-block inspector" id="inspector">
-        <h3>MCP inspector</h3>
-        <ol class="trace" id="trace"></ol>
-      </section>
-    </aside>
-    </div>
+    <section class="console inspector" id="inspector" aria-label="MCP inspector">
+      <div class="console-head"><h3>MCP inspector</h3><p>Live traffic between the assistant and CareLoop</p></div>
+      <ol class="trace" id="trace"></ol>
+    </section>
   </section>
+
+  <aside class="rail">
+    <section class="phone" aria-label="Alexa app, simulated">
+      <div class="phone-screen">
+        <div class="phone-head"><h2>Alexa app</h2><span class="tag">Simulated</span></div>
+        <div class="phone-body">
+          <h3>CareLoop skill</h3>
+          <div class="account" data-account="maya">
+            <span class="avatar" aria-hidden="true">M</span>
+            <div><strong>Maya</strong><span class="who">Patient, Echo Show</span></div>
+            <button data-link="maya">Enable CareLoop</button>
+          </div>
+          <div class="account" data-account="sam">
+            <span class="avatar" aria-hidden="true">S</span>
+            <div><strong>Sam</strong><span class="who">Caregiver, Echo Dot</span></div>
+            <button data-link="sam">Enable CareLoop</button>
+          </div>
+          <button id="open-invite" class="quiet wide" disabled>Open Maya’s invitation as Sam</button>
+
+          <div class="share">
+            <h3>Share a document</h3>
+            <div class="pair">
+              <label class="small">From <select id="share-as"><option value="maya">Maya</option><option value="sam">Sam</option></select></label>
+              <label class="small">Type <select id="share-type"><option value="prescription">Prescription</option><option value="discharge_plan">Discharge plan</option></select></label>
+            </div>
+            <div class="pair">
+              <select id="share-sample" aria-label="Sample document"><option value="typed">Typed PDF</option><option value="scanned">Scanned PDF (OCR)</option><option value="photo">Phone photo (OCR)</option><option value="injection">Prompt-injection test</option></select>
+              <button id="share-sample-go">Share sample</button>
+            </div>
+            <div class="pair">
+              <label class="file"><input type="file" id="share-file" accept="application/pdf,image/png,image/jpeg" aria-label="Document file"><span>Or choose a PDF or photo</span></label>
+              <button id="share-upload" class="quiet">Share file</button>
+            </div>
+            <p id="share-status" class="small muted" aria-live="polite"></p>
+          </div>
+          <p class="fine">Linking uses synthetic credentials held by this host. They never reach the browser or the app views.</p>
+          <p class="fine">CareLoop <a id="privacy-link" href="#" target="_blank" rel="noopener">privacy policy</a> and
+            <a id="terms-link" href="#" target="_blank" rel="noopener">terms of use</a></p>
+        </div>
+      </div>
+    </section>
+
+    <section class="backstage" aria-label="Demo controls">
+      <div class="bs-head"><h2>Backstage</h2><p>Demo controls, not part of the product</p></div>
+      <label class="bs-label" for="planner">Planner</label>
+      <select id="planner"><option value="ollama">Alexa+ stand-in: Ollama</option><option value="openai">Alexa+ stand-in: OpenAI-compatible API</option><option value="mock">Mock replay</option></select>
+      <div class="bs-grid">
+        <button id="ring-reminder" class="ghost" disabled>Ring next reminder</button>
+        <button id="reset" class="ghost">Reset conversation</button>
+        <button id="demo-reset" class="ghost">Reset demo data</button>
+        <label class="switch small"><input type="checkbox" id="show-inspector" checked><span class="track" aria-hidden="true"></span> Inspector</label>
+      </div>
+      <p class="bs-note"><span id="reminder-count">No reminders set</span><br><span id="demo-reset-note" aria-live="polite">Back to Maya's starting day</span></p>
+    </section>
+  </aside>
 </main>
 <script src="/static/sim.js"></script>
 </body>

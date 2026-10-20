@@ -90,13 +90,16 @@ def create_alexa_sim_app(settings: AlexaSimSettings | None = None, pool: MCPClie
     async def device_event(device: Device, **payload: Any) -> None:
         await broadcast(device.event("device", **payload))
 
-    async def announce(device_id: str, reply: str, screen: dict[str, Any] | None = None) -> None:
+    async def announce(device_id: str, reply: str, screen: dict[str, Any] | None = None,
+                       offer: dict[str, Any] | None = None) -> None:
         """Speak on a device without a user turn (document ready, invite accepted, …).
 
         Pushed over the websocket and also kept briefly, numbered, so a page that missed the
         push (reloading, reconnecting, a backgrounded tab) picks it up from /api/announcements."""
         host_state["announce_seq"] += 1
-        entry = {"id": host_state["announce_seq"], "device_id": device_id, "reply": reply, "screen": screen}
+        devices[device_id].said(reply, offer)  # conversation memory: a following "yes" refers to this line
+        entry = {"id": host_state["announce_seq"], "device_id": device_id, "reply": reply, "screen": screen,
+                 "expects_reply": offer is not None}  # the page reopens the microphone for the answer
         host_state["announcements"] = (host_state["announcements"] + [entry])[-8:]
         await trace({"type": "turn", "device_id": device_id, "planner": "host", "tools": [], "reply": reply,
                      "needs_confirmation": False})
@@ -146,7 +149,10 @@ def create_alexa_sim_app(settings: AlexaSimSettings | None = None, pool: MCPClie
         screen = ({"tool": "get_intake_status", "resource_uri": data["view"],
                    "result": {"structuredContent": data, "isError": False}}
                   if not result["isError"] and data.get("view") else None)
-        await announce("show", reply, screen)
+        step = data.get("next_step")  # e.g. "Want to go through them now?" and the tool that "yes" runs
+        offer = ({"tool": step["tool"], "arguments": step.get("arguments") or {}, "retry_text": None}
+                 if isinstance(step, dict) and step.get("tool") else None)
+        await announce("show", reply, screen, offer)
 
     pool = pool or MCPClientPool(settings.mcp_url, trace)
     orchestrator = Orchestrator(pool, planner or build_planner(settings), max_steps=settings.max_tool_steps, trace=trace)
@@ -241,7 +247,11 @@ def create_alexa_sim_app(settings: AlexaSimSettings | None = None, pool: MCPClie
         """Anything a visitor does to the demo postpones the idle reset."""
         if request.method == "POST" and request.url.path not in {"/api/demo/reset", "/api/tts", "/api/stt"}:
             host_state.update(last_used=time.monotonic(), used=True)
-        return await call_next(request)
+        response = await call_next(request)
+        # The page and its assets change between runs; make browsers revalidate (ETag) instead of reusing a stale copy.
+        if request.url.path == "/" or request.url.path.startswith("/static/"):
+            response.headers["Cache-Control"] = "no-cache"
+        return response
 
     @app.get("/", include_in_schema=False)
     async def index() -> FileResponse:

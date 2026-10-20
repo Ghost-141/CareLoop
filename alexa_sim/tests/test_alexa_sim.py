@@ -861,3 +861,76 @@ def test_the_inspector_records_exactly_what_the_device_heard() -> None:
         client.post("/api/utterance", json={"device_id": "show", "text": "Fine."})
         turns = [e for e in client.get("/api/state").json()["trace"] if e.get("type") == "turn"]
     assert turns and turns[-1]["heard"] == "Fine."
+
+
+# ---- a spoken announcement is part of the conversation, so a following "yes" has something to refer to ------------
+REVIEW_TOOLS = TOOLS + [{"name": "review_plan_by_voice", "annotations": {"readOnlyHint": False},
+                         "_meta": {"ui": {"resourceUri": "ui://careloop/plan-review"}}}]
+DOC_READY = "Your document is ready. 8 items need your approval. Want to go through them now?"
+GO_THROUGH = {"tool": "review_plan_by_voice", "arguments": {}, "retry_text": None}
+
+
+class RecordingPlanner:
+    """A stand-in model that reads the conversation memory: it says yes to the question it was just asked."""
+    name = "recording"
+
+    def __init__(self) -> None:
+        self.histories: list[list[dict]] = []
+
+    async def next(self, utterance, tools, history, steps, context=None):
+        from alexa_sim.planners import Action
+        self.histories.append(list(history))
+        if steps:
+            return Action(say="Done.")
+        asked = next((m["content"] for m in reversed(history) if m.get("role") == "assistant"), "")
+        if utterance.lower().startswith("yes") and "go through them" in str(asked).lower():
+            return Action(tool="review_plan_by_voice", arguments={})
+        return Action(say="Sorry, I didn't catch that.")
+
+
+def test_device_remembers_what_it_said_and_caps_its_memory() -> None:
+    device = Device("show", DeviceKind.SHOW, "maya", account="maya")
+    device.said(DOC_READY, GO_THROUGH)
+    assert device.history == [{"role": "assistant", "content": DOC_READY}] and device.offer == GO_THROUGH
+    device.said("")  # nothing spoken, nothing remembered
+    assert len(device.history) == 1
+    for n in range(60):
+        device.said(f"Reminder {n}.")
+    assert len(device.history) == 40 and device.offer is None
+
+
+@pytest.mark.asyncio
+async def test_yes_after_a_document_ready_announcement_runs_the_review() -> None:
+    pool = FakePool(REVIEW_TOOLS, {"review_plan_by_voice": ok("Item 1 of 4: Take a short walk.", view="ui://careloop/plan-review")})
+    device = Device("show", DeviceKind.SHOW, "maya", account="maya")
+    device.said(DOC_READY, GO_THROUGH)
+    turn = await Orchestrator(pool, RecordingPlanner(), fallback=None).respond(device, "yes")
+    assert pool.calls == [("review_plan_by_voice", {})] and turn.reply.startswith("Item 1 of 4")
+
+
+@pytest.mark.asyncio
+async def test_the_model_understands_yes_from_conversation_memory_alone() -> None:
+    """No stored offer: the planner must be reached and must see the announcement in the history it is given."""
+    pool = FakePool(REVIEW_TOOLS, {"review_plan_by_voice": ok("Item 1 of 4: Take a short walk.", view="ui://careloop/plan-review")})
+    device = Device("show", DeviceKind.SHOW, "maya", account="maya")
+    device.said(DOC_READY)  # announcement remembered, but no offer
+    planner = RecordingPlanner()
+    turn = await Orchestrator(pool, planner, fallback=None).respond(device, "yes")
+    assert planner.histories and planner.histories[0][0] == {"role": "assistant", "content": DOC_READY}
+    assert pool.calls == [("review_plan_by_voice", {})] and turn.reply.startswith("Item 1 of 4")
+
+
+@pytest.mark.asyncio
+async def test_yes_with_nothing_said_is_still_just_okay() -> None:
+    device = Device("show", DeviceKind.SHOW, "maya", account="maya")
+    planner = RecordingPlanner()
+    turn = await Orchestrator(FakePool(REVIEW_TOOLS, {}), planner, fallback=None).respond(device, "yes")
+    assert turn.reply == "Okay." and planner.histories == []
+
+
+def test_openai_history_never_opens_with_an_assistant_message() -> None:
+    from alexa_sim.planners import _openai_history
+    out = _openai_history([{"role": "assistant", "content": DOC_READY}])
+    assert out[0]["role"] == "user" and out[1] == {"role": "assistant", "content": DOC_READY}
+    plain = _openai_history([{"role": "user", "content": "hi"}, {"role": "assistant", "content": "hello"}])
+    assert [m["role"] for m in plain] == ["user", "assistant"]  # a normal conversation is untouched

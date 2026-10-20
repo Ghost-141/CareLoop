@@ -288,6 +288,9 @@ def _openai_history(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
                               "content": message.get("content", "")})
         else:
             converted.append({"role": message.get("role", "user"), "content": message.get("content", "")})
+    if converted and converted[0]["role"] == "assistant":
+        # An announcement can open the memory. Several gateways need the first message to be the user's.
+        converted.insert(0, {"role": "user", "content": "(Alexa spoke first, without being asked.)"})
     return converted
 
 

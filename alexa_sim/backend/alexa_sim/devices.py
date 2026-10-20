@@ -63,5 +63,20 @@ class Device:
         if len(starts) > 6:  # trim on turn boundaries so tool calls keep their results
             del self.history[:starts[-6]]
 
+    def said(self, text: str, offer: dict[str, Any] | None = None) -> None:
+        """Remember something the device said on its own (document ready, a reminder, …).
+
+        Without this the next "yes" has nothing to refer to: the planner would never see the question.
+        ``offer`` is the next step the server proposed in that line; a "yes" then runs exactly that tool.
+        """
+        if not text:
+            return
+        self.history.append({"role": "assistant", "content": text})
+        self.offer = offer
+        if len(self.history) > 40:  # announcements arrive without user turns, so cap the memory
+            del self.history[:-40]
+            while self.history and self.history[0].get("role") == "tool":
+                self.history.pop(0)
+
     def event(self, type: str, **payload: object) -> dict[str, object]:
         return {"type": type, "device_id": self.id, "state": self.state, "notification": self.notification, **payload}

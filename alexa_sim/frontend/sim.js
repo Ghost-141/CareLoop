@@ -171,11 +171,14 @@
   function chips(container, list, id) {
     list.forEach((text) => {
       const b = document.createElement("button"); b.type = "button"; b.className = "chip"; const said = text.replace(/^Alexa, /, ""); b.textContent = said.charAt(0).toUpperCase() + said.slice(1);
-      b.addEventListener("click", () => say(id, text)); container.append(b);
+      b.addEventListener("click", () => { container.closest("details").open = false; say(id, text); }); container.append(b);
     });
   }
   chips($("#show-chips"), SHOW_CHIPS, "show");
   chips($("#dot-chips"), DOT_CHIPS, "dot");
+  // Things to say opens over the device; Escape or a click elsewhere closes it.
+  document.addEventListener("click", (e) => $$(".prompts[open]").forEach((d) => { if (!d.contains(e.target)) d.open = false; }));
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") $$(".prompts[open]").forEach((d) => { d.open = false; $("summary", d).focus(); }); });
 
   // ---- microphone capture for Whisper: 16 kHz mono with simple energy VAD ------------------
   const mic = {
@@ -365,7 +368,7 @@
             hostInfo: { name: "careloop-assistant-simulator", version: "1" },
             hostCapabilities: { serverTools: {} },
             hostContext: { theme: "light", displayMode: "inline", platform: "web",
-              containerDimensions: { maxHeight: 560 } } });
+              containerDimensions: { maxHeight: Math.max(240, $("#screen").clientHeight) } } });
           break;
         case "ui/notifications/initialized":
           post({ jsonrpc: "2.0", method: "ui/notifications/tool-result", params: screen.result });
@@ -377,7 +380,7 @@
           } catch (e) { fail("CareLoop action unavailable"); }
           break;
         case "ui/notifications/size-changed":
-          frame.style.height = Math.max(140, Math.min(560, Number(m.params?.height) || 260)) + "px";
+          frame.style.height = Math.max(140, Number(m.params?.height) || 260) + "px";  // the slot scrolls
           break;
         default:
           if (m.id !== undefined) fail("Method not supported by this host");
@@ -386,6 +389,7 @@
     window.addEventListener("message", listener);
     frame.srcdoc = html;
     $("#app-slot").replaceChildren(frame);
+    $("#screen").classList.add("has-app");
     activeApp = { frame, listener, post, result: screen.result };
   }
 
@@ -429,7 +433,7 @@
   });
   $("#ring-reminder").addEventListener("click", () => api("/api/reminders/ring", {}).then(refresh).catch(() => {}));
   $("#planner").addEventListener("change", (e) => api("/api/planner", { mode: e.target.value }).then(refresh));
-  $("#reset").addEventListener("click", () => api("/api/conversation/reset", {}).then(() => { $("#convo").replaceChildren(); $("#app-slot").replaceChildren(); }));
+  $("#reset").addEventListener("click", () => api("/api/conversation/reset", {}).then(() => { $("#convo").replaceChildren(); $("#app-slot").replaceChildren(); $("#screen").classList.remove("has-app"); }));
   // Two clicks, so a stray one never wipes someone's demo.
   let resetArmed = null;
   $("#demo-reset").addEventListener("click", async () => {
@@ -446,7 +450,7 @@
     button.disabled = false; button.textContent = "Reset demo data";
   });
   function clearDevices() {
-    $("#convo").replaceChildren(); $("#convo").hidden = true; $("#home").hidden = false; $("#app-slot").replaceChildren();
+    $("#convo").replaceChildren(); $("#convo").hidden = true; $("#home").hidden = false; $("#app-slot").replaceChildren(); $("#screen").classList.remove("has-app");
     $("#dot-caption").textContent = "Voice only. This caption shows exactly what Sam hears.";
     $("#trace").replaceChildren();
   }
@@ -516,7 +520,9 @@
       $("#dot-caption").textContent = msg.reply || "";
     }
     refresh().catch(() => {});
-    await speak(msg.device_id, msg.reply);
+    const completed = await speak(msg.device_id, msg.reply);
+    // Like Alexa, keep listening after a question such as "Want to go through them now?"
+    if (msg.expects_reply && completed && !activeListen) listen(msg.device_id);
   }
 
   function connect() {
