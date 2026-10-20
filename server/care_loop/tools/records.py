@@ -199,6 +199,15 @@ class TaskDone(BaseModel):
     done: bool = Field(description="yes if the task was done today")
 
 
+class TeachBackAnswer(BaseModel):
+    """Elicitation schema for one teach-back question: the person's own words. CareLoop checks them in code."""
+    answer: str = Field(description="What the person said, in their own words")
+
+
+TEACH_BACK_ATTEMPTS = 2  # a second try, then the plan is read back
+TEACH_BACK_MISS_LIMIT = 3  # misses in a row before the rest is left for the clinician
+
+
 def _review_offer(service, identity) -> NextStep | None:
     voice, _screen = service.voice_reviewable(identity)
     if not voice:
@@ -419,6 +428,7 @@ _TITLES: dict[str, str] = {
     "delete_care_record": "Delete care record",
     "get_private_view": "Get private view",
     "get_suggestions": "What needs my attention",
+    "start_teach_back": "Check my understanding",
 }
 
 
@@ -990,6 +1000,93 @@ def register(mcp: MCPServer, deps) -> None:
         if by_person:
             speakable += " " + " ".join(f"{who} has {_join(items)}." for who, items in by_person.items())
         return _result(speakable, view="check-in-trend", refs=refs)
+
+    @tool("start_teach_back", "teach-back", _WRITE)
+    @_safe_tool("Teach-back is unavailable.")
+    async def start_teach_back(ctx: Context) -> VoiceResult:
+        """Check the patient understood their approved plan ("check I understood my plan", "quiz me on my
+        plan", "teach-back", "check my understanding"). CareLoop asks the person to say back key values (when
+        or how often a medicine is taken, the alert rule's numbers, a warning sign's number) through MCP
+        elicitation and checks every answer itself, so call this with no arguments. It continues a paused
+        session. This is not the daily check-in and not the task list.
+        """
+        from ..teach_back import expected_for, interpret, is_dont_know, is_stop, matches, question_for
+        service = deps.service
+        identity = _patient(deps, ctx)
+        checks = {f"{c['item']['id']}:{c['check']}": c for c in service.teach_back_checks(identity)}
+        workflow = service.active_workflow(identity, "teach_back")
+        if workflow is None:
+            if not checks:
+                return _result("There's nothing in your plan to check yet. Medicines, alert rules and warning signs "
+                               "can be checked once they're approved.", view="teach-back")
+            workflow = service.start_workflow(identity, "teach_back", list(checks)) | {"right": 0, "asked": 0, "missed_streak": 0}
+            say = f"Let's check {_plural(len(checks), 'thing')}. "
+        else:
+            # A paused session also picks up plan values approved since it started.
+            workflow["queue"] = workflow["queue"] + [key for key in checks if key not in workflow["queue"]]
+            say = "Let's pick up where we left off. "
+        queue = workflow["queue"]
+        while workflow["position"] < len(queue):
+            entry = checks.get(queue[workflow["position"]])
+            if entry is None:  # the item was changed or removed since the session started
+                workflow["position"] += 1
+                continue
+            item, check = entry["item"], entry["check"]
+            expected, question = expected_for(item, check), question_for(item, check)
+            prompt, heard, attempts, result = say + question, None, 0, "needs_clarification"
+            while attempts < TEACH_BACK_ATTEMPTS:
+                try:
+                    reply = await ctx.elicit(prompt, TeachBackAnswer)
+                except Exception as exc:  # the client may not support elicitation
+                    raise ValueError("elicitation unavailable") from exc
+                if reply.action != "accept" or is_stop(reply.data.answer):
+                    service.save_workflow(identity, workflow)
+                    left = len(queue) - workflow["position"]
+                    return _result(f"Okay, I've saved your place. {_plural(left, 'question')} left. "
+                                   'Say "check my understanding" anytime.', view="teach-back")
+                attempts += 1
+                if is_dont_know(reply.data.answer):
+                    heard = None
+                    break
+                heard = interpret(check, reply.data.answer, expected)
+                if matches(check, expected, heard):
+                    result = "understood"
+                    break
+                prompt = f"Not quite. Try again: {question}"
+            service.record_teach_back(identity, item, check, result=result, attempts=attempts, expected=expected,
+                                      heard=heard, session_id=workflow["id"])
+            workflow["asked"] += 1
+            if result == "understood":
+                workflow["right"] += 1
+                workflow["missed_streak"] = 0
+                say = "That's right. "
+            else:
+                workflow["missed_streak"] += 1
+                # Read the plan back in its own words. Never a reason, never advice.
+                comfort = "That's okay. " if heard is None else ""
+                say = f"{comfort}Your plan says: {_describe(service, item)}. Next: "
+            workflow["position"] += 1
+            workflow = service.save_workflow(identity, workflow)
+            if workflow["missed_streak"] >= TEACH_BACK_MISS_LIMIT and workflow["position"] < len(queue):
+                for key in queue[workflow["position"]:]:
+                    if key in checks:
+                        rest = checks[key]
+                        service.record_teach_back(identity, rest["item"], rest["check"], result="skipped", attempts=0,
+                                                  expected=expected_for(rest["item"], rest["check"]), heard=None,
+                                                  session_id=workflow["id"])
+                workflow |= {"status": "done", "position": len(queue)}
+                service.save_workflow(identity, workflow)
+                return _result(f"Let's leave the rest for your clinician. You got {workflow['right']} of "
+                               f"{workflow['asked']} right, and I've noted it for your visit handoff.", view="teach-back")
+        workflow["status"] = "done"
+        service.save_workflow(identity, workflow)
+        missed = workflow["asked"] - workflow["right"]
+        speakable = ("That's right. " if say == "That's right. " else "") + f"Done. You got {workflow['right']} of {workflow['asked']} right."
+        if missed == 1:
+            speakable += " The one to look at again is on your screen, with the line it came from."
+        elif missed:
+            speakable += " The ones to look at again are on your screen, with the lines they came from."
+        return _result(speakable, view="teach-back")
 
     @tool("record_pain_observation", "check-in-trend", _IDEMPOTENT_WRITE)
     @_safe_tool("Observation is unavailable.")

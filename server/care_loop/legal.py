@@ -26,6 +26,8 @@ PRIVACY_HTML = _page("privacy policy", """
 <li>A log of what family members viewed or did (never the content), so you can ask who accessed your data.</li>
 <li>A short notice, kept for up to 7 days, that you gave a family member a task. It names no task. They see the details only when they ask.</li>
 <li>Suggestions, such as an upcoming visit or a missed check-in, are worked out from the records above when you ask. Nothing new is kept about what you say, and you can turn suggestions off.</li>
+<li>When you ask CareLoop to check you understood your plan, it keeps whether each answer matched your plan and the value it heard, such as "every 12 hours", never your words. Your family can't see these results; they appear in your visit handoff.</li>
+<li>Your private screen shows which document line, or which of your records, each item came from. Nothing new is kept to do this.</li>
 </ul>
 <h2>Uploaded documents</h2>
 <p>When you share a prescription or plan, CareLoop reads it on its own server (text extraction, and OCR for scans or

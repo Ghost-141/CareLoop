@@ -117,6 +117,13 @@
   .tally b { display:block; font:600 1.375rem/1.2 var(--round); font-variant-numeric:tabular-nums; }
   .tally span { font-size:.8125rem; color:var(--muted); }
   .tally .alert b { color:var(--danger); }
+  .tally-note { color:var(--muted); font-size:.8125rem; margin:-4px 0 0; }
+
+  /* Provenance: every claim says where it came from, a document line (the slip) or a record (this row). */
+  .because { display:flex; gap:8px; align-items:baseline; margin:8px 0 0; font-size:.875rem; color:var(--muted); }
+  .because b { font:600 .6875rem/1 var(--sans); text-transform:uppercase; letter-spacing:.06em; color:var(--ink); flex:none; }
+  .said { margin:6px 0 0; font-size:.875rem; color:var(--muted); }
+  .said q { color:var(--ink); }
 
   .chart { background:var(--surface); border:1px solid var(--rule); border-radius:14px; padding:12px 12px 8px; }
   svg.plot { width:100%; height:auto; display:block; font:12px var(--sans); }
@@ -233,8 +240,10 @@
 
   const TONE = { active: "ok", approved: "ok", done: "ok", completed: "ok", acknowledged: "ok", accepted: "ok",
     draft: "warn", needs_review: "warn", pending: "warn", pending_review: "warn", action_required: "warn", processing: "warn", correction: "warn",
-    revoked: "danger", rejected: "danger", failed: "danger", missed: "danger", expired: "danger" };
-  const STATUS_WORDS = { needs_review: "Needs review", action_required: "Needs action", pending_review: "Pending review" };
+    revoked: "danger", rejected: "danger", failed: "danger", missed: "danger", expired: "danger",
+    understood: "ok", needs_clarification: "warn" };
+  const STATUS_WORDS = { needs_review: "Needs review", action_required: "Needs action", pending_review: "Pending review",
+    needs_clarification: "Needs another look", not_checked: "Not checked yet" };
   function status(s) {
     const key = s || "active", word = STATUS_WORDS[key] || key.replaceAll("_", " ");
     return el("span", "status " + (TONE[key] || ""), word.charAt(0).toUpperCase() + word.slice(1));
@@ -298,7 +307,7 @@
           ? action("Remove", "danger small", () => callTool("revoke_caregiver", { invitation_id: g.id })) : null)))]));
       const access = d.access || [];
       parts.push(section("Who looked at your care data", [access.length
-        ? rows(access.map((p) => card(p.name, null, (p.actions || []).join(", "))))
+        ? rows(access.map((p) => card(p.name, null, (p.actions || []).join(", ") + (p.last_at ? ". Last on " + when(p.last_at) : ""))))
         : emptyRow("No one else opened your care data.")], "Last 7 days"));
       root.replaceChildren(...parts);
     },
@@ -312,6 +321,23 @@
         action("Mark as seen", "small", () => callTool("acknowledge_alert", { alert_id: u.case_id })))))]));
     },
     "check-in-trend": renderTrend,
+    "teach-back": (d) => {
+      const checks = d.checks || [];
+      if (!checks.length) return empty("Nothing to check yet", "Medicines, alert rules and warning signs can be checked once they're approved.");
+      const done = checks.filter((c) => c.result !== "not_checked").length;
+      root.replaceChildren(section(null, [rows(checks.map((c) => {
+        const row = card(c.question, c.result, c.asked_at ? "Checked " + when(c.asked_at) : "Say \"check my understanding\" to go through it.");
+        if (c.result === "needs_clarification") {
+          const said = el("p", "said");
+          said.append(document.createTextNode("Your plan: "), el("q", "", planValue(c.check, c.expected)),
+            document.createTextNode(c.heard ? ". You said: " : ". You weren't sure."));
+          if (c.heard) said.append(el("q", "", planValue(c.check, c.heard)));
+          row.append(said);
+        }
+        provenance(c, row);
+        return row;
+      }))], done + " of " + checks.length + " checked. Each answer is checked against the line it came from."));
+    },
     "visit-handoff": renderHandoff,
     "records": renderRecords, "history": renderRecords,
     "export": (d) => {
@@ -319,6 +345,16 @@
       renderRecords(d, true);
     },
   };
+  // A plan value as words: "8 AM", "every 8 hours", "only when needed", "39".
+  function planValue(check, v) {
+    if (!v) return "";
+    if (v.as_needed !== undefined) return v.as_needed ? "only when needed" : "at set times";
+    if (v.every_hours) return "every " + Math.round(v.every_hours * 10) / 10 + " hours";
+    if (v.period) return "in the " + v.period;
+    const t = v.time || (v.times || []).join(", ");
+    if (t) return t;
+    return String(v.number);
+  }
   function emptyRow(text) { return rows([el("div", "item meta", text)]); }
   function sentence(t) { return t ? t.charAt(0).toUpperCase() + t.slice(1) : "Access"; }
 
@@ -342,13 +378,26 @@
     });
     return s;
   }
-  function sourceLines(item, c) {
-    if (!item.citation) return;
-    const ex = item.citation.excerpts || [];
+  // Where a claim came from: the record it was computed from ("because"), then the document lines behind it.
+  function provenance(item, c) {
+    const b = item.because;
+    if (b) {
+      const row = el("p", "because");
+      row.append(el("b", "", "Because"), el("span", "", b.label + (b.when ? ", " + when(b.when) : "")));
+      c.append(row);
+    }
+    const cit = item.citation || (b && b.citation);
+    citeSlip(cit && cit.title, cit && (cit.excerpts || cit.page_excerpts), item.text, c);
+  }
+  // A citation may carry a whole page (older plans); keep only the lines this item came from.
+  function citeSlip(title, excerpts, text, c) {
+    let ex = excerpts || [];
+    if (ex.length && !ex.some((e) => e.line_id)) ex = matching(ex, text).length ? matching(ex, text) : ex.slice(0, 1);
     if (!ex.length) return;
-    c.append(slip("From " + (item.citation.title || "your document"), ex.map((e) => ({
+    c.append(slip("From " + (title || "your document"), ex.map((e) => ({
       ln: e.line_id || "p." + e.page, text: e.excerpt, ocr: e.method === "ocr", confidence: e.confidence_pct }))));
   }
+  function sourceLines(item, c) { provenance(item, c); }
   function input(value, placeholder, id) {
     const i = document.createElement("input"); i.value = value || ""; i.placeholder = placeholder; i.id = id; return i;
   }
@@ -452,6 +501,9 @@
     if (VIEW === "plan-review" && pendingItems.length)
       parts.push(section(pendingItems.length + (pendingItems.length === 1 ? " item to check" : " items to check"), pendingItems.map(reviewCard),
         "Each one shows the line it came from. Nothing reaches your plan until you add it."));
+    if (VIEW === "tasks" && (d.suggestions || []).length)
+      parts.push(section("Worth raising", [rows(d.suggestions.map((s) => { const c = card(s.say); provenance(s, c); return c; }))],
+        "Worked out from your records. Each one says what it came from."));
     const shown = VIEW === "plan-review" ? done : items;
     if (shown.length) {
       const sorted = VIEW === "tasks" ? shown.slice().sort((a, b) => ((a.times || [])[0] || "99").localeCompare((b.times || [])[0] || "99")) : shown;
@@ -498,31 +550,50 @@
     a.append(el("i", "solid"), document.createTextNode("Pain, 0 to 10")); legend.append(a);
     if ((d.thresholds || []).length) { b.append(el("i"), document.createTextNode("Alert line from your plan")); legend.append(b); }
     chart.append(legend);
+    (d.rules || []).forEach((r) => {
+      const why = el("p", "because");
+      why.append(el("b", "", "Alert line"), el("span", "", `Pain ${r.threshold} or higher for ${r.consecutive_days} days in a row`));
+      chart.append(why);
+      if (r.citation) citeSlip(r.citation.title, r.citation.excerpts, r.text, chart);
+    });
     root.replaceChildren(chart, section("Check-ins", [rows(obs.slice().reverse().map((o) =>
-      card("Pain " + o.pain_score + " out of 10", o.corrects_id ? "correction" : null, when(o.observed_at))))]));
+      card("Pain " + o.pain_score + " out of 10", o.corrects_id ? "correction" : null,
+        when(o.observed_at) + (o.recorded_by ? ". Recorded by " + o.recorded_by : ""))))]));
   }
 
   function renderHandoff(d) {
     const h = (d.handoff || {}).data || d.handoff || {};
     const t = h.totals || {};
+    const range = when(h.from_date) + " to " + when(h.to_date);
     const parts = [section(h.label || "Visit handoff", [tally([
       [t.plan_items, "plan items"], [t.task_events, "tasks done"], [t.missed_tasks, "missed", true], [t.observations, "check-ins"],
-      [t.alerts, "alerts", true], [t.questions, "questions"], [t.corrections, "corrections"]])],
-      when(h.from_date) + " to " + when(h.to_date))];
-    const group = (title, list, fn) => { if (list && list.length) parts.push(section(title, [rows(list.map(fn))])); };
-    group("Questions for your clinician", h.questions, (q) => card(sentence(q.text), null, "Asked " + when(q.asked_at)));
-    group("Plan", h.plan_items, (p) => {
-      const c = card(p.text, p.status, [p.type === "PLAN_RULE" ? "Follow-up rule" : "Task", (p.times || []).join(", "),
-        p.type === "PLAN_TASK" ? (p.assignee === "patient" ? "Patient" : p.assignee) : null].filter(Boolean).join(". "));
-      const ex = matching((p.source_citation || {}).page_excerpts || [], p.text);
-      if (ex.length) c.append(slip("From the source", ex.map((e) => ({ ln: "p." + e.page, text: e.excerpt }))));
-      return c;
-    });
-    group("Completed tasks", h.task_events, (e) => card("Task completed", null, when(e.completed_at) + ", by " + (e.completed_by_name || "the patient")));
+      [t.alerts, "alerts", true], [t.questions, "questions"], [t.corrections, "corrections"]]),
+      el("p", "tally-note", "Counted from your records between " + range + ".")], range)];
+    const group = (title, list, fn, sub) => { if (list && list.length) parts.push(section(title, [rows(list.map(fn))], sub)); };
+    const cite = (c, cit, text) => { if (cit) citeSlip(cit.title, cit.page_excerpts, text, c); return c; };
+    group("Questions for your clinician", h.questions, (q) => card(sentence(q.text), null, "In your words. Asked " + when(q.asked_at)));
+    group("Plan", h.plan_items, (p) => cite(card(p.text, p.status, [p.type === "PLAN_RULE" ? "Follow-up rule" : "Task", (p.times || []).join(", "),
+        p.type === "PLAN_TASK" ? (p.assignee === "patient" ? "Patient" : p.assignee) : null].filter(Boolean).join(". ")), p.source_citation, p.text));
+    group("Understanding check", h.understanding, (u) => {
+      const c = card(u.label || "Plan item", u.result, "Checked " + when(u.asked_at) + (u.attempts > 1 ? ", " + u.attempts + " tries" : ""));
+      return cite(c, u.source_citation, u.text);
+    }, t.checkable ? (h.understanding || []).length + " of " + t.checkable + " plan values checked back by voice" : null);
+    group("Completed tasks", h.task_events, (e) => cite(card(e.task_label || "Task completed", "completed",
+      when(e.completed_at) + ", by " + (e.completed_by_name || "the patient")), e.source_citation, e.task_label));
     group("Check-ins", h.observations, (o) => card("Pain " + o.pain_score + " out of 10", null, when(o.observed_at)));
-    group("Alerts", h.alerts, (a) => a.kind === "missed_task"
-      ? card("Missed: " + (a.task_label || "task"), a.status, "Due " + when(a.due_at) + (a.assignee_name ? ". Assigned to " + a.assignee_name : ""))
-      : card("Follow-up rule triggered", a.status, (a.acknowledgements || []).length + " caregiver acknowledgement(s)"));
+    group("Alerts", h.alerts, (a) => {
+      if (a.kind === "missed_task")
+        return cite(card("Missed: " + (a.task_label || "task"), a.status, "Due " + when(a.due_at) + (a.assignee_name ? ". Assigned to " + a.assignee_name : "")),
+          a.source_citation, a.task_label);
+      const c = card("Follow-up rule triggered", a.status, (a.acknowledgements || []).length + " caregiver acknowledgement(s)");
+      const fired = a.trigger_observations || [];
+      if (fired.length) {
+        const why = el("p", "because");
+        why.append(el("b", "", "Because"), el("span", "", fired.map((o) => "pain " + o.pain_score + " on " + day(o.observed_at)).join(", ")));
+        c.append(why);
+      }
+      return cite(c, a.source_citation, a.rule_text);
+    });
     group("Notes", h.uncertainties, (u) => card(u));
     root.replaceChildren(...parts);
   }

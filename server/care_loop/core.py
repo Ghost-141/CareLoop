@@ -8,7 +8,7 @@ from typing import Any
 from .auth import Identity
 from .storage import CareLoopStorage
 
-CORE_TYPES = {"PATIENT", "DOCUMENT", "PLAN_TASK", "PLAN_RULE", "PLAN_NOTE", "INTAKE_JOB", "QUESTION", "WORKFLOW", "OBSERVATION", "TASK_EVENT", "CONSENT", "ALERT", "HANDOFF", "SEARCH_ENTRY", "AUDIT"}
+CORE_TYPES = {"PATIENT", "DOCUMENT", "PLAN_TASK", "PLAN_RULE", "PLAN_NOTE", "INTAKE_JOB", "QUESTION", "WORKFLOW", "OBSERVATION", "TASK_EVENT", "CONSENT", "ALERT", "HANDOFF", "TEACH_BACK", "SEARCH_ENTRY", "AUDIT"}
 SEARCHABLE_TYPES = {"DOCUMENT", "PLAN_TASK", "PLAN_RULE", "PLAN_NOTE", "OBSERVATION", "TASK_EVENT", "HANDOFF"}
 # These are deliberately capability names, not a general-purpose role bag.  A
 # caregiver never receives ownership or data-rights capabilities.
@@ -475,14 +475,15 @@ class CareLoopService:
             for row in observations:
                 key = self._day(row["observed_at"])
                 if key not in daily or (row["observed_at"], row["created_at"], row["id"]) > (daily[key]["observed_at"], daily[key]["created_at"], daily[key]["id"]): daily[key] = row
-            run_start: str | None = None; run_days = 0; previous: datetime | None = None
+            run_start: str | None = None; run_days = 0; previous: datetime | None = None; run_ids: list[str] = []
             for day in sorted(daily):
                 current = datetime.fromisoformat(day)
                 contiguous = previous is not None and (current - previous).days == 1
                 value = daily[day]["pain_score"]
                 if value >= spec["threshold"]:
-                    if not contiguous: run_start, run_days = day, 0
+                    if not contiguous: run_start, run_days, run_ids = day, 0, []
                     run_days += 1
+                    run_ids.append(daily[day]["id"])
                     if run_days == spec["consecutive_days"]:
                         episode_key = f"{rule['id']}:{run_start}"
                         qualifying_episode_keys.add(episode_key)
@@ -490,9 +491,9 @@ class CareLoopService:
                             now = self._now(); alert_id = self._id()
                             # No delivery integration exists in this synthetic
                             # service: failure is explicit, never silent.
-                            alert = self.storage.put(patient, alert_id, "ALERT", {"created_at": now, "updated_at": now, "reviewed": True, "actor_id": "careloop-rule-engine", "rule_id": rule["id"], "source_id": rule["source_id"], "episode_key": episode_key, "episode_start": run_start, "episode_end": day, "status": "active", "delivery_status": "failed", "acknowledgements": []}, expires_at=None)
+                            alert = self.storage.put(patient, alert_id, "ALERT", {"created_at": now, "updated_at": now, "reviewed": True, "actor_id": "careloop-rule-engine", "rule_id": rule["id"], "source_id": rule["source_id"], "episode_key": episode_key, "episode_start": run_start, "episode_end": day, "observation_ids": list(run_ids), "status": "active", "delivery_status": "failed", "acknowledgements": []}, expires_at=None)
                             created.append(alert)
-                else: run_start, run_days = None, 0
+                else: run_start, run_days, run_ids = None, 0, []
                 previous = current
         # Corrections can remove a previously qualifying run.  Keep the
         # historical alert record, but invalidate it so it cannot be shown,
@@ -755,6 +756,15 @@ class CareLoopService:
             found.append(self._suggestion("review_waiting", None, today,
                          f"{waiting} plan item{' is' if waiting == 1 else 's are'} waiting for your review.",
                          {"say": "Want to go through them now?", "tool": "review_plan_by_voice", "arguments": {}} if voice else None))
+
+        # 5. part of the approved plan was never checked back, or an answer needs another look
+        results = {(r["item_id"], r["check"]): r["result"] for r in self.teach_back_results(identity)}
+        due = [c for c in self.teach_back_checks(identity) if results.get((c["item"]["id"], c["check"])) != "understood"]
+        if due:
+            unclear = any(results.get((c["item"]["id"], c["check"])) == "needs_clarification" for c in due)
+            found.append(self._suggestion("teach_back_due", {"type": due[0]["item"]["type"], "id": due[0]["item"]["id"]}, today,
+                         "Part of your plan needs another look." if unclear else "You haven't checked your understanding of your plan.",
+                         {"say": "Want to do that now?", "tool": "start_teach_back", "arguments": {}}))
         return found[:SUGGESTION_LIMIT]
 
     def evaluate_missed_tasks(self, patient: str) -> list[dict[str, Any]]:
@@ -931,13 +941,15 @@ class CareLoopService:
         """Who (other than the patient) looked at or did what, counted per person. Never content."""
         patient = self._require_patient(identity)
         people: dict[str, dict[str, int]] = {}
+        last: dict[str, int] = {}
         for row in self.storage.list(patient, "AUDIT"):
             if row.get("actor_id") in {patient, None} or not from_date <= row.get("created_at", 0) <= to_date:
                 continue
             if row.get("action") in ACCESS_PHRASES:
                 counts = people.setdefault(row["actor_id"], {})
                 counts[row["action"]] = counts.get(row["action"], 0) + 1
-        return [{"actor_id": actor, "name": self._display_name(patient, actor), "actions": counts}
+                last[row["actor_id"]] = max(last.get(row["actor_id"], 0), row.get("created_at", 0))
+        return [{"actor_id": actor, "name": self._display_name(patient, actor), "actions": counts, "last_at": last[actor]}
                 for actor, counts in people.items()]
 
     def search(self, identity: Identity, query: str, *, from_date: int | None=None, to_date: int | None=None) -> list[dict[str, Any]]:
@@ -971,28 +983,114 @@ class CareLoopService:
         patient = self._require_patient(identity)
         if from_date < 0 or to_date < from_date: raise ValueError("invalid handoff date range")
         plans = [row for row in self.storage.list(patient) if row["type"] in PLAN_TYPES and row.get("status") == "active"]
-        plan_items = []
-        for row in plans:
-            source = self.storage.get(patient, row["source_id"]) if row.get("source_id") else None
-            citation = None if not source else {"source_id": source["id"], "title": source.get("title", "Approved source"), "page_excerpts": source.get("page_excerpts", [])}
-            plan_items.append({"plan_id": row["id"], "type": row["type"], "status": row.get("status", "unknown"), "text": row.get("text", ""), "source_id": row.get("source_id"), "source_citation": citation,
-                               "label": row.get("label"), "times": row.get("times"), "assignee": row.get("assignee_name") or "patient"})
-        events = [row for row in self.storage.list(patient, "TASK_EVENT") if from_date <= row.get("completed_at", row["created_at"]) <= to_date]
+        plan_items = [{"plan_id": row["id"], "type": row["type"], "status": row.get("status", "unknown"), "text": row.get("text", ""),
+                       "source_id": row.get("source_id"), "source_citation": self.citation(patient, row),
+                       "label": row.get("label"), "times": row.get("times"), "assignee": row.get("assignee_name") or "patient"}
+                      for row in plans]
+        # Every event and alert says where it came from: the task's own lines, or the rule and the check-ins that fired it.
+        events = []
+        for row in self.storage.list(patient, "TASK_EVENT"):
+            if from_date <= row.get("completed_at", row["created_at"]) <= to_date:
+                task = self.storage.get(patient, row.get("task_id")) if row.get("task_id") else None
+                events.append(dict(row) | {"task_label": (task or {}).get("label"), "source_citation": self.citation(patient, task)})
         observations = self.list_observations(identity, from_date=from_date, to_date=to_date)
         all_observations = self.storage.list(patient, "OBSERVATION")
         corrections = [{"correction_id": row["id"], "corrects_id": row["corrects_id"]} for row in all_observations if row.get("corrects_id") and from_date <= row.get("observed_at", 0) <= to_date]
         self.evaluate_missed_tasks(patient)
-        alerts = [row for row in self.storage.list(patient, "ALERT") if row.get("status", "active") == "active"
-                  and row.get("kind") != "task_assigned" and from_date <= row.get("created_at", 0) <= to_date]
+        alerts = []
+        for row in self.storage.list(patient, "ALERT"):
+            if not (row.get("status", "active") == "active" and row.get("kind") != "task_assigned"
+                    and from_date <= row.get("created_at", 0) <= to_date):
+                continue
+            alert = dict(row)
+            if row.get("kind") == "missed_task":
+                alert["source_citation"] = self.citation(patient, self.storage.get(patient, row.get("task_id")) if row.get("task_id") else None)
+            else:
+                rule = self.storage.get(patient, row.get("rule_id")) if row.get("rule_id") else None
+                fired = [self.storage.get(patient, i) for i in row.get("observation_ids", [])]
+                alert |= {"rule_text": (rule or {}).get("text"), "source_citation": self.citation(patient, rule),
+                          "trigger_observations": [{"observed_at": o["observed_at"], "pain_score": o["pain_score"]} for o in fired if o]}
+            alerts.append(alert)
         questions = [{"text": q["text"], "asked_at": q["created_at"]} for q in self.clinician_questions(identity)
                      if q.get("status", "open") == "open"]
+        understanding = self.teach_back_results(identity)
+        checkable = len(self.teach_back_checks(identity))
         data = {"label": "Patient-generated factual summary for clinician discussion", "from_date": from_date, "to_date": to_date,
                 "plan_items": plan_items, "task_events": events, "observations": observations, "alerts": alerts,
-                "questions": questions,
+                "questions": questions, "understanding": understanding,
                 "corrections": corrections, "uncertainties": ["No observation is recorded for dates absent from this handoff."],
                 "totals": {"plan_items": len(plan_items), "task_events": len(events), "observations": len(observations), "alerts": len(alerts), "corrections": len(corrections),
-                           "missed_tasks": sum(a.get("kind") == "missed_task" for a in alerts), "questions": len(questions)}}
+                           "missed_tasks": sum(a.get("kind") == "missed_task" for a in alerts), "questions": len(questions),
+                           "understood": sum(u["result"] == "understood" for u in understanding),
+                           "needs_clarification": sum(u["result"] == "needs_clarification" for u in understanding),
+                           "checkable": checkable}}
         return self.write(identity, "HANDOFF", data, reviewed=True)
+
+    def citation(self, patient: str, item: dict[str, Any] | None) -> dict[str, Any] | None:
+        """The document lines an item came from: its own cited lines when it has them, else its source's excerpts."""
+        if not item or not item.get("source_id"):
+            return None
+        source = self.storage.get(patient, item["source_id"])
+        if not source or source["type"] != "DOCUMENT":
+            return None
+        excerpts = source.get("page_excerpts", [])
+        cited = {line.get("id") for line in item.get("source") or []}
+        if cited:
+            excerpts = [e for e in excerpts if e.get("line_id") in cited] or excerpts
+        elif item.get("text"):
+            # Older plans carry no line ids: keep the excerpt that holds the item's own words.
+            norm = lambda t: " ".join(re.sub(r"[^a-z0-9]+", " ", str(t or "").lower()).split())  # noqa: E731
+            want = norm(item["text"])
+            excerpts = [e for e in excerpts if norm(e.get("excerpt")) and (norm(e.get("excerpt")) in want or want in norm(e.get("excerpt")))] or excerpts
+        return {"source_id": source["id"], "title": source.get("title", "Approved source"), "page_excerpts": excerpts}
+
+    # ---- teach-back: the patient says back a key value, and code checks it against the plan --------------
+    def teach_back_checks(self, identity: Identity) -> list[dict[str, Any]]:
+        """Every value of the approved plan that can be checked, in document order: [{"item", "check"}]."""
+        from .teach_back import checks_for
+        patient = self._require_patient(identity)
+        items = sorted((i for i in self.storage.list(patient) if i["type"] in PLAN_TYPES), key=self._document_position)
+        return [{"item": item, "check": check} for item in items for check in checks_for(item)]
+
+    @staticmethod
+    def _document_position(item: dict[str, Any]) -> tuple:
+        first = (item.get("source") or [{}])[0]
+        line = str(first.get("id", ""))
+        return (first.get("page", item.get("page", 0)), int(line.split(":L")[1]) if ":L" in line else 0,
+                item.get("order", 0), item.get("created_at", 0), item["id"])
+
+    def record_teach_back(self, identity: Identity, item: dict[str, Any], check: str, *, result: str, attempts: int,
+                          expected: dict[str, Any], heard: dict[str, Any] | None, session_id: str) -> dict[str, Any]:
+        """One checked value. Keeps the structured value heard, never the person's words."""
+        if result not in {"understood", "needs_clarification", "skipped"}:
+            raise ValueError("invalid teach-back result")
+        def storable(values: dict[str, Any] | None) -> dict[str, Any] | None:
+            # The store keeps no floats: 8.0 becomes 8, and 38.5 is kept as the text "38.5".
+            return None if values is None else {k: (int(v) if v == int(v) else str(v)) if isinstance(v, float) else v
+                                                 for k, v in values.items()}
+        return self.write(identity, "TEACH_BACK", {
+            "item_id": item["id"], "item_type": item["type"], "check": check, "result": result, "attempts": attempts,
+            "expected": storable(expected), "heard": storable(heard), "session_id": session_id, "asked_at": self._now(),
+            # Answers in the same second still have an order, so "latest" is never a coin toss.
+            "seq": 1 + max((r.get("seq", 0) for r in self.storage.list(identity.patient, "TEACH_BACK")), default=0)},
+            source_id=item.get("source_id"), reviewed=True)
+
+    def teach_back_results(self, identity: Identity) -> list[dict[str, Any]]:
+        """The latest result for each checked value of an approved item, skipped ones left out."""
+        patient = self._require_patient(identity)
+        latest: dict[tuple[str, str], dict[str, Any]] = {}
+        for row in sorted(self.storage.list(patient, "TEACH_BACK"), key=lambda r: (r.get("asked_at", 0), r.get("seq", 0))):
+            if row.get("result") != "skipped":
+                latest[(row["item_id"], row["check"])] = row
+        out = []
+        for (item_id, check), row in latest.items():
+            item = self.storage.get(patient, item_id)
+            if not item or item.get("status") != "active":
+                continue
+            out.append({"item_id": item_id, "check": check, "result": row["result"], "asked_at": row["asked_at"],
+                        "attempts": row.get("attempts"), "expected": row.get("expected"), "heard": row.get("heard"),
+                        "label": item.get("label"), "text": item.get("text"), "source_citation": self.citation(patient, item)})
+        return sorted(out, key=lambda r: r["asked_at"])
 
     def mark_alert_delivery(self, identity: Identity, alert_id: str, status: str) -> dict[str, Any]:
         patient = self._require_patient(identity)
