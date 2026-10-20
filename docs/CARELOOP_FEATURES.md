@@ -1,22 +1,30 @@
 # CareLoop features and Alexa+ story
 
-CareLoop is a synthetic adult-care coordination demo built as a standalone MCP service. It helps a person keep clinician-provided instructions, their own observations, and approved caregiver support in one accountable loop. It is not a diagnostic, treatment, medication-adjustment, emergency-response, or real patient-record system.
+CareLoop is a synthetic adult-care coordination demo built as an MCP add-on for Alexa+. It helps a person keep clinician-provided instructions, their own observations, and approved caregiver support in one accountable loop. It is not a diagnostic, treatment, medication-adjustment, emergency-response, or real patient-record system.
 
 ## What CareLoop adds
 
 Alexa+ supplies the conversational and multimodal layer: it can route a request to an add-on, generate the spoken response, maintain conversational continuity, and render either native data responses or an MCP App UI. CareLoop supplies the narrowly scoped care-coordination logic behind that experience: reviewed plan data, consent, deterministic rules, source citations, and a handoff for a clinician discussion. [Alexa+ MCP Toolkit overview](https://www.developer.amazon.com/docs/alexaplus/add-ons/mcp-toolkit-overview.html) and [Alexa+ design introduction](https://developer.amazon.com/ja/docs/alexaplus/add-ons/mcp-addon-design-guide-overview.html)
 
-| Capability | What CareLoop does | What it deliberately does not do |
-| --- | --- | --- |
-| Private plan intake | Accepts bounded synthetic text plans; retains a hash and short cited excerpts, not raw uploads. | It does not treat a PDF or model output as an automatically active care plan. |
-| Reviewed tasks and rules | Creates drafts, requires patient approval, and links active items to their source. | It does not invent instructions, medication dosage, or thresholds. |
-| Patient-owned consent | Lets the patient issue expiring caregiver invitations with specific scopes and revoke them immediately. | It does not infer consent from a shared device, a speaker name, or a family relationship. |
-| Longitudinal observations | Records fixed, validated observations such as a synthetic 0–10 pain score, with timestamps, actors, idempotency, and corrections. | It does not diagnose a trend or interpret missing information as normal. |
-| Deterministic follow-up | Evaluates only an approved, source-backed rule and creates at most one alert per episode. | It does not invent risk thresholds or promise monitoring/emergency intervention. |
-| Privacy-preserving alerts | Gives authorized caregivers a generic case/status notification and a scoped acknowledgement action. | It does not include symptoms, medications, observations, or plan text in the notification. |
-| Visit handoff | Produces a date-bounded, source-cited factual summary of plan items, recorded observations, task events, alerts, acknowledgements, and corrections. | It does not claim to be a clinical conclusion or substitute for a clinician. |
-| Search and data rights | Provides patient-scoped history retrieval plus export, deletion, expiry, and physical purge of source and derived data. | It does not mix data across patients or retain deleted records in its search index. |
-| Evaluation and demo | Includes isolated repeatable eval cases and a synthetic E2E journey. | It does not represent a certified Alexa+ integration or real-world clinical validation. |
+| Capability | What CareLoop does |
+| --- | --- |
+| Approval with citations | A plan becomes **drafts with source citations**; nothing is active until the patient approves each item |
+| A source for every claim | Every card on the patient's screen says where it came from: the document line, or the record it was worked out from. A triggered alert shows its rule's line and the check-ins that fired it |
+| Teach-back | "Check I understood my plan": CareLoop asks the patient to say back when or how often they take each medicine, the alert rule's numbers and a warning sign's number, and checks every answer in code. A miss is answered by reading the plan back in its own words, never by explaining. Results go to the visit handoff |
+| Follow-up questions | `start_daily_checkin` asks its own question through **MCP elicitation**, validates the answer (0–10), and re-asks if needed |
+| Deterministic rules | Only a patient-approved, source-backed rule can create an alert, at most once per episode |
+| Privacy on shared speakers | Tool results expose only a `speakable` line plus opaque `refs`. The caregiver's speaker hears "You have 1 new CareLoop update", never the symptom |
+| Patient-controlled consent | Scoped, expiring caregiver invitations; revocation is confirmed by voice and applies on the next request |
+| Family task assignment | The patient assigns a task to a named family member; Alexa+ gets reminder suggestions; the family member is told they have a new task, with the details only when they ask; they mark it done; a missed task raises a generic update |
+| Suggestions | "Anything I should know?" raises what is worth a look from the patient's own records: a visit coming up, a missed task, no check-in today, plan items waiting. Code decides, every suggestion is tied to its source, and nothing new is stored |
+| Questions for the clinician | Saved by voice, never answered or read back, and placed in the next handoff |
+| Multi-turn workflows | Check-ins ask follow-up questions from the approved plan; a guided voice review walks through draft items (change the time, give it to someone, skip, stop) and resumes later; CareLoop offers the next step; "move it to 8 pm" refers to the task just mentioned; a new "Alexa, …" request pauses a waiting workflow |
+| Access transparency | "Who has seen my care data this week?" is answered from the audit log: who viewed or did what, never the content |
+| Prescription intake | Upload a prescription (PDF, scan or photo): every proposed task cites its source line, invented numbers are blocked, and nothing reaches Alexa+ until the patient approves it |
+| Clinician handoff | A date-bounded, cited factual summary rendered as an MCP Apps view |
+| Data rights | Patient-scoped export, deletion, retention expiry, and purge |
+
+What it deliberately does not do: diagnose, prescribe, change a dose, interpret a trend or missing data, invent an instruction, number or alert threshold, read a symptom or value aloud on a shared speaker, or claim to monitor for emergencies. See [CARELOOP_SECURITY.md](CARELOOP_SECURITY.md).
 
 ## A story: Maya's follow-up week
 

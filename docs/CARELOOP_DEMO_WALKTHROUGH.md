@@ -1,6 +1,6 @@
 # CareLoop demo walkthrough, with expected replies
 
-Step-by-step tables for the Alexa+ simulator: what to say, the reply you should hear, and what each step shows. For setup and installation, see the [README](../README.md).
+Step-by-step tables for the Alexa+ simulator: what to say, the reply you should hear, and what each step shows. For setup and installation, see [CARELOOP_SETUP.md](CARELOOP_SETUP.md).
 
 Related guides:
 - [Click-by-click demo guide](CARELOOP_UI_DEMO_GUIDE.md): exact buttons and screens, with screenshots, on the seeded day.
