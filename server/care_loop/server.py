@@ -54,6 +54,7 @@ def build_deps(settings: Settings | None=None, **overrides: Any) -> Deps:
     if overrides.get("service") is None:
         service.require_consent = settings.require_consent
         service.timezone = settings.timezone or None
+        service.suggest_checkin_hour = settings.suggest_checkin_hour
         service.default_patient_name = settings.patient_name
     if service.intake is None:
         from .intake_engines import IntakeEngines

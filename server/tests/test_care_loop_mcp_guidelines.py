@@ -125,7 +125,7 @@ def test_server_discover_under_2026_07_28(client) -> None:
 def test_every_tool_has_a_title_and_annotations(client) -> None:
     result = payload(rpc(client, "tools/list"))["result"]
     tools = result["tools"]
-    assert len(tools) == 30
+    assert len(tools) == 31
     for tool in tools:
         assert tool.get("title", "").strip(), tool["name"]
         assert tool.get("annotations", {}).get("readOnlyHint") is not None, tool["name"]

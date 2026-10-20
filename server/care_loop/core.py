@@ -2,7 +2,7 @@
 from __future__ import annotations
 import hashlib, json, re, time, uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
 from .auth import Identity
@@ -78,6 +78,10 @@ PLAN_TYPES = frozenset({"PLAN_TASK", "PLAN_RULE", "PLAN_NOTE"})
 REVIEWABLE = frozenset({"draft", "needs_review"})
 INTAKE_JOB_TTL_SECONDS = 24 * 3600
 ASSIGNMENT_NOTICE_TTL_SECONDS = 7 * 86_400
+SUGGESTION_LIMIT = 3
+VISIT_SOON_DAYS = 3
+MISSED_TASK_SUGGESTION_DAYS = 2
+DEFAULT_CHECKIN_SUGGESTION_HOUR = 18
 _CLOCK_TIME = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 AUDIT_OUTCOMES = frozenset({"success", "denied", "failed"})
 
@@ -342,6 +346,12 @@ class CareLoopService:
                         payload["medication"] = item.medication
                 if item.record_type == "PLAN_RULE":
                     payload |= {"rule_spec": item.rule_spec, "rule_basis": "confirmed_mapping"}
+                if item.kind == "appointment":
+                    from .structuring.dates import parse_unambiguous_date
+                    # The visit date, only when the text names exactly one unambiguous date. Never guessed.
+                    due = parse_unambiguous_date(item.instruction) or parse_unambiguous_date(structured.follow_up_date)
+                    if due:
+                        payload["due_date"] = due
                 draft = self.write(owner, item.record_type, payload, source_id=document["id"], reviewed=False)
                 draft_ids.append(draft["id"])
         counts = {"items": len(structured.items),
@@ -648,8 +658,9 @@ class CareLoopService:
         self.audit(identity, "data_use_accepted", "success")
         return saved
 
-    def update_profile(self, identity: Identity, *, name: str | None = None, timezone: str | None = None) -> dict[str, Any]:
-        """The patient's spoken name (used in family members' messages) and local time zone."""
+    def update_profile(self, identity: Identity, *, name: str | None = None, timezone: str | None = None,
+                       suggestions: bool | None = None) -> dict[str, Any]:
+        """The patient's spoken name (used in family members' messages), local time zone, and whether to offer suggestions."""
         from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
         patient = self._require_patient(identity)
         profile = dict(self.profile(patient))
@@ -664,10 +675,87 @@ class CareLoopService:
             except (ZoneInfoNotFoundError, ValueError) as exc:
                 raise ValueError("unknown time zone") from exc
             profile["timezone"] = timezone
+        if suggestions is not None:
+            profile["suggestions"] = bool(suggestions)
         profile |= {"created_at": profile.get("created_at", self._now()), "updated_at": self._now()}
         saved = self.storage.put(patient, "profile", "PATIENT", profile)
         self.audit(identity, "profile_updated", "success")
         return saved
+
+    # ---- suggestions: things worth raising, computed from the patient's own records -----------------
+    def suggestions_enabled(self, patient: str) -> bool:
+        return self.profile(patient).get("suggestions", True) is not False
+
+    @staticmethod
+    def _suggestion(kind: str, source: dict[str, str] | None, today: date, say: str, offer: dict[str, Any] | None) -> dict[str, Any]:
+        """One suggestion: a stable id, the sentence, the record it came from, and the step a "yes" would run."""
+        key = f"{kind}:{(source or {}).get('id', '')}:{today.isoformat()}"
+        return {"id": hashlib.sha1(key.encode()).hexdigest()[:12], "kind": kind, "say": say, "source": source, "offer": offer}
+
+    def suggestions(self, identity: Identity) -> list[dict[str, Any]]:
+        """Up to three things worth raising now, in a fixed order, each tied to the record it came from.
+
+        Deterministic: the code decides what is worth raising, the assistant only phrases it. Logistics and
+        adherence only; never an interpretation of a symptom or a score. Nothing is stored.
+        """
+        patient = self._require_patient(identity)
+        if not self.suggestions_enabled(patient):
+            return []
+        zone, now = self._zone(patient), self._now()
+        local = datetime.fromtimestamp(now, zone)
+        today = local.date()
+        found: list[dict[str, Any]] = []
+
+        # 1. a visit is close: offer the handoff, and say how many questions are saved (a count, never the text)
+        saved_questions = [q for q in self.clinician_questions(identity) if q.get("status", "open") == "open"]
+        for note in self.storage.list(patient, "PLAN_NOTE"):
+            if note.get("item_kind") != "appointment" or note.get("status", "active") != "active" or not note.get("due_date"):
+                continue
+            try:
+                days = (date.fromisoformat(note["due_date"]) - today).days
+            except ValueError:
+                continue
+            if 0 <= days <= VISIT_SOON_DAYS:
+                say = f"Your visit is {'today' if days == 0 else 'tomorrow' if days == 1 else f'in {days} days'}."
+                if saved_questions:
+                    say += f" You have {len(saved_questions)} question{'s' if len(saved_questions) != 1 else ''} saved for your clinician."
+                found.append(self._suggestion("visit_soon", {"type": "PLAN_NOTE", "id": note["id"]}, today, say,
+                             {"say": "Want me to prepare the handoff?", "tool": "create_visit_handoff",
+                              "arguments": {"from_date": "last_7_days"}}))
+
+        # 2. an assigned task was missed in the last two days and not done since
+        self.evaluate_missed_tasks(patient)
+        events = self.storage.list(patient, "TASK_EVENT")
+        missed = [a for a in self.storage.list(patient, "ALERT")
+                  if a.get("kind") == "missed_task" and a.get("status", "active") == "active"
+                  and now - a.get("created_at", 0) <= MISSED_TASK_SUGGESTION_DAYS * 86_400
+                  and not any(e.get("task_id") == a.get("task_id") and e.get("completed_at", 0) >= a.get("due_at", 0) for e in events)]
+        if missed:
+            if len(missed) == 1:
+                who = missed[0].get("assignee_name") or "A family member"
+                say = f"{who} missed {missed[0].get('task_label') or 'a task'}."
+            else:
+                say = f"{len(missed)} tasks were missed in the last {MISSED_TASK_SUGGESTION_DAYS} days."
+            found.append(self._suggestion("missed_task", {"type": "ALERT", "id": missed[0]["id"]}, today, say, None))
+
+        # 3. no check-in today, for someone who has checked in before (a new user is never nagged)
+        checkins = [o for o in self.storage.list(patient, "OBSERVATION") if not o.get("corrects_id")]
+        days_with_checkin = {datetime.fromtimestamp(o["observed_at"], zone).date() for o in checkins}
+        if (any(d < today for d in days_with_checkin) and today not in days_with_checkin
+                and local.hour >= getattr(self, "suggest_checkin_hour", DEFAULT_CHECKIN_SUGGESTION_HOUR)):
+            latest = max(checkins, key=lambda o: o["observed_at"])
+            found.append(self._suggestion("no_checkin", {"type": "OBSERVATION", "id": latest["id"]}, today,
+                         "You haven't checked in today.",
+                         {"say": "Want to do your check-in now?", "tool": "start_daily_checkin", "arguments": {}}))
+
+        # 4. plan items are still waiting for the patient's review
+        voice, on_screen = self.voice_reviewable(identity)
+        waiting = len(voice) + on_screen
+        if waiting:
+            found.append(self._suggestion("review_waiting", None, today,
+                         f"{waiting} plan item{' is' if waiting == 1 else 's are'} waiting for your review.",
+                         {"say": "Want to go through them now?", "tool": "review_plan_by_voice", "arguments": {}} if voice else None))
+        return found[:SUGGESTION_LIMIT]
 
     def evaluate_missed_tasks(self, patient: str) -> list[dict[str, Any]]:
         """A generic update when an assigned task isn't done within an hour of a scheduled time today."""

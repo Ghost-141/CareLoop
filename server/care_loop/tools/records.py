@@ -418,6 +418,7 @@ _TITLES: dict[str, str] = {
     "export_care_data": "Export care data",
     "delete_care_record": "Delete care record",
     "get_private_view": "Get private view",
+    "get_suggestions": "What needs my attention",
 }
 
 
@@ -579,16 +580,45 @@ def register(mcp: MCPServer, deps) -> None:
         deps.service.accept_data_use(identity)
         return _result("Thanks, you're all set.", view="care-circle")
 
+    @tool("get_suggestions", "tasks", _READ)
+    @_safe_tool("Suggestions are unavailable.")
+    def get_suggestions(ctx: Context) -> VoiceResult:
+        """PATIENT ONLY: things worth raising right now, drawn from the patient's own records.
+
+        Call it for "anything I should know", "what should I do", "what's next" or "anything I need to do today".
+        Each suggestion is computed by code from approved records: a visit coming up, a missed task, no
+        check-in today, plan items waiting for review. Speak only what this returns, never add a suggestion of
+        your own, and when nothing applies say so. If a suggestion carries a question, ask it and run that tool on yes.
+        """
+        identity = _patient(deps, ctx)
+        if identity.role != "patient":
+            raise AccessDenied("Suggestions are for the patient")
+        if not deps.service.suggestions_enabled(identity.patient):
+            return _result("Suggestions are turned off. Say turn suggestions on whenever you want them back.", view="tasks")
+        items = deps.service.suggestions(identity)
+        if not items:
+            return _result("Nothing needs your attention right now.", view="tasks")
+        lead = f"You have {len(items)} things worth a look. " if len(items) > 1 else ""
+        # The question for the first suggestion is spoken last, so it follows the lines it is about.
+        spoken = items[1:] + items[:1] if items[0]["offer"] else items
+        return _result(lead + " ".join(i["say"] for i in spoken), view="tasks",
+                       refs=[{"id": i["id"], "kind": "suggestion", "label": f"suggestion {n}"} for n, i in enumerate(items, start=1)],
+                       next_step=items[0]["offer"] if items[0]["offer"] else None)
+
     @tool("set_my_details", "care-circle", _IDEMPOTENT_WRITE)
     @_safe_tool("Those details couldn't be saved.")
-    def set_my_details(ctx: Context, name: str | None = None, timezone: str | None = None) -> VoiceResult:
-        """Patient sets the name family members hear ("Maya") and/or their IANA time zone ("Asia/Dhaka")."""
-        profile = deps.service.update_profile(_patient(deps, ctx), name=name, timezone=timezone)
+    def set_my_details(ctx: Context, name: str | None = None, timezone: str | None = None,
+                       suggestions: bool | None = None) -> VoiceResult:
+        """Patient sets the name family members hear ("Maya"), their IANA time zone ("Asia/Dhaka"), and whether
+        suggestions are on ("turn suggestions off" sets suggestions to false)."""
+        profile = deps.service.update_profile(_patient(deps, ctx), name=name, timezone=timezone, suggestions=suggestions)
         parts = []
         if name:
             parts.append(f"I'll call you {profile['display_name']}")
         if timezone:
             parts.append(f"times now follow {profile['timezone'].replace('_', ' ')}")
+        if suggestions is not None:
+            parts.append("suggestions are " + ("on" if profile["suggestions"] else "off"))
         return _result(("Done. " + " and ".join(parts) + ".") if parts else "Nothing changed.", view="care-circle")
 
     # ---- guided, resumable voice review ---------------------------------------------
