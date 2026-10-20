@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CareLoop · The accountable care loop for Alexa+</title>
 <meta name="description" content="CareLoop is an MCP add-on for Alexa+ that turns a clinician's plan into tasks the patient approves, family members can help with, and a clinician can trust. Every spoken instruction traces back to the line it came from.">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M26 16a10 10 0 1 1-4-8' fill='none' stroke='%231c2b45' stroke-width='4' stroke-linecap='round'/%3E%3Ccircle cx='25' cy='8' r='3' fill='%231690a6'/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M26 16a10 10 0 1 1-4-8' fill='none' stroke='%231c2b45' stroke-width='4' stroke-linecap='round'/%3E%3Ccircle cx='25' cy='8' r='3' fill='%23e0b400'/%3E%3C/svg%3E">
 <meta name="theme-color" content="#1c2b45">
 <link rel="canonical" href="https://ghost-141.github.io/CareLoop/">
 <meta property="og:type" content="website">
@@ -26,8 +26,9 @@
     --sheet: #ffffff;
     --mark: #ffe873;
     --voice: #1690a6;
+    --voice-text: #0e6f81;
     --muted: #5a6677;
-    --rule: #d3dbe1;
+    --rule: #dadfe3;
     --sans: "Atkinson Hyperlegible", system-ui, sans-serif;
     --print: Charter, "Bitstream Charter", "Iowan Old Style", Georgia, serif;
     --code: "Courier Prime", "Courier New", monospace;
@@ -65,7 +66,7 @@
   .trace { position: relative; }
   .spoken { background: var(--sheet); border-radius: 1.4rem 1.4rem 1.4rem .3rem; padding: 1.2rem 1.4rem 1.2rem 1.25rem; box-shadow: 0 1px 0 var(--rule); position: relative; z-index: 1; max-width: 30rem; }
   .spoken .who { display: flex; align-items: center; gap: .55rem; font-size: .95rem; color: var(--muted); margin-bottom: .35rem; }
-  .ring { width: 14px; height: 14px; border-radius: 50%; border: 3px solid var(--voice); box-shadow: 0 0 0 3px rgba(22, 144, 166, .18); }
+  .ring { width: 14px; height: 14px; border-radius: 50%; border: 3px solid var(--voice); }
   .spoken p { margin: 0; font-size: 1.3rem; line-height: 1.4; }
   .thread { height: 4.5rem; margin-left: 2.1rem; border-left: 2px dashed var(--voice); position: relative; }
   .thread::after { content: ""; position: absolute; left: -7px; bottom: -6px; width: 12px; height: 12px; border-radius: 50%; background: var(--voice); }
@@ -74,7 +75,7 @@
   .slip .head { margin-left: -2rem; font: 700 .95rem/1.4 var(--sans); border-bottom: 1px solid var(--ink); padding-bottom: .4rem; margin-bottom: .6rem; display: flex; justify-content: space-between; gap: 1rem; }
   .slip .line { white-space: pre-wrap; color: #39465c; position: relative; }
   .slip .line::before { content: attr(data-n); position: absolute; left: -2.3rem; top: .15rem; font: 400 .75rem/1.9 var(--sans); color: var(--muted); font-variant-numeric: tabular-nums; }
-  .slip .hit::before { color: var(--voice); font-weight: 700; }
+  .slip .hit::before { color: var(--voice-text); font-weight: 700; }
   .slip .hit { position: relative; color: var(--ink); }
   .slip .hit mark { background: linear-gradient(transparent 12%, var(--mark) 12%, var(--mark) 88%, transparent 88%); color: inherit; padding: 0 .15em; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
 
@@ -95,12 +96,12 @@
   .intro { max-width: var(--measure); margin: 0 0 2.75rem; color: #2c3a52; }
 
   /* problem: what Alexa+ does, and what a care plan still needs */
-  .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 3rem; }
-  .compare ul { list-style: none; margin: 0; padding: 0; }
-  .compare li { padding: 1rem 0; border-top: 1px solid var(--rule); }
-  .compare li strong { display: block; }
-  .compare .col-title { font-size: 1.05rem; color: var(--muted); margin: 0 0 .5rem; }
-  .compare .needs li strong::before { content: ""; display: inline-block; width: .85rem; height: .85rem; background: var(--mark); margin-right: .55rem; vertical-align: -.05rem; }
+  .pairs { border-top: 2px solid var(--ink); }
+  .pair-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 3rem; padding: 1.1rem 0; border-bottom: 1px solid var(--rule); }
+  .pair-row p { margin: 0; }
+  .pair-row p:first-child { color: var(--muted); }
+  .pair-row p:last-child { font-size: 1.2rem; line-height: 1.45; }
+  .pair-row.head p { font-weight: 700; font-size: 1rem; color: var(--ink); }
 
   /* the loop: a real sequence */
 
@@ -108,7 +109,7 @@
   /* ---- what Alexa says, and what CareLoop keeps --------------------------------------- */
   .turn { display: grid; grid-template-columns: 4.2rem 1fr; gap: .9rem; padding: .5rem 0; align-items: start; }
   .turn .speaker { font-size: .95rem; color: var(--muted); padding-top: .1rem; }
-  .turn .speaker.alexa { color: var(--voice); font-weight: 700; }
+  .turn .speaker.alexa { color: var(--voice-text); font-weight: 700; }
   .turn p { margin: 0; }
   .turn.alexa p { font-size: 1.05rem; }
   .turn.note p { font-size: .98rem; color: var(--muted); font-style: italic; }
@@ -158,7 +159,7 @@
   .ui-review { background: var(--sheet); border: 1px solid var(--hair); border-radius: 12px; padding: 13px 14px 14px; position: relative; display: grid; gap: 8px; }
   .ui-review::before { content: ""; position: absolute; left: -1px; top: 14px; width: 4px; height: 24px; border-radius: 0 3px 3px 0; background: var(--mark); }
   .ui-review .ui-head { display: flex; justify-content: space-between; align-items: start; gap: 10px; }
-  .ui-review h4 { font: 600 1.02rem/1.3 var(--round); margin: 1px 0 0; }
+  .ui-review .ui-name { display: block; font: 600 1.02rem/1.3 var(--round); margin: 1px 0 0; }
   .ui-review p { margin: 0; }
   .ui-slip { border: 1px solid var(--hair); border-radius: 3px 3px 8px 8px; font: 400 .95rem/1.5 var(--print); padding: 8px 10px 9px 0; display: grid; grid-template-columns: 48px 1fr; gap: 0 10px; }
   .ui-slip .from { grid-column: 2; font: 500 .7rem/1 var(--ui-sans); color: var(--muted); margin: 2px 0 6px; }
@@ -193,21 +194,18 @@
   }
 
   /* safety */
-  .never { columns: 2; column-gap: 3rem; margin: 0 0 2rem; padding: 0; list-style: none; }
+  .never { columns: 2; column-gap: 3rem; margin: 0; padding: 0; list-style: none; }
   .never li { break-inside: avoid; padding: .85rem 0; border-top: 1px solid var(--rule); }
-  .legal-links { display: flex; gap: 1.5rem; flex-wrap: wrap; font-weight: 700; }
 
   /* see it */
   .seeit { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 3rem; align-items: start; }
   .screen-shot { border-radius: 14px; overflow: hidden; box-shadow: 0 1px 0 var(--rule), 0 30px 60px -40px rgba(28, 43, 69, .6); background: var(--sheet); }
-  .video { aspect-ratio: 16 / 9; border-radius: 14px; background: var(--ink); color: var(--sheet); display: grid; place-items: center; text-align: center; padding: 1.5rem; margin-top: 1.5rem; }
-  .video p { margin: 0; max-width: 28ch; }
   .facts { margin: 0; padding: 0; list-style: none; }
   .facts li { padding: .9rem 0; border-top: 1px solid var(--rule); }
-  .facts strong { font-size: 1.6rem; display: block; line-height: 1.1; }
+  .facts b { font-variant-numeric: tabular-nums; }
 
   /* developers */
-  .dev { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 3rem; }
+  .dev { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 3rem; align-items: start; }
   pre { margin: 0; background: var(--ink); color: #e9eef4; padding: 1.4rem 1.5rem; border-radius: 12px; overflow-x: auto; font: 400 .92rem/1.7 var(--code); }
   pre .c { color: #9fb0c4; }
   .stack { margin: 0; padding: 0; list-style: none; }
@@ -215,7 +213,7 @@
 
   /* roadmap */
   .next { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2rem 3rem; margin: 0; padding: 0; list-style: none; }
-  .next li { border-top: 2px solid var(--ink); padding-top: .9rem; }
+  .next li { border-top: 1px solid var(--rule); padding-top: .9rem; }
   .next p { margin: .3rem 0 0; font-size: 1rem; color: #2c3a52; }
 
 
@@ -274,7 +272,7 @@
   .v-paper .ln::before { content: attr(data-n); position: absolute; left: -2rem; top: .2rem; font: 400 .68rem/1.6 var(--sans); color: var(--muted); }
   .v-paper mark { color: var(--ink); background-image: linear-gradient(transparent 12%, var(--mark) 12%, var(--mark) 88%, transparent 88%);
     background-color: transparent; background-repeat: no-repeat; background-size: 100% 100%; padding: 0 2px; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
-  .v-scan { position: absolute; left: 0; right: 0; top: 100%; height: 2px; background: var(--voice); box-shadow: 0 0 14px 3px rgba(22, 144, 166, .35); opacity: 0; }
+  .v-scan { position: absolute; left: 0; right: 0; top: 100%; height: 2px; background: var(--voice); opacity: 0; }
   .v-drafts { display: grid; gap: .55rem; }
   .v-chip { background: var(--paper); border: 1px solid var(--rule); border-radius: 10px; padding: .55rem .75rem; display: grid; grid-template-columns: 1fr auto; gap: 0 .75rem; font-size: .9rem; }
   .v-chip b { font-weight: 700; }
@@ -282,7 +280,7 @@
   .v-chip em { grid-row: 1 / 3; grid-column: 2; align-self: center; font: 400 .72rem var(--sans); color: var(--muted); font-style: normal; }
 
   .v-say { display: flex; align-items: flex-start; gap: .7rem; margin: 0 0 1rem; }
-  .v-say .who { font-weight: 700; color: var(--voice); font-size: .95rem; padding-top: .55rem; }
+  .v-say .who { font-weight: 700; color: var(--voice-text); font-size: .95rem; padding-top: .55rem; }
   .v-say p { margin: 0; background: var(--paper); border-radius: 16px 16px 16px 4px; padding: .55rem .9rem; font-size: 1.05rem; }
   .v-say.dot p { border-radius: 16px 16px 4px 16px; }
   .v-tag { display: block; font-size: .8rem; color: var(--muted); margin: 0 0 .4rem; }
@@ -291,19 +289,22 @@
   .swap .was { opacity: 0; }
   .ui-btn.done-btn { background: var(--sheet); color: #1f7a5a; border: 1px solid #1f7a5a; }
 
-  .v-dot { width: 120px; height: 120px; border-radius: 50%; border: 7px solid #f5c400; box-shadow: 0 0 0 4px rgba(245, 196, 0, .25), 0 0 26px rgba(245, 196, 0, .55), 0 10px 22px -8px rgba(28, 43, 69, .5);
+  .v-dot { width: 120px; height: 120px; border-radius: 50%; border: 7px solid #f5c400; box-shadow: 0 10px 22px -8px rgba(28, 43, 69, .5); position: relative;
     background: radial-gradient(circle, rgba(255, 255, 255, .07) 1px, transparent 1.3px) 0 0 / 6px 6px, radial-gradient(circle at 40% 35%, #444a52, #33383e 60%, #262a2f); margin: 0 auto; }
-  .v-dot.calm { border-color: #c9d0d5; box-shadow: 0 10px 22px -8px rgba(28, 43, 69, .5); }
-  .v-dotcap { text-align: center; font-size: .9rem; color: var(--muted); margin: .7rem 0 0; }
+  .v-dot::after { content: ""; position: absolute; left: -30%; right: -30%; bottom: -26px; height: 30px; border-radius: 50%; background: radial-gradient(closest-side, rgba(245, 196, 0, .55), transparent); }
+  .v-dot.calm { border-color: #c9d0d5; }
+  .v-dot.calm::after { background: radial-gradient(closest-side, rgba(28, 43, 69, .22), transparent); }
+  .v-dotcap { text-align: center; font-size: .9rem; color: var(--muted); margin: 1.5rem 0 0; }
   .v-task { display: flex; gap: .8rem; align-items: center; background: var(--paper); border: 1px solid var(--rule); border-radius: 10px; padding: .6rem .8rem; margin-top: .9rem; font-size: .92rem; }
   .v-task b { font-variant-numeric: tabular-nums; }
   .v-task .to { margin-left: auto; color: #1f7a5a; font-weight: 700; }
 
   .v-chart { display: grid; grid-template-columns: repeat(4, 1fr); gap: .9rem; align-items: end; height: 190px; position: relative; padding: 0 0 1.6rem; border-bottom: 1px solid var(--rule); }
-  .v-bar { position: relative; height: calc(var(--v) * 10%); background: #c7d0d9; border-radius: 6px 6px 2px 2px; transform-origin: bottom; }
+  .v-col { position: relative; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; text-align: center; }
+  .v-bar { height: calc(var(--v) * 10%); flex: none; background: #c7d0d9; border-radius: 6px 6px 2px 2px; transform-origin: bottom; }
   .v-bar.hi { background: #b42318; }
-  .v-bar b { position: absolute; top: -1.5rem; left: 0; right: 0; text-align: center; font-size: .9rem; font-variant-numeric: tabular-nums; }
-  .v-bar span { position: absolute; bottom: -1.55rem; left: 0; right: 0; text-align: center; font-size: .8rem; color: var(--muted); }
+  .v-col b { font-size: .9rem; font-variant-numeric: tabular-nums; margin-bottom: .25rem; }
+  .v-col span { position: absolute; bottom: -1.55rem; left: 0; right: 0; font-size: .8rem; color: var(--muted); }
   .v-line { position: absolute; left: -.4rem; right: -.4rem; bottom: calc(1.6rem + (100% - 1.6rem) * .7); border-top: 2px dashed #9a6200; }
   .v-line span { position: absolute; left: .4rem; top: -1.45rem; font-size: .78rem; color: #9a6200; background: var(--sheet); padding-right: .3rem; }
   .v-fire { margin-top: 1.1rem; display: flex; gap: .55rem; align-items: center; font-size: .92rem; }
@@ -338,7 +339,9 @@
     @keyframes v-scan { 0% { top: 0; opacity: 0; } 10% { opacity: 1; } 90% { opacity: 1; } 100% { top: 100%; opacity: 0; } }
     @keyframes v-grow { from { transform: scaleY(0); } }
     @keyframes v-hold { from { opacity: 1; } to { opacity: 0; } }
-    @keyframes v-ring { from { border-color: #c9d0d5; box-shadow: 0 10px 22px -8px rgba(28, 43, 69, .5); } }
+    .scene .run .a-ring::after { animation: v-fadein 600ms ease-out var(--d, 0ms) both; }
+    @keyframes v-fadein { from { opacity: 0; } }
+    @keyframes v-ring { from { border-color: #c9d0d5; } }
     @keyframes v-press { from { background: var(--ink); color: var(--sheet); border-color: var(--ink); } }
   }
   @media (max-width: 900px) {
@@ -359,9 +362,14 @@
   }
 
   @media (max-width: 900px) {
-    .hero .wrap, .compare, .exchange, .seeit, .dev { grid-template-columns: 1fr; gap: 2.5rem; }
+    .hero .wrap, .exchange, .seeit, .dev { grid-template-columns: 1fr; gap: 2.5rem; }
     .next { grid-template-columns: 1fr; }
     .never { columns: 1; }
+    .pair-row { grid-template-columns: 1fr; gap: .3rem; }
+    .pair-row.head { display: none; }
+    .pair-row p::before { display: block; font-size: .85rem; font-weight: 700; color: var(--muted); }
+    .pair-row p:first-child::before { content: "Alexa+"; }
+    .pair-row p:last-child::before { content: "CareLoop adds"; margin-top: .4rem; }
     .tabs { gap: 0 1.5rem; }
   }
   @media (max-width: 520px) {
@@ -381,12 +389,12 @@
 <header class="site">
   <div class="wrap">
     <a class="wordmark" href="#top" aria-label="CareLoop home">
-      <svg viewBox="0 0 26 26" aria-hidden="true"><circle cx="13" cy="13" r="10" fill="none" stroke="#1c2b45" stroke-width="3"/><circle cx="13" cy="3" r="3" fill="#1690a6"/></svg>
+      <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M26 16a10 10 0 1 1-4-8" fill="none" stroke="#1c2b45" stroke-width="3.5" stroke-linecap="round"/><circle cx="25" cy="8" r="3" fill="#e0b400"/></svg>
       CareLoop
     </a>
     <nav class="site" aria-label="Page sections">
       <a href="#how">How it works</a>
-      <a href="#conversations">In conversation</a>
+      <a href="#conversations">Conversations</a>
       <a href="#safety">Safety</a>
       <a href="#developers">For developers</a>
       <a href="https://github.com/Ghost-141/CareLoop">GitHub</a>
@@ -427,26 +435,13 @@
   <section class="sheet" aria-labelledby="problem-title">
     <div class="wrap">
       <h2 id="problem-title">Alexa+ remembers. CareLoop proves.</h2>
-      <p class="intro">Alexa+ can remember a document, set a reminder, and reach the right person. After a hospital visit, a family needs something more: a shared record of what was agreed, who is allowed to know, what happened, and what the clinician will see.</p>
-      <div class="compare">
-        <div>
-          <p class="col-title">What Alexa+ already does well</p>
-          <ul>
-            <li><strong>Remembers what you share</strong>Documents, emails and photos you send it.</li>
-            <li><strong>Reminds the right person</strong>Reminders and announcements aimed at one family member.</li>
-            <li><strong>Talks naturally</strong>Understands requests and replies in its own voice, with screens on an Echo Show.</li>
-          </ul>
-        </div>
-        <div class="needs">
-          <p class="col-title">What a care plan still needs, and CareLoop adds</p>
-          <ul>
-            <li><strong>Approval with the source line</strong>Nothing becomes part of the plan until the patient approves it next to the line it came from.</li>
-            <li><strong>Consent that fits a family</strong>Each person gets exactly the access the patient confirms, for as long as she chooses.</li>
-            <li><strong>Privacy on a shared speaker</strong>Speakers hear "1 new update", never a symptom or a dose.</li>
-            <li><strong>Rules, not guesses</strong>Only the clinician's own rule can raise an alert, once per episode.</li>
-            <li><strong>A record the clinician can use</strong>A dated summary of what was done, missed, asked and acknowledged.</li>
-          </ul>
-        </div>
+      <p class="intro">After a clinic visit, a family needs a shared record of what was agreed, who may know, and what the clinician will see.</p>
+      <div class="pairs" role="table" aria-label="What Alexa+ does, and what CareLoop adds">
+          <div class="pair-row head" role="row"><p role="columnheader">Alexa+</p><p role="columnheader">CareLoop adds</p></div>
+          <div class="pair-row" role="row"><p role="cell">Remembers the documents you share.</p><p role="cell">Turns each instruction into an item the patient approves, beside the line it came from.</p></div>
+          <div class="pair-row" role="row"><p role="cell">Reminds the right person.</p><p role="cell">Lets the patient decide who sees what, and for how long.</p></div>
+          <div class="pair-row" role="row"><p role="cell">Talks naturally on any speaker.</p><p role="cell">Says less on a shared speaker. Detail stays on the patient's own screen.</p></div>
+          <div class="pair-row" role="row"><p role="cell">Can tell family about activity.</p><p role="cell">Alerts only when the clinician's own rule says so, once per episode.</p></div>
       </div>
     </div>
   </section>
@@ -503,7 +498,7 @@
             <div data-caption="Alexa says how many. Maya approves each one on her screen.">
               <div class="v-say a-in" style="--d:100ms"><span class="who">Alexa</span><p>8 items need your approval.</p></div>
               <div class="device-show a-in" style="--d:500ms"><div class="ui">
-                <div class="ui-review"><div class="ui-head"><div><span class="ui-meta">Medicine</span><h4>Amoxicillin</h4></div><span class="swap"><span class="ui-status warn was" style="--d:2000ms">Needs review</span><span class="ui-status ok now" style="--d:2100ms">Active</span></span></div>
+                <div class="ui-review"><div class="ui-head"><div><span class="ui-meta">Medicine</span><b class="ui-name">Amoxicillin</b></div><span class="swap"><span class="ui-status warn was" style="--d:2000ms">Needs review</span><span class="ui-status ok now" style="--d:2100ms">Active</span></span></div>
                   <div class="ui-slip"><span class="from">From Prescription</span><span class="ln">p1:L5</span><span><mark>1. Amoxicillin 500 mg capsule: Take 1 capsule by mouth three times daily for 7 days.</mark></span></div>
                   <div class="ui-actions"><span class="ui-btn done-btn a-btn" style="--d:1700ms">Added to my plan</span></div>
                 </div>
@@ -527,10 +522,10 @@
             <div class="v-row" data-caption="The clinician's rule decides. Sam hears that something changed, never the score.">
               <div>
                 <div class="v-chart" role="img" aria-label="Pain check-ins: 4, 5, 7 and 8 out of 10; the last two are at or above the rule's line of 7">
-                  <div class="v-bar a-grow" style="--v:4;--d:200ms"><b>4</b><span>Mon</span></div>
-                  <div class="v-bar a-grow" style="--v:5;--d:500ms"><b>5</b><span>Tue</span></div>
-                  <div class="v-bar hi a-grow" style="--v:7;--d:800ms"><b>7</b><span>Wed</span></div>
-                  <div class="v-bar hi a-grow" style="--v:8;--d:1100ms"><b>8</b><span>Thu</span></div>
+                  <div class="v-col"><b>4</b><div class="v-bar a-grow" style="--v:4;--d:200ms"></div><span>Mon</span></div>
+                  <div class="v-col"><b>5</b><div class="v-bar a-grow" style="--v:5;--d:500ms"></div><span>Tue</span></div>
+                  <div class="v-col"><b>7</b><div class="v-bar hi a-grow" style="--v:7;--d:800ms"></div><span>Wed</span></div>
+                  <div class="v-col"><b>8</b><div class="v-bar hi a-grow" style="--v:8;--d:1100ms"></div><span>Thu</span></div>
                   <div class="v-line"><span>Rule: 7 or higher, 2 days</span></div>
                 </div>
                 <p class="v-fire a-in" style="--d:1600ms">Rule fired, once for this episode</p>
@@ -634,7 +629,7 @@
           <div class="device-show"><div class="ui">
             <div><p class="ui-title">Plan review</p><p class="ui-note"><svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 7V5a4 4 0 0 1 8 0v2M3 7h10v7H3z"/></svg>Private to this screen. Alexa won't read it aloud.</p></div>
             <p class="ui-h">1 item to check</p>
-            <div class="ui-review"><div class="ui-head"><div><span class="ui-meta">Alert rule</span><h4>Pain follow-up rule</h4></div><span class="ui-status warn">Needs review</span></div><p>Contact the clinic if your pain score is 7 or higher for 2 consecutive days.</p></div>
+            <div class="ui-review"><div class="ui-head"><div><span class="ui-meta">Alert rule</span><b class="ui-name">Pain follow-up rule</b></div><span class="ui-status warn">Needs review</span></div><p>Contact the clinic if your pain score is 7 or higher for 2 consecutive days.</p></div>
             <p class="ui-h">Already in your plan</p>
             <div class="ui-rows">
               <div class="ui-row timed"><span class="ui-when">09:00</span><div><b>Take a short walk</b><span class="ui-meta">Care task</span></div><span class="ui-status ok">Active</span></div>
@@ -659,7 +654,7 @@
             <div><p class="ui-title">Plan review</p><p class="ui-note"><svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 7V5a4 4 0 0 1 8 0v2M3 7h10v7H3z"/></svg>Private to this screen. Alexa won't read it aloud.</p></div>
             <div class="ui-doc"><i aria-hidden="true"></i><div><b>Prescription</b><span class="ui-meta">1 page read by OCR</span></div></div>
             <p class="ui-h">8 items to check</p>
-            <div class="ui-review"><div class="ui-head"><div><span class="ui-meta">Medicine</span><h4>Amoxicillin</h4></div><span class="ui-status warn">Needs review</span></div>
+            <div class="ui-review"><div class="ui-head"><div><span class="ui-meta">Medicine</span><b class="ui-name">Amoxicillin</b></div><span class="ui-status warn">Needs review</span></div>
               <p>Take 1 capsule by mouth three times daily for 7 days.</p>
               <div class="ui-slip"><span class="from">From Prescription</span><span class="ln">p1:L5</span><span><mark>1. Amoxicillin 500 mg capsule: Take 1 capsule by mouth three times daily for 7 days.</mark><span class="ocr">Read by OCR</span></span></div>
               <div class="ui-field"><span>Times</span><span>08:00, 14:00, 20:00</span></div>
@@ -683,10 +678,6 @@
         <li>Claim to monitor for emergencies. Crisis words get the emergency number, 988 in the US.</li>
         <li>Share anything without the patient's confirmed consent, which she can withdraw at any time.</li>
       </ul>
-      <div class="legal-links">
-        <a href="privacy.html">Privacy policy</a>
-        <a href="terms.html">Terms of use</a>
-      </div>
     </div>
   </section>
 
@@ -696,14 +687,13 @@
       <p class="intro">Without Alexa+ preview access, we built a browser simulator that behaves like Alexa+ in front of the same MCP server: two devices, account linking, local voice, and a live MCP inspector.</p>
       <div class="seeit">
         <div>
-          <div class="screen-shot"><img src="assets/simulator.png" alt="The CareLoop simulator: Maya's Echo Show showing a plan item with its source line, Sam's Echo Dot, and the Alexa app panel" width="1440" height="900" loading="lazy"></div>
-          <div class="video" role="img" aria-label="Demo video placeholder"><p>The three-minute demo video will appear here.</p></div>
+          <div class="screen-shot"><img src="assets/simulator.png" alt="The CareLoop simulator: Maya's Echo Show with the plan review on its screen, Sam's Echo Dot, the Alexa app on a phone, and the MCP inspector" width="1440" height="900" loading="lazy"></div>
         </div>
-        <ul class="facts">
-          <li><strong>30 MCP tools</strong>Plans, documents, check-ins, family, consent, handoffs and data rights.</li>
-          <li><strong>100% recall, 0 invented numbers</strong>Prescription reading on our synthetic test set: typed PDF, scan and photo, 3 runs each.</li>
-          <li><strong>241 automated tests</strong>Including complete conversations against a running server.</li>
-          <li><strong>Local by default</strong>OCR, the language model and the voice all run on the laptop, so no health text leaves it. Point the models at your own OpenAI-compatible endpoint and document text goes there instead.</li>
+        <ul class="facts" aria-label="Evidence">
+          <li><b>100%</b> of expected items found when reading the synthetic prescriptions (typed, scanned and photographed, 3 runs each), with <b>0</b> invented numbers.</li>
+          <li><b>126 of 126</b> spoken scenario runs passed with a live model as the planner.</li>
+          <li><b>241</b> automated tests, including complete conversations against a running server.</li>
+          <li><b>30</b> MCP tools covering plans, documents, check-ins, family, consent, handoffs and data rights.</li>
         </ul>
       </div>
     </div>
@@ -712,7 +702,7 @@
   <section id="developers" aria-labelledby="dev-title">
     <div class="wrap">
       <h2 id="dev-title">For developers</h2>
-      <p class="intro">CareLoop is a standard MCP server over Streamable HTTP. Any MCP client can use it, and the simulator shows how Alexa+ would. In production Alexa+ brings its own model. To run the simulator, point it at any OpenAI-compatible API, a local Ollama model, or the built-in scripted planner.</p>
+      <p class="intro">A standard MCP server over Streamable HTTP. Any MCP client can use it; in production, Alexa+ brings its own model.</p>
       <div class="dev">
 <pre><span class="c"># Python 3.12+, uv, and optionally Ollama</span>
 git clone https://github.com/Ghost-141/CareLoop.git
@@ -725,7 +715,7 @@ scripts/run_alexa_demo.sh</pre>
         <ul class="stack">
           <li><strong>Voice-safe results.</strong> Every tool returns one sentence safe to say aloud, plus opaque references. Private detail goes to a sandboxed MCP Apps screen.</li>
           <li><strong>MCP elicitation.</strong> Check-ins, guided reviews and consent ask their own follow-up questions mid-call.</li>
-          <li><strong>Your choice of model.</strong> PaddleOCR, plus Ollama or any OpenAI-compatible endpoint, checked by deterministic code before anything is shown. Lines that read like commands to an AI are set aside.</li>
+          <li><strong>Your choice of model.</strong> The simulator's planner and document reader use a local Ollama model, any OpenAI-compatible API, or a scripted planner. OCR, models and voice run on your machine by default. Code checks every proposed item, and lines that read like commands to an AI are set aside.</li>
           <li><a href="https://github.com/Ghost-141/CareLoop#readme">Full setup, walkthrough and configuration in the README</a></li>
         </ul>
       </div>
