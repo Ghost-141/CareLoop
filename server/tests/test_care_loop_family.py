@@ -220,3 +220,13 @@ def test_import_refuses_text_without_plan_instructions() -> None:
     with pytest.raises(ToolError, match="Share the document in the Alexa app"):
         mcp.tools["import_care_plan_text"]("New Care Plan from Clinic", "User's new care plan text from their clinic visit", Ctx())
     assert service.storage.list("demo-patient", "DOCUMENT") == []
+
+
+
+def test_a_family_member_without_check_in_access_hears_nothing_about_pain_from_search() -> None:
+    clock, service, deps, tools, invitation, tasks = setup()  # Sam: tasks and updates, no check-ins
+    service.record_observation(PATIENT, pain_score=8, idempotency_key="pain-today")
+    deps.local_identity = SAM
+    with pytest.raises(ToolError, match="CareLoop records are unavailable"):
+        tools["search_care_history"]("Maya's pain score", Ctx())
+    assert tools["search_care_history"]("dressing", Ctx())["speakable"] == "No matching record found."  # other searches run as before

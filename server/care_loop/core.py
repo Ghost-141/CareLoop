@@ -983,7 +983,7 @@ class CareLoopService:
         patient = self._require_patient(identity)
         if from_date < 0 or to_date < from_date: raise ValueError("invalid handoff date range")
         plans = [row for row in self.storage.list(patient) if row["type"] in PLAN_TYPES and row.get("status") == "active"]
-        plan_items = [{"plan_id": row["id"], "type": row["type"], "status": row.get("status", "unknown"), "text": row.get("text", ""),
+        plan_items = [{"plan_id": row["id"], "type": row["type"], "item_kind": row.get("item_kind"), "status": row.get("status", "unknown"), "text": row.get("text", ""),
                        "source_id": row.get("source_id"), "source_citation": self.citation(patient, row),
                        "label": row.get("label"), "times": row.get("times"), "assignee": row.get("assignee_name") or "patient"}
                       for row in plans]

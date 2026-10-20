@@ -397,3 +397,16 @@ def test_the_read_back_leaves_out_the_documents_list_numbering() -> None:
     person = Script("I don't know", "stop")
     run(tools["start_teach_back"](person))
     assert person.asked[1].startswith("That's okay. Your plan says: Amoxicillin 500 mg")
+
+
+
+def test_a_new_session_asks_only_what_is_not_understood_yet() -> None:
+    _clock, service, _deps, tools, items = world()
+    run(tools["start_teach_back"](Script("I don't know", *ALL_RIGHT[1:])))  # only Amoxicillin missed
+    again = Script("every 8 hours")
+    result = run(tools["start_teach_back"](again))
+    assert again.asked == ["Let's check 1 thing. How often do you take Amoxicillin?"]
+    assert result["speakable"] == "That's right. Done. You got 1 of 1 right."
+    everything = Script(*ALL_RIGHT)
+    run(tools["start_teach_back"](everything))  # all understood: the whole plan is checked again
+    assert everything.asked[0] == "Let's check 6 things. How often do you take Amoxicillin?"

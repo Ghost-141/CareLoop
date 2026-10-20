@@ -576,7 +576,7 @@
     const group = (title, list, fn, sub) => { if (list && list.length) parts.push(section(title, [rows(list.map(fn))], sub)); };
     const cite = (c, cit, text) => { if (cit) citeSlip(cit.title, cit.page_excerpts, text, c); return c; };
     group("Questions for your clinician", h.questions, (q) => card(sentence(q.text), null, "In your words. Asked " + when(q.asked_at)));
-    group("Plan", h.plan_items, (p) => cite(card(p.text, p.status, [p.type === "PLAN_RULE" ? "Follow-up rule" : "Task", (p.times || []).join(", "),
+    group("Plan", h.plan_items, (p) => cite(card(p.text, p.status, [kindOf(p), (p.times || []).join(", "),
         p.type === "PLAN_TASK" ? (p.assignee === "patient" ? "Patient" : p.assignee) : null].filter(Boolean).join(". ")), p.source_citation, p.text));
     group("Understanding check", h.understanding, (u) => {
       const c = card(u.question || u.label || "Plan item", u.result, "Checked " + when(u.asked_at) + (u.attempts > 1 ? ", " + u.attempts + " tries" : ""));

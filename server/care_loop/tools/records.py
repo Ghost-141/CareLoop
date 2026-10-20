@@ -204,6 +204,7 @@ class TeachBackAnswer(BaseModel):
     answer: str = Field(description="What the person said, in their own words")
 
 
+_ABOUT_VALUES = re.compile(r"\b(pain|scores?|check-?ins?|symptoms?|how (is|was|are|has) (she|he|they|maya))\b", re.IGNORECASE)
 TEACH_BACK_ATTEMPTS = 2  # a second try, then the plan is read back
 TEACH_BACK_MISS_LIMIT = 3  # misses in a row before the rest is left for the clinician
 
@@ -598,7 +599,7 @@ def register(mcp: MCPServer, deps) -> None:
 
         Call it for "anything I should know", "anything coming up", "what's next" or "what needs my attention".
         It is not the task list: "what do I need to do today" is list_care_tasks. Each suggestion is computed by code from approved records: a visit coming up, a missed task, no
-        check-in today, plan items waiting for review. Speak only what this returns, never add a suggestion of
+        check-in today, plan items waiting for review, part of the plan never checked back. Speak only what this returns, never add a suggestion of
         your own, and when nothing applies say so. If a suggestion carries a question, ask it and run that tool on yes.
         """
         identity = _patient(deps, ctx)
@@ -610,11 +611,12 @@ def register(mcp: MCPServer, deps) -> None:
         if not items:
             return _result("Nothing needs your attention right now.", view="tasks")
         lead = f"You have {len(items)} things worth a look. " if len(items) > 1 else ""
-        # The question for the first suggestion is spoken last, so it follows the lines it is about.
-        spoken = items[1:] + items[:1] if items[0]["offer"] else items
+        # One question at most: the first suggestion that has one. It is spoken last, right after its own line.
+        offered = next((i for i in items if i["offer"]), None)
+        spoken = [i for i in items if i is not offered] + ([offered] if offered else [])
         return _result(lead + " ".join(i["say"] for i in spoken), view="tasks",
                        refs=[{"id": i["id"], "kind": "suggestion", "label": f"suggestion {n}"} for n, i in enumerate(items, start=1)],
-                       next_step=items[0]["offer"] if items[0]["offer"] else None)
+                       next_step=offered["offer"] if offered else None)
 
     @tool("set_my_details", "care-circle", _IDEMPOTENT_WRITE)
     @_safe_tool("Those details couldn't be saved.")
@@ -1020,8 +1022,11 @@ def register(mcp: MCPServer, deps) -> None:
             if not checks:
                 return _result("There's nothing in your plan to check yet. Medicines, alert rules and warning signs "
                                "can be checked once they're approved.", view="teach-back")
-            workflow = service.start_workflow(identity, "teach_back", list(checks)) | {"right": 0, "asked": 0, "missed_streak": 0}
-            say = f"Let's check {_plural(len(checks), 'thing')}. "
+            # Ask what isn't understood yet (never checked, or needs another look); if all is, check it all again.
+            latest = {(r["item_id"], r["check"]): r["result"] for r in service.teach_back_results(identity)}
+            due = [key for key, c in checks.items() if latest.get((c["item"]["id"], c["check"])) != "understood"] or list(checks)
+            workflow = service.start_workflow(identity, "teach_back", due) | {"right": 0, "asked": 0, "missed_streak": 0}
+            say = f"Let's check {_plural(len(due), 'thing')}. "
         else:
             # A paused session also picks up plan values approved since it started.
             workflow["queue"] = workflow["queue"] + [key for key in checks if key not in workflow["queue"]]
@@ -1140,7 +1145,15 @@ def register(mcp: MCPServer, deps) -> None:
         Matches are listed as refs and shown in the private history view.
         """
         start, end = _date_range(from_date, to_date, now=int(deps.service.clock()), required=False)
-        matches = deps.service.search(_patient(deps, ctx), query, from_date=start, to_date=end)
+        identity = _patient(deps, ctx)
+        if identity.role == "caregiver" and _ABOUT_VALUES.search(query):
+            # A family member asking about scores or check-ins needs that access. Without it, even a count
+            # of plan text that mentions pain would sound like an answer on a shared speaker.
+            try:
+                deps.service.patient_for(identity, "read_observations")
+            except AccessDenied:
+                raise ToolError("CareLoop records are unavailable.") from None  # the same words as listing records
+        matches = deps.service.search(identity, query, from_date=start, to_date=end)
         speakable = f"Found {_plural(len(matches), 'matching record')}." if matches else "No matching record found."
         return _result(speakable, view="history",
                        refs=[{"id": r["id"], "kind": r["type"].lower(), "label": f"match {i}"}

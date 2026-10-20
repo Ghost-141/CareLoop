@@ -265,3 +265,14 @@ def test_the_patient_can_turn_suggestions_off_and_back_on_by_voice() -> None:
     assert tools["get_suggestions"](Ctx())["speakable"].startswith("Your visit is tomorrow.")
     assert tools["get_suggestions"](Ctx())["speakable"].endswith("Want me to prepare the handoff?")
     assert tools["set_my_details"](Ctx())["speakable"] == "Nothing changed."
+
+
+def test_a_later_suggestion_still_gets_its_question_when_the_first_has_none() -> None:
+    clock, service, deps, tools, invitation, tasks = setup()
+    tools["assign_task"](tasks["morning"]["id"], Ctx(), invitation["id"])
+    clock[0] = at(9, 5)
+    service.intake_text_document(PATIENT, "New plan", "TASK: Drink water | schedule: morning")  # review waiting: has a question
+    result = tools["get_suggestions"](Ctx())
+    assert result["speakable"] == ("You have 2 things worth a look. Sam missed Take a short walk. "
+                                   "1 plan item is waiting for your review. Want to go through them now?")
+    assert result["next_step"]["tool"] == "review_plan_by_voice"
