@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CareLoop · The accountable care loop for Alexa+</title>
 <meta name="description" content="CareLoop is an MCP add-on for Alexa+ that turns a clinician's plan into tasks the patient approves, family members can help with, and a clinician can trust. Every spoken instruction traces back to the line it came from.">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M26 16a10 10 0 1 1-4-8' fill='none' stroke='%23172338' stroke-width='4' stroke-linecap='round'/%3E%3Ccircle cx='25' cy='8' r='3' fill='%231690a6'/%3E%3C/svg%3E">
-<meta name="theme-color" content="#172338">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M26 16a10 10 0 1 1-4-8' fill='none' stroke='%231c2b45' stroke-width='4' stroke-linecap='round'/%3E%3Ccircle cx='25' cy='8' r='3' fill='%231690a6'/%3E%3C/svg%3E">
+<meta name="theme-color" content="#1c2b45">
 <link rel="canonical" href="https://ghost-141.github.io/CareLoop/">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="CareLoop">
@@ -21,15 +21,16 @@
 <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet">
 <style>
   :root {
-    --ink: #172338;
+    --ink: #1c2b45;
     --paper: #eef2f4;
     --sheet: #ffffff;
-    --mark: #ffe14d;
+    --mark: #ffe873;
     --voice: #1690a6;
     --muted: #5a6677;
     --rule: #d3dbe1;
     --sans: "Atkinson Hyperlegible", system-ui, sans-serif;
-    --typed: "Courier Prime", "Courier New", monospace;
+    --print: Charter, "Bitstream Charter", "Iowan Old Style", Georgia, serif;
+    --code: "Courier Prime", "Courier New", monospace;
     --measure: 64ch;
   }
   * { box-sizing: border-box; }
@@ -57,7 +58,7 @@
   .actions { display: flex; gap: .9rem; flex-wrap: wrap; }
   .button { display: inline-block; padding: .85rem 1.4rem; border-radius: 999px; font-weight: 700; text-decoration: none; border: 2px solid var(--ink); }
   .button.primary { background: var(--ink); color: var(--sheet); }
-  .button.primary:hover { background: #24375a; }
+  .button.primary:hover { background: #2b3f63; }
   .button.secondary:hover { background: var(--sheet); }
   .fineprint { margin-top: 1.4rem; font-size: .95rem; color: var(--muted); max-width: 46ch; }
 
@@ -69,10 +70,10 @@
   .thread { height: 4.5rem; margin-left: 2.1rem; border-left: 2px dashed var(--voice); position: relative; }
   .thread::after { content: ""; position: absolute; left: -7px; bottom: -6px; width: 12px; height: 12px; border-radius: 50%; background: var(--voice); }
   .thread span { position: absolute; left: 1rem; top: 1.35rem; font-size: .95rem; color: var(--muted); }
-  .slip { background: var(--sheet); padding: 1.5rem 1.6rem 1.7rem 3.6rem; font: 400 .98rem/1.75 var(--typed); box-shadow: 0 1px 0 var(--rule), 0 18px 40px -28px rgba(23, 35, 56, .45); transform: rotate(-.6deg); position: relative; }
-  .slip .head { margin-left: -2rem; font-weight: 700; border-bottom: 1px solid var(--ink); padding-bottom: .4rem; margin-bottom: .6rem; display: flex; justify-content: space-between; gap: 1rem; }
+  .slip { background: var(--sheet); padding: 1.5rem 1.6rem 1.7rem 3.6rem; font: 400 1.0625rem/1.7 var(--print); box-shadow: 0 1px 0 var(--rule), 0 18px 40px -28px rgba(28, 43, 69, .45); transform: rotate(-.6deg); position: relative; }
+  .slip .head { margin-left: -2rem; font: 700 .95rem/1.4 var(--sans); border-bottom: 1px solid var(--ink); padding-bottom: .4rem; margin-bottom: .6rem; display: flex; justify-content: space-between; gap: 1rem; }
   .slip .line { white-space: pre-wrap; color: #39465c; position: relative; }
-  .slip .line::before { content: attr(data-n); position: absolute; left: -2.3rem; top: .15rem; font-size: .75rem; color: #9aa6b4; }
+  .slip .line::before { content: attr(data-n); position: absolute; left: -2.3rem; top: .15rem; font: 400 .75rem/1.9 var(--sans); color: var(--muted); font-variant-numeric: tabular-nums; }
   .slip .hit::before { color: var(--voice); font-weight: 700; }
   .slip .hit { position: relative; color: var(--ink); }
   .slip .hit mark { background: linear-gradient(transparent 12%, var(--mark) 12%, var(--mark) 88%, transparent 88%); color: inherit; padding: 0 .15em; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
@@ -102,24 +103,94 @@
   .compare .needs li strong::before { content: ""; display: inline-block; width: .85rem; height: .85rem; background: var(--mark); margin-right: .55rem; vertical-align: -.05rem; }
 
   /* the loop: a real sequence */
-  ol.loop { list-style: none; counter-reset: step; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 1.5rem; }
-  ol.loop li { counter-increment: step; position: relative; padding-top: 3.25rem; }
-  ol.loop li::before { content: counter(step); position: absolute; top: 0; left: 0; width: 2.3rem; height: 2.3rem; border-radius: 50%; border: 2px solid var(--ink); display: grid; place-items: center; font-weight: 700; background: var(--paper); z-index: 1; }
-  ol.loop li:not(:last-child)::after { content: ""; position: absolute; top: 1.15rem; left: 2.3rem; right: -1.5rem; border-top: 2px solid var(--ink); }
-  ol.loop p { margin: 0; font-size: 1rem; color: #2c3a52; }
 
   /* conversations from the product */
-  .talks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3.5rem 3rem; }
-  .talk h3 { margin-bottom: 1rem; }
-  .turn { display: grid; grid-template-columns: 4.2rem 1fr; gap: .9rem; padding: .55rem 0; align-items: start; }
+  /* ---- what Alexa says, and what CareLoop keeps --------------------------------------- */
+  .turn { display: grid; grid-template-columns: 4.2rem 1fr; gap: .9rem; padding: .5rem 0; align-items: start; }
   .turn .speaker { font-size: .95rem; color: var(--muted); padding-top: .1rem; }
   .turn .speaker.alexa { color: var(--voice); font-weight: 700; }
   .turn p { margin: 0; }
   .turn.alexa p { font-size: 1.05rem; }
-  .turn.note { grid-template-columns: 4.2rem 1fr; }
   .turn.note p { font-size: .98rem; color: var(--muted); font-style: italic; }
-  .talk .why { margin: 1rem 0 0; padding-left: 5.1rem; font-size: 1rem; }
-  .talk .why mark { background: var(--mark); color: inherit; padding: 0 .2em; }
+
+  .tabs { display: flex; gap: .25rem 2rem; flex-wrap: wrap; border-bottom: 1px solid var(--rule); margin: 0 0 2.5rem; }
+  .tabs button { font: 700 1.05rem/1.3 var(--sans); color: var(--muted); background: none; border: 0; padding: .9rem 0 .8rem; margin-bottom: -1px;
+    border-bottom: 3px solid transparent; cursor: pointer; display: grid; gap: .1rem; text-align: left; }
+  .tabs button span { font-weight: 400; font-size: .9rem; }
+  .tabs button:hover { color: var(--ink); }
+  .tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--ink); }
+  .tabs button:focus-visible { outline-offset: 4px; }
+
+  .exchange { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: 1.5rem 4rem; align-items: start; }
+  .exchange[hidden] { display: none; }
+  .heard { margin: 0 0 .9rem; display: flex; align-items: center; gap: .6rem; font-size: .95rem; color: var(--muted); }
+  .heard svg { width: 22px; height: 18px; flex: none; }
+  .exchange .why { margin: 1.5rem 0 0; padding-top: 1.25rem; border-top: 1px solid var(--rule); font-size: 1.125rem; }
+  .exchange .why strong { font-weight: 700; }
+  .keeps { margin: 0; }
+  .keeps figcaption { font-size: .95rem; color: var(--muted); margin: 0 0 .9rem; }
+
+  /* An Echo Show, drawn as an object; its screen uses the product's own components. */
+  .device-show { background: #22262b; border-radius: 20px; padding: 12px 12px 18px; box-shadow: 0 24px 40px -22px rgba(28, 43, 69, .55); }
+  .ui { --page: #f4f6f5; --hair: #dadfe3; --hair-soft: #e9ecee; --ok: #1f7a5a; --warn: #9a6200; --warn-soft: #fff4d1; --danger: #b42318;
+    --round: ui-rounded, "SF Pro Rounded", system-ui, -apple-system, "Segoe UI", sans-serif; --ui-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--page); border-radius: 8px; padding: 18px 18px 20px; font: 400 .9375rem/1.45 var(--ui-sans); color: var(--ink); display: grid; gap: 14px; }
+  .ui-title { font: 600 1.3rem/1.2 var(--round); margin: 0; letter-spacing: -.01em; }
+  .ui-note { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: .8125rem; margin: 3px 0 0; }
+  .ui-note svg { width: 12px; height: 12px; flex: none; }
+  .ui-h { font: 600 .9375rem/1.3 var(--round); margin: 0 0 -6px; }
+  .ui-sub { color: var(--muted); font-size: .8125rem; margin: -10px 0 0; }
+  .ui-rows { background: var(--sheet); border: 1px solid var(--hair); border-radius: 12px; overflow: hidden; }
+  .ui-row { padding: 11px 14px; border-top: 1px solid var(--hair-soft); display: flex; gap: 12px; align-items: center; justify-content: space-between; }
+  .ui-row:first-child { border-top: 0; }
+  .ui-row.timed { display: grid; grid-template-columns: 3.4rem 1fr auto; align-items: start; }
+  .ui-when { font: 600 .98rem/1.35 var(--round); font-variant-numeric: tabular-nums; }
+  .ui-row b { font-weight: 600; display: block; }
+  .ui-meta { color: var(--muted); font-size: .8125rem; display: block; }
+  .ui-doc b { display: block; font-weight: 600; }
+  .ui-status { display: inline-flex; align-items: center; gap: 6px; font-size: .78rem; font-weight: 500; white-space: nowrap; color: var(--muted); }
+  .ui-status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  .ui-status.ok { color: var(--ok); } .ui-status.warn { color: var(--warn); }
+  .ui-btn { font: 600 .8125rem/1 var(--ui-sans); border-radius: 9px; padding: 0 12px; min-height: 32px; display: inline-flex; align-items: center; white-space: nowrap; }
+  .ui-btn.primary { background: var(--ink); color: var(--sheet); }
+  .ui-btn.quiet { border: 1px solid var(--hair); }
+  .ui-btn.danger { color: var(--danger); padding: 0 4px; }
+  .ui-review { background: var(--sheet); border: 1px solid var(--hair); border-radius: 12px; padding: 13px 14px 14px; position: relative; display: grid; gap: 8px; }
+  .ui-review::before { content: ""; position: absolute; left: -1px; top: 14px; width: 4px; height: 24px; border-radius: 0 3px 3px 0; background: var(--mark); }
+  .ui-review .ui-head { display: flex; justify-content: space-between; align-items: start; gap: 10px; }
+  .ui-review h4 { font: 600 1.02rem/1.3 var(--round); margin: 1px 0 0; }
+  .ui-review p { margin: 0; }
+  .ui-slip { border: 1px solid var(--hair); border-radius: 3px 3px 8px 8px; font: 400 .95rem/1.5 var(--print); padding: 8px 10px 9px 0; display: grid; grid-template-columns: 48px 1fr; gap: 0 10px; }
+  .ui-slip .from { grid-column: 2; font: 500 .7rem/1 var(--ui-sans); color: var(--muted); margin: 2px 0 6px; }
+  .ui-slip .ln { font: 500 .7rem/2 var(--ui-sans); color: var(--muted); text-align: right; border-right: 1px solid var(--hair); padding-right: 7px; font-variant-numeric: tabular-nums; }
+  .ui-slip mark { background: linear-gradient(transparent 12%, var(--mark) 12%, var(--mark) 88%, transparent 88%); color: inherit; padding: 0 2px; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+  .ui-slip .ocr { display: block; font: 500 .7rem/1.6 var(--ui-sans); color: var(--muted); }
+  .ui-field { display: grid; grid-template-columns: 4.5rem 1fr; align-items: center; gap: 10px; font-size: .8125rem; color: var(--muted); }
+  .ui-field span:last-child { border: 1px solid var(--hair); border-radius: 7px; padding: 6px 9px; color: var(--ink); background: var(--page); font-variant-numeric: tabular-nums; }
+  .ui-flag { background: var(--warn-soft); color: var(--warn); border-radius: 8px; padding: 8px 10px; font-size: .8125rem; }
+  .ui-actions { display: flex; gap: 8px; }
+  .ui-doc { display: flex; gap: 12px; align-items: center; background: var(--sheet); border: 1px solid var(--hair); border-radius: 12px; padding: 10px 14px; }
+  .ui-doc i { width: 24px; height: 30px; flex: none; border: 1.5px solid var(--ink); border-radius: 2px 7px 2px 2px; background: repeating-linear-gradient(transparent 0 8px, var(--muted) 8px 9.5px, transparent 9.5px 12px) 4px 2px / 14px 22px no-repeat; opacity: .85; }
+
+  /* Sam's Echo Dot has no screen, so what CareLoop keeps is the grant itself. */
+  .grant { background: var(--sheet); border: 1px solid var(--rule); border-radius: 14px; overflow: hidden; }
+  .grant-head { padding: 1rem 1.25rem; border-bottom: 1px solid var(--rule); display: flex; justify-content: space-between; gap: 1rem; align-items: baseline; flex-wrap: wrap; }
+  .grant-head b { font-size: 1.1rem; }
+  .grant-head span { color: var(--muted); font-size: .95rem; }
+  .grant ul { list-style: none; margin: 0; padding: 0; }
+  .grant li { display: flex; justify-content: space-between; gap: 1rem; padding: .8rem 1.25rem; border-top: 1px solid #e9ecee; font-size: 1rem; }
+  .grant li:first-child { border-top: 0; }
+  .grant .allowed, .grant .withheld { display: inline-flex; align-items: center; gap: .45rem; font-size: .95rem; white-space: nowrap; }
+  .grant .allowed { color: #1f7a5a; }
+  .grant .withheld { color: var(--muted); }
+  .grant .allowed::before, .grant .withheld::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+  .grant .withheld::before { background: none; border: 1.5px solid currentColor; width: 7px; height: 7px; }
+  .grant-foot { margin: 0; padding: .9rem 1.25rem; border-top: 1px solid var(--rule); background: var(--paper); font-size: .95rem; color: #2c3a52; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .exchange.entering .turn, .exchange.entering .keeps { animation: arrive 360ms cubic-bezier(.2, .7, .2, 1) both; animation-delay: calc(var(--i, 0) * 70ms); }
+    @keyframes arrive { from { opacity: 0; transform: translateY(6px); } }
+  }
 
   /* safety */
   .never { columns: 2; column-gap: 3rem; margin: 0 0 2rem; padding: 0; list-style: none; }
@@ -128,7 +199,7 @@
 
   /* see it */
   .seeit { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 3rem; align-items: start; }
-  .screen-shot { border-radius: 14px; overflow: hidden; box-shadow: 0 1px 0 var(--rule), 0 30px 60px -40px rgba(23, 35, 56, .6); background: var(--sheet); }
+  .screen-shot { border-radius: 14px; overflow: hidden; box-shadow: 0 1px 0 var(--rule), 0 30px 60px -40px rgba(28, 43, 69, .6); background: var(--sheet); }
   .video { aspect-ratio: 16 / 9; border-radius: 14px; background: var(--ink); color: var(--sheet); display: grid; place-items: center; text-align: center; padding: 1.5rem; margin-top: 1.5rem; }
   .video p { margin: 0; max-width: 28ch; }
   .facts { margin: 0; padding: 0; list-style: none; }
@@ -137,7 +208,7 @@
 
   /* developers */
   .dev { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 3rem; }
-  pre { margin: 0; background: var(--ink); color: #e9eef4; padding: 1.4rem 1.5rem; border-radius: 12px; overflow-x: auto; font: 400 .92rem/1.7 var(--typed); }
+  pre { margin: 0; background: var(--ink); color: #e9eef4; padding: 1.4rem 1.5rem; border-radius: 12px; overflow-x: auto; font: 400 .92rem/1.7 var(--code); }
   pre .c { color: #9fb0c4; }
   .stack { margin: 0; padding: 0; list-style: none; }
   .stack li { padding: .7rem 0; border-top: 1px solid var(--rule); }
@@ -148,63 +219,160 @@
   .next p { margin: .3rem 0 0; font-size: 1rem; color: #2c3a52; }
 
 
-  /* system diagram */
-  .system { margin-top: 4.5rem; }
-  .system-title { font-size: 1.5rem; margin: 0 0 .4rem; }
-  .system-intro { margin: 0 0 1.5rem; color: #2c3a52; max-width: var(--measure); }
-  .diagram-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-  .diagram { width: 100%; min-width: 760px; height: auto; display: block; font-family: var(--sans); }
-  .diagram .node rect { fill: var(--sheet); stroke: var(--rule); stroke-width: 1.5; transition: stroke .35s, stroke-width .35s; }
-  .diagram .node.container rect { fill: #e4eaee; stroke: none; }
-  .diagram .node.store rect { fill: #f7f9fa; stroke-dasharray: 5 4; }
-  .diagram .node .screen { fill: #f4f6f8; stroke: var(--rule); stroke-width: 1; }
-  .diagram .node .ring { fill: none; stroke: #b9c4ce; stroke-width: 6; transition: stroke .35s; }
-  .diagram .node.on > rect:first-child { stroke: var(--ink); stroke-width: 2.5; }
-  .diagram #n-dot.on .ring { stroke: var(--voice); }
-  .diagram #n-show.screen-on .screen { fill: var(--mark); stroke: #c9a400; }
-  .diagram .name { font-size: 19px; font-weight: 700; fill: var(--ink); }
-  .diagram .name.small { font-size: 16px; }
-  .diagram .sub { font-size: 13.5px; fill: var(--muted); }
-  .diagram .tiny { font-size: 12.5px; fill: var(--muted); }
-  .diagram .lab { font-size: 12px; fill: var(--muted); }
-  .diagram .lab.mid { text-anchor: middle; }
-  .diagram .lab.voice-t { fill: var(--voice); }
-  .diagram .lab.big { font-size: 14px; }
-  .diagram .edge { stroke: var(--rule); stroke-width: 2; stroke-dasharray: 5 5; marker-end: url(#dg-arrow); transition: stroke .3s, stroke-width .3s; }
-  .diagram .edge.on { stroke-dasharray: none; stroke-width: 3; }
-  .diagram .edge.ink.on { stroke: var(--ink); }
-  .diagram .edge.voice.on { stroke: var(--voice); }
-  .diagram .edge.private.on { stroke: #d6ae00; }
-  .diagram .token { fill: var(--ink); opacity: 0; }
-  .diagram .token.voice { fill: var(--voice); }
-  .diagram .token.private { fill: #d6ae00; }
-  .player { display: grid; grid-template-columns: auto 1fr; gap: 1.5rem; align-items: start; margin-top: 1.5rem; }
-  .play { font: 700 1rem var(--sans); padding: .7rem 1.3rem; border-radius: 999px; border: 2px solid var(--ink); background: var(--ink); color: var(--sheet); cursor: pointer; min-width: 6.5rem; }
-  .play:hover { background: #24375a; }
-  ol.steps { margin: 0; padding: 0 0 0 1.4rem; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .35rem 2rem; }
-  ol.steps li { padding-left: .2rem; color: var(--muted); }
-  ol.steps li::marker { font-weight: 700; }
-  ol.steps button { all: unset; cursor: pointer; display: block; padding: .35rem .4rem; border-radius: 6px; line-height: 1.45; font-size: 1rem; }
-  ol.steps button:focus-visible { outline: 3px solid var(--voice); }
-  ol.steps li.on { color: var(--ink); }
-  ol.steps li.on button { background: var(--sheet); box-shadow: inset 3px 0 0 var(--ink); }
-  @media (max-width: 900px) { .player { grid-template-columns: 1fr; } ol.steps { grid-template-columns: 1fr; } }
   footer.site { padding: 3rem 0 4rem; font-size: .98rem; color: var(--muted); }
   footer.site .wrap { display: flex; justify-content: space-between; gap: 2rem; flex-wrap: wrap; }
   footer.site p { margin: 0 0 .4rem; max-width: 60ch; }
 
+  /* ---- how the loop works: a ring of five steps around Maya's record ------------------ */
+  .loopviz { display: grid; grid-template-columns: minmax(0, 500px) minmax(0, 1fr); gap: 3rem 4rem; align-items: center; }
+  .ring-wrap { position: relative; width: 88%; margin-inline: auto; aspect-ratio: 1; }
+  .ring-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+  .ring-track { fill: none; stroke: var(--rule); stroke-width: 2; }
+  .ring-back { fill: none; stroke: #9aa6b4; stroke-width: 2; stroke-dasharray: 3 7; stroke-linecap: round; }
+  .ring-prog { fill: none; stroke: var(--ink); stroke-width: 4; stroke-linecap: round; }
+  .ring-token { fill: var(--ink); stroke: var(--mark); stroke-width: 5; paint-order: stroke; }
+  .ring-next { font: 400 17px var(--sans); fill: var(--muted); }
+  .station { position: absolute; transform: translate(-50%, -50%); display: block;
+    background: none; border: 0; padding: 0; cursor: pointer; font: 700 1rem/1.2 var(--sans); color: var(--muted); }
+  .station span { position: absolute; white-space: nowrap; }
+  .station.lab-top span { bottom: calc(100% + .5rem); left: 50%; transform: translateX(-50%); }
+  .station.lab-right span { left: calc(100% + .7rem); top: 50%; transform: translateY(-50%); }
+  .station.lab-left span { right: calc(100% + .7rem); top: 50%; transform: translateY(-50%); }
+  .station.lab-below span { top: calc(100% + .55rem); left: 50%; transform: translateX(-50%); }
+  .station i { font-style: normal; width: 2.6rem; height: 2.6rem; border-radius: 50%; display: grid; place-items: center;
+    background: var(--paper); border: 2px solid var(--rule); color: var(--muted); transition: background .3s, border-color .3s, color .3s, box-shadow .3s; }
+  .station.done i { border-color: var(--ink); color: var(--ink); }
+  .station[aria-current="step"] { color: var(--ink); }
+  .station[aria-current="step"] i { background: var(--ink); border-color: var(--ink); color: var(--sheet); box-shadow: 0 0 0 6px var(--mark); }
+  .station:hover { color: var(--ink); }
+  .station:focus-visible { outline: none; }
+  .station:focus-visible i { outline: 3px solid var(--voice); outline-offset: 4px; }
+  .ring-col { position: relative; }
+  .record { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 40%; }
+  .record h3 { font-size: .95rem; margin: 0 0 .55rem; display: flex; align-items: center; gap: .45rem; }
+  .record h3 svg { width: 16px; height: 16px; flex: none; }
+  .record ol { list-style: none; margin: 0; padding: 0; display: grid; gap: .3rem; }
+  .record li { font-size: .84rem; line-height: 1.3; color: var(--ink); display: grid; grid-template-columns: .7rem 1fr; gap: .35rem; align-items: baseline; }
+  .record li::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--ink); transform: translateY(-1px); }
+  .record li[hidden] { display: none; }
+
+  .stage { display: grid; gap: 1.25rem; }
+  .scene { background: var(--sheet); border: 1px solid var(--rule); border-radius: 18px; min-height: 380px; padding: 1.75rem; display: grid; align-items: center; position: relative; overflow: hidden; }
+  .scene > div[hidden] { display: none; }
+  .caption { margin: 0; font-size: 1.2rem; line-height: 1.45; max-width: 40ch; min-height: 3.5rem; }
+  .controls { display: flex; align-items: center; gap: 1rem; }
+  .play { font: 700 1rem var(--sans); padding: .65rem 1.3rem; border-radius: 999px; border: 2px solid var(--ink); background: var(--ink); color: var(--sheet); cursor: pointer; min-width: 6.5rem; }
+  .play:hover { background: #2b3f63; }
+  .play:focus-visible { outline: 3px solid var(--voice); outline-offset: 3px; }
+  .controls .count { color: var(--muted); font-size: .95rem; font-variant-numeric: tabular-nums; }
+
+  /* scene parts */
+  .v-row { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 1.5rem; align-items: center; }
+  .v-paper { background: var(--sheet); box-shadow: 0 1px 0 var(--rule), 0 16px 34px -24px rgba(28, 43, 69, .5); border: 1px solid #e9ecee; padding: 1rem 1rem 1.1rem 2.6rem; transform: rotate(-.6deg); position: relative; overflow: hidden; font: 400 .9rem/1.55 var(--print); }
+  .v-paper .hd { margin-left: -1.6rem; font: 700 .8rem/1.3 var(--sans); border-bottom: 1px solid var(--ink); padding-bottom: .3rem; margin-bottom: .45rem; }
+  .v-paper .ln { position: relative; color: #39465c; padding: .1rem 0; }
+  .v-paper .ln::before { content: attr(data-n); position: absolute; left: -2rem; top: .2rem; font: 400 .68rem/1.6 var(--sans); color: var(--muted); }
+  .v-paper mark { color: var(--ink); background-image: linear-gradient(transparent 12%, var(--mark) 12%, var(--mark) 88%, transparent 88%);
+    background-color: transparent; background-repeat: no-repeat; background-size: 100% 100%; padding: 0 2px; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+  .v-scan { position: absolute; left: 0; right: 0; top: 100%; height: 2px; background: var(--voice); box-shadow: 0 0 14px 3px rgba(22, 144, 166, .35); opacity: 0; }
+  .v-drafts { display: grid; gap: .55rem; }
+  .v-chip { background: var(--paper); border: 1px solid var(--rule); border-radius: 10px; padding: .55rem .75rem; display: grid; grid-template-columns: 1fr auto; gap: 0 .75rem; font-size: .9rem; }
+  .v-chip b { font-weight: 700; }
+  .v-chip small { grid-column: 1; color: var(--muted); font-size: .82rem; font-variant-numeric: tabular-nums; }
+  .v-chip em { grid-row: 1 / 3; grid-column: 2; align-self: center; font: 400 .72rem var(--sans); color: var(--muted); font-style: normal; }
+
+  .v-say { display: flex; align-items: flex-start; gap: .7rem; margin: 0 0 1rem; }
+  .v-say .who { font-weight: 700; color: var(--voice); font-size: .95rem; padding-top: .55rem; }
+  .v-say p { margin: 0; background: var(--paper); border-radius: 16px 16px 16px 4px; padding: .55rem .9rem; font-size: 1.05rem; }
+  .v-say.dot p { border-radius: 16px 16px 4px 16px; }
+  .v-tag { display: block; font-size: .8rem; color: var(--muted); margin: 0 0 .4rem; }
+  .swap { display: inline-grid; }
+  .swap > * { grid-area: 1 / 1; }
+  .swap .was { opacity: 0; }
+  .ui-btn.done-btn { background: var(--sheet); color: #1f7a5a; border: 1px solid #1f7a5a; }
+
+  .v-dot { width: 120px; height: 120px; border-radius: 50%; border: 7px solid #f5c400; box-shadow: 0 0 0 4px rgba(245, 196, 0, .25), 0 0 26px rgba(245, 196, 0, .55), 0 10px 22px -8px rgba(28, 43, 69, .5);
+    background: radial-gradient(circle, rgba(255, 255, 255, .07) 1px, transparent 1.3px) 0 0 / 6px 6px, radial-gradient(circle at 40% 35%, #444a52, #33383e 60%, #262a2f); margin: 0 auto; }
+  .v-dot.calm { border-color: #c9d0d5; box-shadow: 0 10px 22px -8px rgba(28, 43, 69, .5); }
+  .v-dotcap { text-align: center; font-size: .9rem; color: var(--muted); margin: .7rem 0 0; }
+  .v-task { display: flex; gap: .8rem; align-items: center; background: var(--paper); border: 1px solid var(--rule); border-radius: 10px; padding: .6rem .8rem; margin-top: .9rem; font-size: .92rem; }
+  .v-task b { font-variant-numeric: tabular-nums; }
+  .v-task .to { margin-left: auto; color: #1f7a5a; font-weight: 700; }
+
+  .v-chart { display: grid; grid-template-columns: repeat(4, 1fr); gap: .9rem; align-items: end; height: 190px; position: relative; padding: 0 0 1.6rem; border-bottom: 1px solid var(--rule); }
+  .v-bar { position: relative; height: calc(var(--v) * 10%); background: #c7d0d9; border-radius: 6px 6px 2px 2px; transform-origin: bottom; }
+  .v-bar.hi { background: #b42318; }
+  .v-bar b { position: absolute; top: -1.5rem; left: 0; right: 0; text-align: center; font-size: .9rem; font-variant-numeric: tabular-nums; }
+  .v-bar span { position: absolute; bottom: -1.55rem; left: 0; right: 0; text-align: center; font-size: .8rem; color: var(--muted); }
+  .v-line { position: absolute; left: -.4rem; right: -.4rem; bottom: calc(1.6rem + (100% - 1.6rem) * .7); border-top: 2px dashed #9a6200; }
+  .v-line span { position: absolute; left: .4rem; top: -1.45rem; font-size: .78rem; color: #9a6200; background: var(--sheet); padding-right: .3rem; }
+  .v-fire { margin-top: 1.1rem; display: flex; gap: .55rem; align-items: center; font-size: .92rem; }
+  .v-fire::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: #b42318; }
+
+  .v-handoff { background: var(--sheet); border: 1px solid var(--rule); border-radius: 12px; box-shadow: 0 16px 34px -26px rgba(28, 43, 69, .5); overflow: hidden; max-width: 460px; margin: 0 auto; width: 100%; }
+  .v-handoff header { padding: .9rem 1.1rem; border-bottom: 1px solid var(--rule); display: flex; justify-content: space-between; gap: 1rem; align-items: baseline; }
+  .v-handoff header b { font-size: 1.05rem; }
+  .v-handoff header span { color: var(--muted); font-size: .85rem; }
+  .v-tally { display: grid; grid-template-columns: repeat(3, 1fr); }
+  .v-tally div { padding: .6rem 1.1rem; box-shadow: -1px 0 0 #e9ecee, 0 -1px 0 #e9ecee; }
+  .v-tally b { display: block; font-size: 1.3rem; font-variant-numeric: tabular-nums; }
+  .v-tally span { font-size: .8rem; color: var(--muted); }
+  .v-tally .alert b { color: #b42318; }
+  .v-hrow { padding: .65rem 1.1rem; border-top: 1px solid #e9ecee; font-size: .9rem; }
+  .v-hrow small { display: block; color: var(--muted); font-size: .78rem; }
+  .v-hrow mark { background: linear-gradient(transparent 12%, var(--mark) 12%, var(--mark) 88%, transparent 88%); color: inherit; font-family: var(--print); padding: 0 2px; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .scene .run .a-in { animation: v-in 460ms cubic-bezier(.2, .7, .2, 1) var(--d, 0ms) both; }
+    .scene .run .a-pop { animation: v-pop 420ms cubic-bezier(.2, .8, .3, 1.2) var(--d, 0ms) both; }
+    .scene .run .a-mark { animation: v-mark 520ms ease-out var(--d, 0ms) both; }
+    .scene .run .v-scan { animation: v-scan 1500ms ease-in-out 200ms both; }
+    .scene .run .a-grow { animation: v-grow 520ms cubic-bezier(.2, .7, .2, 1) var(--d, 0ms) both; }
+    .scene .run .was { animation: v-hold 200ms ease-in var(--d, 0ms) both; }
+    .scene .run .now { animation: v-in 300ms ease-out var(--d, 0ms) both; }
+    .scene .run .a-ring { animation: v-ring 600ms ease-out var(--d, 0ms) both; }
+    .scene .run .a-btn { animation: v-press 260ms ease-out var(--d, 0ms) both; }
+    @keyframes v-in { from { opacity: 0; transform: translateY(8px); } }
+    @keyframes v-pop { from { opacity: 0; transform: scale(.9) translateX(-10px); } }
+    @keyframes v-mark { from { background-size: 0% 100%; } }
+    @keyframes v-scan { 0% { top: 0; opacity: 0; } 10% { opacity: 1; } 90% { opacity: 1; } 100% { top: 100%; opacity: 0; } }
+    @keyframes v-grow { from { transform: scaleY(0); } }
+    @keyframes v-hold { from { opacity: 1; } to { opacity: 0; } }
+    @keyframes v-ring { from { border-color: #c9d0d5; box-shadow: 0 10px 22px -8px rgba(28, 43, 69, .5); } }
+    @keyframes v-press { from { background: var(--ink); color: var(--sheet); border-color: var(--ink); } }
+  }
   @media (max-width: 900px) {
-    .hero .wrap, .compare, .talks, .seeit, .dev { grid-template-columns: 1fr; gap: 2.5rem; }
-    ol.loop { grid-template-columns: 1fr; gap: 0; }
-    ol.loop li { padding: 0 0 1.75rem 3.4rem; }
-    ol.loop li:not(:last-child)::after { top: 2.3rem; left: 1.15rem; right: auto; bottom: 0; border-top: 0; border-left: 2px solid var(--ink); }
+    .loopviz { grid-template-columns: 1fr; }
+    .ring-wrap { width: min(74%, 380px); }
+  }
+  @media (max-width: 560px) {
+    .station { font-size: .8rem; }
+    .ring-next { font-size: 26px; }
+    .station.lab-right span { left: calc(100% + .4rem); }
+    .station.lab-left span { right: calc(100% + .4rem); }
+    .station i { width: 2.2rem; height: 2.2rem; }
+    .record { position: static; transform: none; width: auto; margin: 2.2rem 0 0; background: var(--sheet); border: 1px solid var(--rule); border-radius: 14px; padding: 1rem 1.1rem; }
+    .record li { font-size: .92rem; }
+    .scene { padding: 1.1rem; min-height: 0; }
+    .v-row { grid-template-columns: 1fr; }
+    .caption { font-size: 1.08rem; }
+  }
+
+  @media (max-width: 900px) {
+    .hero .wrap, .compare, .exchange, .seeit, .dev { grid-template-columns: 1fr; gap: 2.5rem; }
     .next { grid-template-columns: 1fr; }
     .never { columns: 1; }
-    .talk .why { padding-left: 0; }
+    .tabs { gap: 0 1.5rem; }
   }
   @media (max-width: 520px) {
     body { font-size: 1.05rem; }
     .turn { grid-template-columns: 3.6rem 1fr; }
+    .tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 0 1rem; }
+    .tabs button { padding: .75rem 0 .7rem; font-size: 1rem; }
+    .exchange { gap: 0; }
+    .exchange > div { display: contents; }
+    .exchange .keeps { order: 1; margin-top: 1.5rem; }
+    .exchange .why { order: 2; }
   }
 </style>
 </head>
@@ -213,7 +381,7 @@
 <header class="site">
   <div class="wrap">
     <a class="wordmark" href="#top" aria-label="CareLoop home">
-      <svg viewBox="0 0 26 26" aria-hidden="true"><circle cx="13" cy="13" r="10" fill="none" stroke="#172338" stroke-width="3"/><circle cx="13" cy="3" r="3" fill="#1690a6"/></svg>
+      <svg viewBox="0 0 26 26" aria-hidden="true"><circle cx="13" cy="13" r="10" fill="none" stroke="#1c2b45" stroke-width="3"/><circle cx="13" cy="3" r="3" fill="#1690a6"/></svg>
       CareLoop
     </a>
     <nav class="site" aria-label="Page sections">
@@ -247,7 +415,7 @@
         <div class="thread" aria-hidden="true"><span>approved by Maya from line 10</span></div>
         <div class="slip">
           <div class="head"><span>Riverside Family Clinic</span><span>Synthetic</span></div>
-          <div class="line" data-n="L2">Patient: Maya Demo   Date: 2026-10-13</div>
+          <div class="line" data-n="L2">Patient: Maya Demo&emsp;Date: 2026-10-13</div>
           <div class="line" data-n="L9">Take a short walk every morning.</div>
           <div class="line hit" data-n="L10"><mark>Change the wound dressing every evening.</mark></div>
           <div class="line" data-n="L11">Contact the clinic if your pain score is 7 or higher for 2 consecutive days.</div>
@@ -286,100 +454,108 @@
   <section id="how" aria-labelledby="how-title">
     <div class="wrap">
       <h2 id="how-title">How the loop works</h2>
-      <p class="intro">Five steps, from the clinic's paperwork to the next appointment. Alexa+ drives each step through CareLoop's MCP tools; documents are shared through the Alexa app.</p>
-      <ol class="loop">
-        <li><h3>Share the plan</h3><p>Send a prescription or discharge plan. CareLoop reads the PDF, uses OCR for scans and photos, and proposes each item.</p></li>
-        <li><h3>Approve each item</h3><p>Every item shows its source line. Numbers that aren't in the document are blocked, and medicines are approved on screen only.</p></li>
-        <li><h3>Bring in family</h3><p>Invite someone, hear exactly what they'll be able to do, and confirm. Give them tasks with reminders.</p></li>
-        <li><h3>Check in daily</h3><p>Alexa asks the questions the plan defines. The clinician's rule decides when family get a generic update.</p></li>
-        <li><h3>Hand off to the clinician</h3><p>A dated summary with the source lines, who did what, any missed tasks, and the questions saved for the visit.</p></li>
-      </ol>
-      <div class="system" id="system">
-        <h3 class="system-title">One prescription, through the whole system</h3>
-        <p class="system-intro">Follow a plan from the clinic's paper to Sam's speaker. Press play, or pick a step.</p>
-        <div class="diagram-scroll">
-          <svg class="diagram" viewBox="0 0 1000 560" role="img" aria-labelledby="dg-title dg-desc">
-            <title id="dg-title">How CareLoop works with Alexa+</title>
-            <desc id="dg-desc">Maya's Echo Show, Sam's Echo Dot and the Alexa app talk to Alexa+, which calls the CareLoop MCP server. CareLoop reads documents, handles approval and consent, runs check-ins and rules, and keeps the care record. Spoken replies carry only a safe sentence; private detail goes only to Maya's screen.</desc>
-            <defs>
-              <marker id="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="context-stroke"/></marker>
-            </defs>
-
-            <!-- CareLoop panel sits behind the connections; the boxes sit on top -->
-            <g class="node container" id="n-careloop"><rect x="620" y="20" width="360" height="520" rx="18"/>
-              <text x="645" y="56" class="name">CareLoop MCP server</text></g>
-
-            <!-- connections -->
-            <g class="edges" fill="none">
-              <path class="edge ink" id="e-doc" d="M230 60 C 430 60, 520 105, 645 105"/>
-              <path class="edge ink" id="e-ask" d="M230 185 H320"/>
-              <path class="edge ink" id="e-call" d="M540 196 H645"/>
-              <path class="edge voice" id="e-safe" d="M645 222 H540"/>
-              <path class="edge private" id="e-priv" d="M645 246 H540"/>
-              <path class="edge voice" id="e-speak" d="M320 215 H230"/>
-              <path class="edge private" id="e-screen" d="M320 245 H230"/>
-              <path class="edge voice" id="e-rule" d="M645 296 H540"/>
-              <path class="edge voice" id="e-dot" d="M320 400 C 285 400, 265 435, 230 435"/>
-              <path class="edge ink" id="e-store" d="M800 420 V 456"/>
-            </g>
-
-            <!-- people and devices -->
-            <g class="node" id="n-app"><rect x="20" y="20" width="210" height="80" rx="12"/>
-              <text x="40" y="54" class="name">Alexa app</text><text x="40" y="78" class="sub">shares a document</text></g>
-            <g class="node" id="n-show"><rect x="20" y="150" width="210" height="130" rx="12"/>
-              <text x="40" y="184" class="name">Maya's Echo Show</text><text x="40" y="208" class="sub">patient, voice and screen</text>
-              <rect class="screen" x="40" y="222" width="170" height="40" rx="6"/><text x="52" y="247" class="tiny">private screen</text></g>
-            <g class="node" id="n-dot"><rect x="20" y="370" width="210" height="130" rx="12"/>
-              <text x="40" y="404" class="name">Sam's Echo Dot</text><text x="40" y="428" class="sub">family, voice only</text>
-              <text x="40" y="472" class="lab voice-t big">hears "1 new update"</text>
-              <circle class="ring" cx="196" cy="466" r="14"/></g>
-
-            <!-- Alexa+ -->
-            <g class="node" id="n-alexa"><rect x="320" y="150" width="220" height="280" rx="16"/>
-              <text x="342" y="186" class="name">Alexa+</text>
-              <text x="342" y="216" class="sub">understands the request</text>
-              <text x="342" y="240" class="sub">chooses a CareLoop tool</text>
-              <text x="342" y="264" class="sub">speaks only the safe</text>
-              <text x="342" y="284" class="sub">sentence</text>
-              <text x="342" y="308" class="sub">shows private detail</text>
-              <text x="342" y="328" class="sub">on the patient's screen</text></g>
-
-            <!-- CareLoop -->
-            <g class="node module" id="n-read"><rect x="645" y="72" width="310" height="70" rx="10"/>
-              <text x="665" y="100" class="name small">Read documents</text><text x="665" y="124" class="sub">PDF text, OCR, an AI model, checks</text></g>
-            <g class="node module" id="n-consent"><rect x="645" y="158" width="310" height="104" rx="10"/>
-              <text x="665" y="186" class="name small">Approval and consent</text><text x="665" y="210" class="sub">source lines, permissions read back,</text><text x="665" y="230" class="sub">two-layer answers</text></g>
-            <g class="node module" id="n-rules"><rect x="645" y="276" width="310" height="70" rx="10"/>
-              <text x="665" y="304" class="name small">Check-ins and rules</text><text x="665" y="328" class="sub">the clinician's own rule, nothing guessed</text></g>
-            <g class="node module" id="n-handoff"><rect x="645" y="360" width="310" height="60" rx="10"/>
-              <text x="665" y="386" class="name small">Handoff and access log</text><text x="665" y="408" class="sub">who did what, for the clinician</text></g>
-            <g class="node store" id="n-store"><rect x="645" y="456" width="310" height="66" rx="10"/>
-              <text x="665" y="484" class="name small">Maya's care record</text><text x="665" y="506" class="sub">hers to export or delete</text></g>
-
-            <!-- edge labels -->
-            <g class="labels">
-              <text x="430" y="52" class="lab">shared document</text>
-              <text x="275" y="178" class="lab mid">voice</text>
-              <text x="592" y="189" class="lab mid">tool call</text>
-              <text x="592" y="216" class="lab mid voice-t">safe sentence</text>
-              <text x="592" y="262" class="lab mid">private detail</text>
-              <text x="275" y="208" class="lab mid voice-t">spoken</text>
-              <text x="275" y="262" class="lab mid">screen</text>
-              <text x="592" y="290" class="lab mid voice-t">update</text>
-            </g>
-            <circle class="token" id="dg-token" r="7" cx="-20" cy="-20"/>
-          </svg>
+      <p class="intro">From the clinic's page to the next visit, and around again.</p>
+      <div class="loopviz" id="loopviz">
+        <div class="ring-col">
+          <div class="ring-wrap">
+            <svg class="ring-svg" viewBox="0 0 560 560" aria-hidden="true">
+              <circle class="ring-track" cx="280" cy="280" r="190"/>
+              <path class="ring-back" d="M110.7 193.7 A190 190 0 0 1 250.3 92.3"/>
+              <text class="ring-next" x="106" y="100">next visit</text>
+              <circle class="ring-prog" id="lp-prog" cx="280" cy="280" r="190" transform="rotate(-90 280 280)" stroke-dasharray="1193.8" stroke-dashoffset="0"/>
+              <circle class="ring-token" id="lp-token" r="7" cx="99.3" cy="221.3"/>
+            </svg>
+            <button type="button" class="station lab-top" data-step="0" style="left:50.00%;top:16.07%" aria-label="Step 1: Share"><i>1</i><span>Share</span></button>
+            <button type="button" class="station lab-right" data-step="1" style="left:82.27%;top:39.52%" aria-label="Step 2: Approve"><i>2</i><span>Approve</span></button>
+            <button type="button" class="station lab-below" data-step="2" style="left:69.94%;top:77.45%" aria-label="Step 3: Family"><i>3</i><span>Family</span></button>
+            <button type="button" class="station lab-below" data-step="3" style="left:30.06%;top:77.45%" aria-label="Step 4: Check in"><i>4</i><span>Check in</span></button>
+            <button type="button" class="station lab-left" data-step="4" style="left:17.73%;top:39.52%" aria-label="Step 5: Handoff"><i>5</i><span>Handoff</span></button>
+          </div>
+          <div class="record">
+            <h3><svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 7V5a4 4 0 0 1 8 0v2M3 7h10v7H3z"/></svg>Maya's record</h3>
+            <ol id="lp-record">
+              <li>8 drafts from her prescription</li>
+              <li>7 items approved by Maya</li>
+              <li>Sam invited for 14 days</li>
+              <li>Rule fired, Sam told</li>
+              <li>Handoff ready for the visit</li>
+            </ol>
+          </div>
         </div>
-        <div class="player">
-          <button type="button" class="play" id="dg-play" aria-pressed="false">Play</button>
-          <ol class="steps" id="dg-steps">
-            <li><button type="button" data-step="0">Maya shares her prescription in the Alexa app.</button></li>
-            <li><button type="button" data-step="1">CareLoop reads it on its own server: PDF text, OCR for scans, an AI model proposes items, and code checks every number.</button></li>
-            <li><button type="button" data-step="2">Maya says "Alexa, go through them." Alexa+ chooses a CareLoop tool.</button></li>
-            <li><button type="button" data-step="3">CareLoop answers in two layers: one safe sentence to speak, and private detail only for her screen.</button></li>
-            <li><button type="button" data-step="4">Her approved rule fires after two high check-ins. Sam's speaker hears only "1 new update".</button></li>
-            <li><button type="button" data-step="5">Everything lands in Maya's care record, ready for the clinician handoff.</button></li>
-          </ol>
+        <div class="stage">
+          <div class="scene" id="lp-scene">
+            <div class="v-row" data-caption="CareLoop reads the page. Every item keeps the line it came from.">
+              <div class="v-paper">
+                <div class="hd">Riverside Family Clinic</div>
+                <div class="ln" data-n="L5"><mark class="a-mark" style="--d:500ms">1. Amoxicillin 500 mg capsule: Take 1 capsule by mouth three times daily for 7 days.</mark></div>
+                <div class="ln" data-n="L9"><mark class="a-mark" style="--d:800ms">Take a short walk every morning.</mark></div>
+                <div class="ln" data-n="L10"><mark class="a-mark" style="--d:1050ms">Change the wound dressing every evening.</mark></div>
+                <div class="ln" data-n="L11"><mark class="a-mark" style="--d:1300ms">Contact the clinic if your pain score is 7 or higher for 2 consecutive days.</mark></div>
+                <div class="v-scan"></div>
+              </div>
+              <div class="v-drafts">
+                <div class="v-chip a-pop" style="--d:900ms"><b>Amoxicillin</b><small>08:00, 14:00, 20:00</small><em>L5</em></div>
+                <div class="v-chip a-pop" style="--d:1200ms"><b>Short walk</b><small>08:00</small><em>L9</em></div>
+                <div class="v-chip a-pop" style="--d:1450ms"><b>Wound dressing</b><small>19:00</small><em>L10</em></div>
+                <div class="v-chip a-pop" style="--d:1700ms"><b>Pain rule</b><small>7 or higher, 2 days</small><em>L11</em></div>
+              </div>
+            </div>
+            <div data-caption="Alexa says how many. Maya approves each one on her screen.">
+              <div class="v-say a-in" style="--d:100ms"><span class="who">Alexa</span><p>8 items need your approval.</p></div>
+              <div class="device-show a-in" style="--d:500ms"><div class="ui">
+                <div class="ui-review"><div class="ui-head"><div><span class="ui-meta">Medicine</span><h4>Amoxicillin</h4></div><span class="swap"><span class="ui-status warn was" style="--d:2000ms">Needs review</span><span class="ui-status ok now" style="--d:2100ms">Active</span></span></div>
+                  <div class="ui-slip"><span class="from">From Prescription</span><span class="ln">p1:L5</span><span><mark>1. Amoxicillin 500 mg capsule: Take 1 capsule by mouth three times daily for 7 days.</mark></span></div>
+                  <div class="ui-actions"><span class="ui-btn done-btn a-btn" style="--d:1700ms">Added to my plan</span></div>
+                </div>
+              </div></div>
+            </div>
+            <div class="v-row" data-caption="Maya decides what Sam can see, and for how long.">
+              <div class="grant a-in" style="--d:100ms">
+                <div class="grant-head"><b>Sam</b><span>14 days</span></div>
+                <ul>
+                  <li class="a-in" style="--d:450ms">Tasks<span class="allowed">Allowed</span></li>
+                  <li class="a-in" style="--d:650ms">Updates<span class="allowed">Allowed</span></li>
+                  <li class="a-in" style="--d:850ms">Check-ins<span class="withheld">Not shared</span></li>
+                </ul>
+              </div>
+              <div>
+                <div class="v-dot calm a-in" style="--d:300ms" role="img" aria-label="Sam's Echo Dot"></div>
+                <p class="v-dotcap">Sam's Echo Dot</p>
+                <div class="v-task a-in" style="--d:1400ms"><b>19:00</b>Wound dressing<span class="to">Sam</span></div>
+              </div>
+            </div>
+            <div class="v-row" data-caption="The clinician's rule decides. Sam hears that something changed, never the score.">
+              <div>
+                <div class="v-chart" role="img" aria-label="Pain check-ins: 4, 5, 7 and 8 out of 10; the last two are at or above the rule's line of 7">
+                  <div class="v-bar a-grow" style="--v:4;--d:200ms"><b>4</b><span>Mon</span></div>
+                  <div class="v-bar a-grow" style="--v:5;--d:500ms"><b>5</b><span>Tue</span></div>
+                  <div class="v-bar hi a-grow" style="--v:7;--d:800ms"><b>7</b><span>Wed</span></div>
+                  <div class="v-bar hi a-grow" style="--v:8;--d:1100ms"><b>8</b><span>Thu</span></div>
+                  <div class="v-line"><span>Rule: 7 or higher, 2 days</span></div>
+                </div>
+                <p class="v-fire a-in" style="--d:1600ms">Rule fired, once for this episode</p>
+              </div>
+              <div>
+                <div class="v-dot a-ring" style="--d:1900ms" role="img" aria-label="Sam's Echo Dot, light ring yellow"></div>
+                <p class="v-dotcap">Sam's Echo Dot</p>
+                <div class="v-say dot a-in" style="--d:2300ms;margin-top:.8rem"><p>You have 1 new CareLoop update.</p></div>
+              </div>
+            </div>
+            <div data-caption="A dated, cited summary for the next visit. Then the loop starts again.">
+              <div class="v-handoff a-in" style="--d:100ms">
+                <header><b>Visit handoff</b><span>Oct 13 to Oct 27</span></header>
+                <div class="v-tally">
+                  <div class="a-in" style="--d:400ms"><b>7</b><span>plan items</span></div>
+                  <div class="a-in" style="--d:550ms"><b>4</b><span>check-ins</span></div>
+                  <div class="a-in alert" style="--d:700ms"><b>1</b><span>alert</span></div>
+                </div>
+                <div class="v-hrow a-in" style="--d:1000ms"><small>Question for your clinician</small>Can I start swimming?</div>
+                <div class="v-hrow a-in" style="--d:1300ms"><small>Plan, with its source</small><mark>Contact the clinic if your pain score is 7 or higher for 2 consecutive days.</mark></div>
+              </div>
+            </div>
+          </div>
+          <p class="caption" id="lp-caption">CareLoop reads the page. Every item keeps the line it came from.</p>
+          <div class="controls"><button type="button" class="play" id="lp-play" aria-pressed="false">Play</button><span class="count" id="lp-count">Step 1 of 5</span></div>
         </div>
       </div>
     </div>
@@ -387,45 +563,110 @@
 
   <section id="conversations" class="sheet" aria-labelledby="talk-title">
     <div class="wrap">
-      <h2 id="talk-title">What it sounds like</h2>
-      <p class="intro">These exchanges come from CareLoop's end-to-end tests, run against the real server.</p>
-      <div class="talks">
-        <article class="talk">
-          <h3>Consent before anything is shared</h3>
+      <h2 id="talk-title">What Alexa says, and what CareLoop keeps</h2>
+      <p class="intro">Alexa says as little as it needs to. The detail goes to Maya's private screen and into CareLoop's record. These exchanges come from CareLoop's end-to-end tests, run against the real server.</p>
+      <div class="tabs" role="tablist" aria-label="Exchanges">
+        <button role="tab" id="tab-consent" aria-controls="ex-consent" aria-selected="true">Sharing with family<span>Consent, read back</span></button>
+        <button role="tab" id="tab-speaker" aria-controls="ex-speaker" aria-selected="false" tabindex="-1">A shared speaker<span>Says less on purpose</span></button>
+        <button role="tab" id="tab-review" aria-controls="ex-review" aria-selected="false" tabindex="-1">Reviewing by voice<span>Pause and pick up later</span></button>
+        <button role="tab" id="tab-intake" aria-controls="ex-intake" aria-selected="false" tabindex="-1">Reading a prescription<span>Every item cited</span></button>
+      </div>
+
+      <div class="exchange" role="tabpanel" id="ex-consent" aria-labelledby="tab-consent" tabindex="0">
+        <div>
+          <p class="heard"><svg viewBox="0 0 22 18" aria-hidden="true"><rect x="1" y="1" width="20" height="13" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M7 17h8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>Heard on Maya's Echo Show</p>
           <div class="turn"><span class="speaker">Maya</span><p>Alexa, let my brother Sam see my tasks and get updates for two weeks.</p></div>
           <div class="turn alexa"><span class="speaker alexa">Alexa</span><p>Sam will be able to see your tasks and get update alerts, for 14 days. Is that right?</p></div>
           <div class="turn"><span class="speaker">Maya</span><p>Yes.</p></div>
           <div class="turn note"><span class="speaker"></span><p>Sam's Echo Dot: "Maya invited you to help with her care in CareLoop. Open the invitation in your Alexa app to accept."</p></div>
-          <p class="why">The assistant can get permissions wrong. <mark>CareLoop reads them back</mark> and creates nothing without a yes.</p>
-        </article>
+          <p class="why">The assistant can get permissions wrong. <strong>CareLoop reads them back</strong> and creates nothing without a yes.</p>
+        </div>
+        <figure class="keeps">
+          <figcaption>On Maya's screen</figcaption>
+          <div class="device-show"><div class="ui">
+            <div><p class="ui-title">Care circle</p><p class="ui-note"><svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 7V5a4 4 0 0 1 8 0v2M3 7h10v7H3z"/></svg>Private to this screen. Alexa won't read it aloud.</p></div>
+            <p class="ui-h">People with access</p>
+            <div class="ui-rows"><div class="ui-row"><div><b>Sam</b><span class="ui-meta">Acknowledge alerts, read tasks, receive alerts. Until Nov 3, 2026</span></div><span class="ui-status warn">Pending</span><span class="ui-btn danger">Remove</span></div></div>
+            <p class="ui-h">Who looked at your care data</p>
+            <div class="ui-rows"><div class="ui-row"><span class="ui-meta">No one else opened your care data.</span></div></div>
+          </div></div>
+        </figure>
+      </div>
 
-        <article class="talk">
-          <h3>A shared speaker that knows when to stop</h3>
+      <div class="exchange" role="tabpanel" id="ex-speaker" aria-labelledby="tab-speaker" tabindex="0">
+        <div>
+          <p class="heard"><svg viewBox="0 0 22 18" aria-hidden="true"><circle cx="11" cy="9" r="7" fill="none" stroke="#1690a6" stroke-width="2.5"/></svg>Heard on Sam's Echo Dot, a shared speaker</p>
           <div class="turn"><span class="speaker">Sam</span><p>Alexa, any CareLoop updates?</p></div>
           <div class="turn alexa"><span class="speaker alexa">Alexa</span><p>You have 1 new CareLoop update.</p></div>
           <div class="turn"><span class="speaker">Sam</span><p>What was Maya's pain score?</p></div>
           <div class="turn alexa"><span class="speaker alexa">Alexa</span><p>CareLoop records are unavailable.</p></div>
-          <p class="why">Sam was invited to see tasks and updates, not check-ins. <mark>Values are never spoken</mark> on a shared speaker.</p>
-        </article>
+          <p class="why">Sam was invited to see tasks and updates, not check-ins. <strong>Values are never spoken</strong> on a shared speaker.</p>
+        </div>
+        <figure class="keeps">
+          <figcaption>What Sam's access allows</figcaption>
+          <div class="grant">
+            <div class="grant-head"><b>Sam</b><span>Invited by Maya</span></div>
+            <ul>
+              <li>See Maya's tasks<span class="allowed">Allowed</span></li>
+              <li>Get updates<span class="allowed">Allowed</span></li>
+              <li>Mark updates as seen<span class="allowed">Allowed</span></li>
+              <li>Check-ins and pain scores<span class="withheld">Not shared</span></li>
+            </ul>
+            <p class="grant-foot">Ends Nov 3, 2026. Maya can remove Sam by voice at any time.</p>
+          </div>
+        </figure>
+      </div>
 
-        <article class="talk">
-          <h3>Reviewing a new plan, one item at a time</h3>
+      <div class="exchange" role="tabpanel" id="ex-review" aria-labelledby="tab-review" tabindex="0">
+        <div>
+          <p class="heard"><svg viewBox="0 0 22 18" aria-hidden="true"><rect x="1" y="1" width="20" height="13" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M7 17h8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>Heard on Maya's Echo Show</p>
+          <div class="turn alexa"><span class="speaker alexa">Alexa</span><p>Item 1 of 3: Take a short walk, at 8 AM. Approve, change the time, give it to someone, skip, or stop?</p></div>
+          <div class="turn"><span class="speaker">Maya</span><p>Make it 9.</p></div>
           <div class="turn alexa"><span class="speaker alexa">Alexa</span><p>Item 2 of 3: Change the dressing, at 7 PM. Approve, change the time, give it to someone, skip, or stop?</p></div>
           <div class="turn"><span class="speaker">Maya</span><p>Give it to Sam.</p></div>
           <div class="turn alexa"><span class="speaker alexa">Alexa</span><p>Item 3 of 3: Alert rule: contact your clinic when your pain score is 7 or higher for 2 days in a row. Approve, skip, or stop?</p></div>
           <div class="turn"><span class="speaker">Maya</span><p>Stop.</p></div>
           <div class="turn alexa"><span class="speaker alexa">Alexa</span><p>Okay, I've saved your place. 1 item left. Say "continue my review" anytime.</p></div>
-          <p class="why">CareLoop asks its own follow-up questions and <mark>picks up where you left off</mark>, even days later.</p>
-        </article>
+          <p class="why">CareLoop asks its own follow-up questions and <strong>picks up where you left off</strong>, even days later.</p>
+        </div>
+        <figure class="keeps">
+          <figcaption>On Maya's screen, after she says stop</figcaption>
+          <div class="device-show"><div class="ui">
+            <div><p class="ui-title">Plan review</p><p class="ui-note"><svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 7V5a4 4 0 0 1 8 0v2M3 7h10v7H3z"/></svg>Private to this screen. Alexa won't read it aloud.</p></div>
+            <p class="ui-h">1 item to check</p>
+            <div class="ui-review"><div class="ui-head"><div><span class="ui-meta">Alert rule</span><h4>Pain follow-up rule</h4></div><span class="ui-status warn">Needs review</span></div><p>Contact the clinic if your pain score is 7 or higher for 2 consecutive days.</p></div>
+            <p class="ui-h">Already in your plan</p>
+            <div class="ui-rows">
+              <div class="ui-row timed"><span class="ui-when">09:00</span><div><b>Take a short walk</b><span class="ui-meta">Care task</span></div><span class="ui-status ok">Active</span></div>
+              <div class="ui-row timed"><span class="ui-when">19:00</span><div><b>Change the dressing</b><span class="ui-meta">Care task. Sam handles this</span></div><span class="ui-status ok">Active</span></div>
+            </div>
+          </div></div>
+        </figure>
+      </div>
 
-        <article class="talk">
-          <h3>A prescription becomes a plan, with proof</h3>
+      <div class="exchange" role="tabpanel" id="ex-intake" aria-labelledby="tab-intake" tabindex="0">
+        <div>
+          <p class="heard"><svg viewBox="0 0 22 18" aria-hidden="true"><rect x="1" y="1" width="20" height="13" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M7 17h8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>Heard on Maya's Echo Show</p>
           <div class="turn note"><span class="speaker"></span><p>Maya shares a scanned prescription in the Alexa app.</p></div>
           <div class="turn alexa"><span class="speaker alexa">Alexa</span><p>Your document is ready. 8 items need your approval, and 2 are flagged for a closer look. Medicine items are approved on your screen.</p></div>
           <div class="turn"><span class="speaker">Maya</span><p>Alexa, should I double my medication?</p></div>
           <div class="turn alexa"><span class="speaker alexa">Alexa</span><p>I can't give medical advice. Please contact your clinician, or emergency services in an emergency.</p></div>
-          <p class="why">A model proposes the items; <mark>code checks every number against the source</mark>, and the patient decides.</p>
-        </article>
+          <p class="why">A model proposes the items; <strong>code checks every number against the source</strong>, and the patient decides.</p>
+        </div>
+        <figure class="keeps">
+          <figcaption>On Maya's screen</figcaption>
+          <div class="device-show"><div class="ui">
+            <div><p class="ui-title">Plan review</p><p class="ui-note"><svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 7V5a4 4 0 0 1 8 0v2M3 7h10v7H3z"/></svg>Private to this screen. Alexa won't read it aloud.</p></div>
+            <div class="ui-doc"><i aria-hidden="true"></i><div><b>Prescription</b><span class="ui-meta">1 page read by OCR</span></div></div>
+            <p class="ui-h">8 items to check</p>
+            <div class="ui-review"><div class="ui-head"><div><span class="ui-meta">Medicine</span><h4>Amoxicillin</h4></div><span class="ui-status warn">Needs review</span></div>
+              <p>Take 1 capsule by mouth three times daily for 7 days.</p>
+              <div class="ui-slip"><span class="from">From Prescription</span><span class="ln">p1:L5</span><span><mark>1. Amoxicillin 500 mg capsule: Take 1 capsule by mouth three times daily for 7 days.</mark><span class="ocr">Read by OCR</span></span></div>
+              <div class="ui-field"><span>Times</span><span>08:00, 14:00, 20:00</span></div>
+              <div class="ui-actions"><span class="ui-btn primary">Add to my plan</span><span class="ui-btn quiet">Leave it out</span></div>
+            </div>
+          </div></div>
+        </figure>
       </div>
     </div>
   </section>
@@ -521,76 +762,105 @@ scripts/run_alexa_demo.sh</pre>
 </footer>
 <script>
 (() => {
-  // Each step: connections to travel (in order) and boxes to light up.
-  const STEPS = [
-    { paths: ["e-doc"], on: ["n-app", "n-read"] },
-    { paths: [], on: ["n-read"] },
-    { paths: ["e-ask", "e-call"], on: ["n-show", "n-alexa", "n-consent"] },
-    { paths: ["e-safe", "e-priv", "e-speak", "e-screen"], on: ["n-alexa", "n-show", "n-consent"], screen: true },
-    { paths: ["e-rule", "e-dot"], on: ["n-rules", "n-alexa", "n-dot"] },
-    { paths: ["e-store"], on: ["n-handoff", "n-store"] },
-  ];
-  const svg = document.querySelector(".diagram");
-  if (!svg) return;
-  const token = svg.querySelector("#dg-token");
-  const items = [...document.querySelectorAll("#dg-steps li")];
-  const playBtn = document.getElementById("dg-play");
+  // How the loop works: a token travels the ring, each step plays a short scene and adds a line to Maya's record.
+  const root = document.getElementById("loopviz");
+  if (!root) return;
+  const stations = [...root.querySelectorAll(".station")];
+  const scenes = [...root.querySelectorAll("#lp-scene > div")];
+  const records = [...root.querySelectorAll("#lp-record li")];
+  const prog = root.querySelector("#lp-prog"), token = root.querySelector("#lp-token");
+  const caption = root.querySelector("#lp-caption"), count = root.querySelector("#lp-count"), playBtn = root.querySelector("#lp-play");
+  const N = stations.length, R = +prog.getAttribute("r"), CX = +prog.getAttribute("cx"), CY = +prog.getAttribute("cy"), C = 2 * Math.PI * R;
   const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
-  let current = -1, timer = null, playing = false, run = 0;
+  const HOLD = 5200;
+  let current = 0, frac = 0, playing = false, timer = null, raf = 0, touched = false;
 
-  function clear() {
-    svg.querySelectorAll(".on, .screen-on").forEach((el) => el.classList.remove("on", "screen-on"));
-    items.forEach((li) => li.classList.remove("on"));
+  function place(f) {
+    frac = f;
+    prog.style.strokeDashoffset = String(C * (1 - f));
+    const a = -Math.PI / 2 + f * 2 * Math.PI;
+    token.setAttribute("cx", (CX + R * Math.cos(a)).toFixed(1));
+    token.setAttribute("cy", (CY + R * Math.sin(a)).toFixed(1));
   }
-  function travel(path, runId) {
-    return new Promise((resolve) => {
-      const length = path.getTotalLength(), kind = path.classList.contains("voice") ? "voice" : path.classList.contains("private") ? "private" : "";
-      token.setAttribute("class", "token " + kind);
-      if (still) { path.classList.add("on"); return resolve(); }
-      const start = performance.now(), duration = Math.max(450, length * 3.2);
-      function frame(now) {
-        if (runId !== run) return resolve();
-        const t = Math.min(1, (now - start) / duration), p = path.getPointAtLength(length * t);
-        token.setAttribute("cx", p.x); token.setAttribute("cy", p.y); token.style.opacity = 1;
-        if (t < 1) requestAnimationFrame(frame); else { token.style.opacity = 0; path.classList.add("on"); resolve(); }
-      }
-      requestAnimationFrame(frame);
+  function travel(to) {
+    cancelAnimationFrame(raf);
+    if (still) { place(to); return; }
+    const from = frac, start = performance.now(), dur = 380 + Math.abs(to - from) * 2600;
+    const ease = (t) => 1 - Math.pow(1 - t, 3);
+    const step = (now) => {
+      const t = Math.min(1, (now - start) / dur);
+      place(from + (to - from) * ease(t));
+      if (t < 1) raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+  }
+  function show(i) {
+    current = i;
+    stations.forEach((s, k) => {
+      s.classList.toggle("done", k < i);
+      if (k === i) s.setAttribute("aria-current", "step"); else s.removeAttribute("aria-current");
     });
-  }
-  async function show(index) {
-    const runId = ++run;
-    clear();
-    current = index;
-    const step = STEPS[index];
-    items[index].classList.add("on");
-    step.on.forEach((id) => svg.getElementById(id).classList.add("on"));
-    for (const id of step.paths) { await travel(svg.getElementById(id), runId); if (runId !== run) return; }
-    if (step.screen) svg.getElementById("n-show").classList.add("screen-on");
+    records.forEach((r, k) => { r.hidden = k > i; });
+    scenes.forEach((sc, k) => { sc.hidden = k !== i; sc.classList.remove("run"); });
+    void scenes[i].offsetWidth;
+    scenes[i].classList.add("run");
+    caption.textContent = scenes[i].dataset.caption;
+    count.textContent = `Step ${i + 1} of ${N}`;
+    travel(i / N);
   }
   function stop() {
     playing = false; clearTimeout(timer);
-    playBtn.textContent = current >= STEPS.length - 1 ? "Replay" : "Play";
+    playBtn.textContent = current === N - 1 ? "Replay" : "Play";
     playBtn.setAttribute("aria-pressed", "false");
   }
-  async function play() {
-    playing = true; playBtn.textContent = "Pause"; playBtn.setAttribute("aria-pressed", "true");
-    let index = current >= STEPS.length - 1 ? 0 : current + 1;
-    while (playing && index < STEPS.length) {
-      await show(index);
-      if (!playing) return;
-      await new Promise((r) => { timer = setTimeout(r, 1900); });
-      index += 1;
-    }
-    stop();
+  function next() {
+    if (!playing) return;
+    if (current < N - 1) { show(current + 1); timer = setTimeout(next, HOLD); }
+    else { travel(1); setTimeout(() => place(0), 2700); stop(); }
   }
-  playBtn.addEventListener("click", () => (playing ? stop() : play()));
-  items.forEach((li, i) => li.querySelector("button").addEventListener("click", () => { stop(); show(i); playBtn.textContent = i >= STEPS.length - 1 ? "Replay" : "Play"; }));
+  function play() {
+    playing = true; playBtn.textContent = "Pause"; playBtn.setAttribute("aria-pressed", "true");
+    if (current === N - 1) { place(0); show(0); } else show(current);
+    timer = setTimeout(next, HOLD);
+  }
+  playBtn.addEventListener("click", () => { touched = true; playing ? stop() : play(); });
+  stations.forEach((s, i) => s.addEventListener("click", () => { touched = true; stop(); show(i); playBtn.textContent = "Play"; }));
 
-  if (still) { show(0); return; }  // reduced motion: no autoplay; steps on demand
+  place(0); show(0);
+  if (still) return;
   const seen = new IntersectionObserver((entries) => {
-    if (entries.some((e) => e.isIntersecting)) { seen.disconnect(); play(); }
-  }, { threshold: 0.45 });
-  seen.observe(svg);
+    if (entries.some((e) => e.isIntersecting)) { seen.disconnect(); if (!touched) play(); }
+  }, { threshold: 0.4 });
+  seen.observe(root);
+})();
+</script>
+<script>
+(() => {
+  // Exchanges: tabs that show what Alexa says beside what CareLoop keeps.
+  const tabs = [...document.querySelectorAll('#conversations [role="tab"]')];
+  const panels = tabs.map((t) => document.getElementById(t.getAttribute("aria-controls")));
+  function select(index, focus) {
+    tabs.forEach((t, i) => {
+      const on = i === index;
+      t.setAttribute("aria-selected", String(on));
+      t.tabIndex = on ? 0 : -1;
+      panels[i].hidden = !on;
+    });
+    const panel = panels[index];
+    panel.querySelectorAll(".turn, .keeps").forEach((el, i) => el.style.setProperty("--i", i));
+    panel.classList.remove("entering"); void panel.offsetWidth; panel.classList.add("entering");
+    if (focus) tabs[index].focus();
+  }
+  tabs.forEach((t, i) => {
+    t.addEventListener("click", () => select(i));
+    t.addEventListener("keydown", (e) => {
+      const step = { ArrowRight: 1, ArrowLeft: -1 }[e.key];
+      if (step) { e.preventDefault(); select((i + step + tabs.length) % tabs.length, true); }
+      else if (e.key === "Home") { e.preventDefault(); select(0, true); }
+      else if (e.key === "End") { e.preventDefault(); select(tabs.length - 1, true); }
+    });
+  });
+  panels.forEach((p, i) => { p.hidden = i !== 0; });
 })();
 </script>
 </body>
