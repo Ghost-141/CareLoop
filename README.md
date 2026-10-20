@@ -49,8 +49,6 @@ uv run pytest -q       # 410 tests, including live runs against a real server
 | The first visit | `scripts/run_alexa_demo.sh --reset` | Share the prescription, review and approve it, then everything that follows |
 | Day four at home | `scripts/run_alexa_demo.sh --reset --story=history` | Three days of history: suggestions, teach-back, the rule firing, the handoff |
 
-The [click-by-click demo guide](docs/CARELOOP_UI_DEMO_GUIDE.md) walks through the first visit with screenshots.
-
 ## Documentation
 
 | Document | What's in it |
