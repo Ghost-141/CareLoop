@@ -164,8 +164,7 @@ class MockReplay:
         if re.search(r"\b(who has access|care circle)\b", text):
             return Action("list_care_circle", {}) if first else Action()
         if re.search(r"\b(mark it seen|acknowledge|got it|mark .* seen)\b", text):
-            return self._each(steps, "list_generic_notifications", "acknowledge_alert", "alert_id",
-                              lambda r: r.get("status") == "action_required")
+            return Action("acknowledge_alert", {}) if first else Action()  # one call marks everything waiting as seen
         if re.search(r"\b(check.?in|pain)\b", text) and re.search(r"\b(\d{1,2})\b", text) and "what" not in text:
             if not first:
                 return Action()

@@ -154,3 +154,29 @@ def test_the_notice_expires() -> None:
     assign(tools, deps, tasks, invitation)
     clock[0] += ASSIGNMENT_NOTICE_TTL_SECONDS + 60
     assert notices(service) == []
+
+
+def test_marking_an_update_and_a_new_task_seen_together_says_updates() -> None:
+    clock, service, deps, tools, invitation, tasks = setup(
+        scopes=("read_tasks", "perform_tasks", "receive_alerts", "acknowledge_alerts"))
+    deps.local_identity = PATIENT
+    tools["assign_task"](tasks["morning"]["id"], Ctx(), invitation["id"])  # due 08:00, will be missed
+    as_sam(deps)
+    clock[0] = at(9, 5)
+    assert tools["list_generic_notifications"](Ctx())["speakable"].startswith("You have 1 new CareLoop update and 1 new task from")
+    result = tools["acknowledge_alert"](Ctx())
+    assert result["speakable"] == "CareLoop updates acknowledged."
+    assert sorted(r["kind"] for r in result["refs"]) == ["assigned_task", "update"]
+    assert tools["list_generic_notifications"](Ctx())["speakable"] == "There are no new CareLoop updates."
+
+
+def test_mark_it_seen_clears_what_the_person_may_clear_and_skips_the_rest() -> None:
+    """Without the acknowledge permission an alert stays, but the new-task notice is still cleared."""
+    clock, service, deps, tools, invitation, tasks = setup()  # receive_alerts, but not acknowledge_alerts
+    deps.local_identity = PATIENT
+    tools["assign_task"](tasks["morning"]["id"], Ctx(), invitation["id"])
+    as_sam(deps)
+    clock[0] = at(9, 5)
+    result = tools["acknowledge_alert"](Ctx())
+    assert result["speakable"] == "Marked as seen." and [r["kind"] for r in result["refs"]] == ["assigned_task"]
+    assert tools["list_generic_notifications"](Ctx())["speakable"] == "You have 1 new CareLoop update."  # the alert is still waiting

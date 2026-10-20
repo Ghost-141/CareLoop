@@ -914,12 +914,20 @@ def register(mcp: MCPServer, deps) -> None:
         """
         identity = _patient(deps, ctx)
         if alert_id is None:
-            alert_ids = [row["case_id"] for row in deps.service.notifications(identity) if row["status"] == "action_required"]
-            if not alert_ids:
+            # Everything waiting that this person is allowed to clear. An alert needs the acknowledge permission,
+            # a new-task notice needs only perform_tasks, so one of them may be skipped.
+            acknowledgements = []
+            for row in deps.service.notifications(identity):
+                if row["status"] != "action_required":
+                    continue
+                try:
+                    acknowledgements.append(deps.service.acknowledge_alert(identity, row["case_id"]))
+                except AccessDenied:
+                    continue
+            if not acknowledgements:
                 raise ValueError("no update is waiting")
         else:
-            alert_ids = [alert_id]
-        acknowledgements = [deps.service.acknowledge_alert(identity, one) for one in alert_ids]
+            acknowledgements = [deps.service.acknowledge_alert(identity, alert_id)]
         only_tasks = all(ack.get("kind") == "task_assigned" for ack in acknowledgements)
         speakable = ("Marked as seen." if only_tasks else
                      "CareLoop update acknowledged." if len(acknowledgements) == 1 else "CareLoop updates acknowledged.")
