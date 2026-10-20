@@ -18,7 +18,7 @@ CareLoop is intentionally bounded. It does **not** diagnose, prescribe, adjust m
 | Identity | Credential-derived patient/caregiver identities; no caller-supplied patient scope |
 | Privacy | Voice-safe tool results, patient-owned expiring grants, generic caregiver notifications, deletion and purge |
 | Document intake | Prescription/plan upload: PDF text first, PaddleOCR fallback, local LLM proposes items, deterministic checks, patient approves each item |
-| Tests | 318 tests, including live end-to-end runs against a real server; an intake eval against the configured model |
+| Tests | 400 tests, including live end-to-end runs against a real server; an intake eval against the configured model |
 
 ## Contents
 
@@ -43,6 +43,8 @@ Alexa+ can remember documents, set reminders, and alert family about activity. C
 | Capability | What CareLoop does |
 | --- | --- |
 | Approval with citations | A plan becomes **drafts with source citations**; nothing is active until the patient approves each item |
+| A source for every claim | Every card on the patient's screen says where it came from: the document line, or the record it was worked out from. A triggered alert shows its rule's line and the check-ins that fired it |
+| Teach-back | "Check I understood my plan": CareLoop asks the patient to say back when or how often they take each medicine, the alert rule's numbers and a warning sign's number, and checks every answer in code. A miss is answered by reading the plan back in its own words, never by explaining. Results go to the visit handoff |
 | Follow-up questions | `start_daily_checkin` asks its own question through **MCP elicitation**, validates the answer (0–10), and re-asks if needed |
 | Deterministic rules | Only a patient-approved, source-backed rule can create an alert, at most once per episode |
 | Privacy on shared speakers | Tool results expose only a `speakable` line plus opaque `refs`. The caregiver's speaker hears "You have 1 new CareLoop update", never the symptom |
@@ -117,7 +119,7 @@ Without a model the demo uses the scripted planner, and documents are read by pa
 
 ```bash
 uv run pytest -q
-# 318 passed
+# 400 passed
 ```
 
 ## Run the Alexa+ demo
@@ -181,7 +183,7 @@ For exact buttons and screens with screenshots, use the [click-by-click demo gui
 ## Testing
 
 ```bash
-uv run pytest -q                       # all 318 tests
+uv run pytest -q                       # all 400 tests
 uv run pytest -q server/tests          # MCP server, tools, consent, MCP Apps views, elicitation
 uv run pytest -q alexa_sim/tests       # simulator host and scripted evaluator, incl. a live run of the demo story
 ```
@@ -216,6 +218,7 @@ Endpoint `http://127.0.0.1:8010/mcp` (Streamable HTTP, bearer token required). `
 | `update_task_time` | Move a task to a new spoken time ("8 pm", "9"), by name or id |
 | `accept_data_use` | The patient accepts the one-time data-use disclosure; voice tools ask for it before first use |
 | `set_my_details` | The patient's spoken name (used in family members' messages), time zone, and whether suggestions are on |
+| `start_teach_back` | **Patient only.** Asks the patient to say back key plan values through elicitation and checks each answer in code; keeps only the structured value heard. Pauses on "stop" and resumes later |
 | `get_suggestions` | **Patient only.** Up to three things worth raising now, each with an offer a "yes" can run (for example the visit handoff). Computed from approved records; never about symptoms |
 | `who_accessed_my_care_data` | Who else viewed or acted on the patient's data (default: last 7 days) |
 | `list_generic_notifications` / `acknowledge_alert` | Generic caregiver updates and new-task notices, as counts only ("You have 1 new task from Maya."). No alert detail and no task name; "mark it seen" clears them |

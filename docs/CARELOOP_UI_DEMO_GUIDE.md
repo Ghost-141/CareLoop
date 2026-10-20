@@ -39,7 +39,7 @@ These small things cause most confusion.
 4. **Wait for the state label to settle.** The word in the top right of each device is `idle`, `listening`, `thinking` or `speaking`. After a question, the Show shows `listening` because its microphone has reopened. You can still just type the answer.
 5. **Three ways to give input.** Click a **prompt chip** under a device (fastest and most reliable), type in the box and press **Send**, or press the microphone. Chips say exactly what is written on them.
 6. **Say or type "Alexa, …" for new requests.** Answers to a question the device just asked need no "Alexa".
-7. **Typing "stop"** interrupts a spoken reply.
+7. **Typing "stop"** interrupts a spoken reply. When the device is waiting for an answer, "stop" pauses the review or teach-back instead.
 
 ---
 
@@ -104,6 +104,17 @@ When the last card is approved, the "items to check" heading disappears and the 
 
 ![The finished plan](images/ui-07-plan-done.png)
 
+### Step 4b (optional): Check Maya understood her plan
+
+| Say or type | You should hear and see |
+| --- | --- |
+| "Alexa, check I understood my plan" (or the chip) | "Let's check 6 things. How often do you take Amoxicillin?" |
+| "three times a day" | "That's right. When do you take Omeprazole?" |
+| "8 am", then "8 in the morning" | "Not quite. Try again…", then "Your plan says: … at 7:30 AM. Next: Do you take Ibuprofen at set times, or only when you need it?" |
+| "only when I need it", "7", "2", "39" | "That's right. Done. You got 5 of 6 right. The one to look at again is on your screen, with the line it came from." |
+
+The **Understanding check** screen lists each question with **Understood** or **Needs another look**, the plan's value next to the value heard ("Your plan: 7:30 AM. You said: 8:00 AM"), and the source line. The handoff in step 10 then has an **Understanding check** section. Why it matters: approved is not the same as understood, and the check is done in code against the cited line, never by the model.
+
 ### Step 5: Ring the reminders
 
 | Do | You should see |
@@ -154,7 +165,7 @@ In the inspector this turn shows no tool call.
 
 ![The visit handoff](images/ui-09-handoff.png)
 
-The handoff opens in the Show's screen with totals (plan items, tasks done, missed, check-ins, alerts, questions, corrections). Scroll inside the screen to see the questions, plan items with their source lines, check-ins and the alert.
+The handoff opens in the Show's screen with totals (plan items, tasks done, missed, check-ins, alerts, questions, corrections), counted from the records in the date range. Scroll inside the screen to see the questions, plan items with their source lines, the understanding check, check-ins and the alert. The alert says **Because** "pain 7 on …, pain 8 on …" and shows the rule's own line: every claim on the screen says where it came from.
 
 ### Step 11: Who has seen the data
 

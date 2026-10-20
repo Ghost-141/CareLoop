@@ -57,10 +57,24 @@ If an assigned task isn't marked done within an hour of its time, Sam's ring lig
 | Checked in before, not today, after 6 PM | "You haven't checked in today. Want to do your check-in now?" |
 | An assigned task missed in the last 2 days | "Sam missed Take a short walk." |
 | Plan items still waiting for review | "3 plan items are waiting for your review. Want to go through them now?" |
+| Approved medicines or rules never checked back, or one that needs another look | "You haven't checked your understanding of your plan. Want to do that now?" A "yes" starts the teach-back below |
 | Nothing applies | "Nothing needs your attention right now." |
 | "Turn suggestions off" | Suggestions answer "Suggestions are turned off." until "turn suggestions on" |
 
 Suggestions are for the patient only: on Sam's Dot the same question gets "Suggestions are unavailable." A suggestion never quotes a saved question or a score.
+
+**Teach-back (add-on).** After the prescription's medicines are approved on the screen (UI demo guide, steps 2 to 4), Maya checks she understood the plan. CareLoop asks; the answer is checked in code against the approved, cited item. These replies come from a run with the typed sample prescription and the **Mock replay** planner:
+
+| # | Maya says | Expected |
+|---|---|---|
+| T1 | "Alexa, check I understood my plan" | "Let's check 6 things. How often do you take Amoxicillin?" The mic stays open |
+| T2 | "three times a day" | "That's right. When do you take Omeprazole?" ("every 8 hours" is also right) |
+| T3 | "8 am" | "Not quite. Try again: When do you take Omeprazole?" |
+| T4 | "8 in the morning" | "Your plan says: Omeprazole 20 mg capsule: Take 1 capsule by mouth once daily before breakfast, at 7:30 AM. Next: Do you take Ibuprofen at set times, or only when you need it?" The plan is read back in its own words, never explained |
+| T5 | "only when I need it", then "7", "2", "39" | The alert rule's two numbers, then the fever warning's number. Ends with "That's right. Done. You got 5 of 6 right. The one to look at again is on your screen, with the line it came from." The **Understanding check** screen opens |
+| T6 | "Alexa, get me ready for my appointment" | The handoff now has an **Understanding check** section: "6 of 6 plan values checked back by voice", each with its result and source line |
+
+"Stop" or a new "Alexa, …" request pauses it ("Okay, I've saved your place. 4 questions left."), and "Alexa, check my understanding" picks it up. "I don't know" moves on with the read-back. Three misses in a row end it: "Let's leave the rest for your clinician…". Only the structured value heard is kept (for example "8:00 AM"), never Maya's words. On Sam's Dot the same request gets "Teach-back is unavailable."
 
 **Multi-turn conversation (add-on).** Start fresh, do step G (Sam can help with tasks), then:
 

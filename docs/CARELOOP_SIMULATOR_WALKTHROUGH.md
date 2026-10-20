@@ -76,7 +76,7 @@ If you see `You have no CareLoop plan items yet.`, everything is working. The pl
 | **Type** | Use the box under the device and press Send. |
 | **Microphone button** | Tap, speak, and the button lights. Tap again to end early. It ends by itself after about a second of silence. |
 | **Hands-free** | Switch on **Hands-free "Alexa"** in the top bar and pick which device **hears** you. Always start with "Alexa, …". A bare "Alexa" waits about 6 seconds for the rest. A phrase without "Alexa" is ignored unless the device just asked you a question. |
-| **Stopping** | Say or type "stop", "quiet" or "cancel that" to interrupt speech. |
+| **Stopping** | While a device is talking, say or type "stop", "quiet" or "cancel that" to interrupt it. When it is waiting for your answer, "stop" goes to CareLoop and pauses the review or teach-back. |
 
 **Whose device?** Speak to the Show as Maya (patient) and to the Dot as Sam (family). The device, not your wording, decides who is asking.
 
@@ -167,6 +167,14 @@ Asking for the details ("what are my tasks for Maya?") or saying "mark it seen" 
 
 Maya asks "Alexa, anything I should know?" The server works out what is worth a look from her own records and the assistant only phrases it: a visit within 3 days, a missed task, no check-in today after 6 PM, or plan items waiting for review. If a suggestion carries a question, "yes" runs it. Nothing applies gives "Nothing needs your attention right now." "Turn suggestions off" switches them off. They are for the patient only, and they never quote a saved question or a score. The full table of replies is in [CARELOOP_DEMO_WALKTHROUGH.md](CARELOOP_DEMO_WALKTHROUGH.md).
 
+### 6.2c Teach-back: checking Maya understood her plan
+
+After 6.1 (the medicines approved on the screen), Maya says "check I understood my plan" (or "quiz me on my plan"). The **server** asks each question through MCP elicitation and checks the answer in code: how often or when each medicine is taken, whether the as-needed one has set times, the alert rule's two numbers, and the fever warning's number. "Every 8 hours" and "three times a day" both count. A wrong answer gets one more try; a second miss, or "I don't know", reads the plan back in its own words and moves on. It never explains why. "Stop" pauses it and "check my understanding" resumes it. The **Understanding check** screen shows each question, its result, and the source line; the visit handoff gets the same section. Watch the inspector: one `elicitation/create` line per question, and no planner call while Maya answers. On Sam's Dot it is refused. The replies are in [CARELOOP_DEMO_WALKTHROUGH.md](CARELOOP_DEMO_WALKTHROUGH.md).
+
+### 6.2d Where every claim on the screen came from
+
+Every card on Maya's screen says where it came from. Plan items show their document line. **Worth raising** on the task screen gives each suggestion a **Because** row (for example "Morning walk was due") and the line behind it. The check-in chart shows the alert rule in words with its line, and each check-in says who recorded it. In the handoff, a triggered alert lists the check-ins that fired it ("pain 7 on Oct 19, pain 8 on Oct 20") and the rule's line; missed and completed tasks show their lines; the totals say they were counted from the records. Sam's screens stay generic on purpose.
+
 ### 6.3 Invite a family member from scratch
 
 Use `--empty` to start with nobody in the care circle, then:
@@ -238,6 +246,7 @@ A conversation left waiting (for example a half-finished check-in) can swallow y
 - [ ] Update acknowledged and the ring cleared
 - [ ] Check-in asked its own question and rejected an out-of-range answer
 - [ ] Handoff created with source lines and the saved clinician question
+- [ ] Teach-back asked its own questions, read the plan back after a miss, and its results appear in the handoff
 - [ ] Medical-advice question refused with no tool call
 - [ ] Caregiver removed after a spoken confirmation, and Sam rejected on his next request
 - [ ] Reset demo data restored the starting day

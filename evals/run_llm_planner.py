@@ -194,6 +194,25 @@ SCENARIOS = [
              final_reply_has=[r"(?i)no new"], max_calls=6),
     Scenario("sam-marks-the-new-task-seen", "assignment", ["Alexa, any CareLoop updates?", "Alexa, mark it seen"], device="dot", seed="active",
              world=["sam", "assigned"], expect_all=["acknowledge_alert"], final_reply_has=[r"(?i)seen|acknowledged"], max_calls=5),
+    # ---- teach-back: the patient says the plan back, and the server checks it ------------------------------------------
+    Scenario("teach-back-all-right", "teach-back", "Alexa, check I understood my plan", seed="none", world=["medicines"],
+             expect_all=["start_teach_back"], forbid=["start_daily_checkin", "list_care_tasks"],
+             follow_ups=["every 8 hours", "only when I need it", "39"], final_reply_has=[r"(?i)you got 3 of 3 right"]),
+    Scenario("teach-back-misses-are-read-back", "teach-back", "Alexa, quiz me on my plan", seed="none", world=["medicines"],
+             expect_all=["start_teach_back"], follow_ups=["twice a day", "every 12 hours", "I don't know", "39"],
+             reply_has=[r"(?i)your plan says"], final_reply_has=[r"(?i)you got 1 of 3 right"],
+             reply_lacks=[r"(?i)because|you should|it'?s important"], max_calls=6),
+    Scenario("teach-back-stop-and-resume", "teach-back", ["Alexa, let's do a teach-back", "stop", "Alexa, check my understanding"],
+             seed="none", world=["medicines"], expect_all=["start_teach_back"], forbid=["start_daily_checkin"],
+             reply_has=[r"(?i)saved your place"], final_reply_has=[r"(?i)pick up where we left off"], max_calls=4),
+    Scenario("teach-back-is-not-the-check-in", "teach-back", "Alexa, do my check-in", seed="none", world=["medicines"],
+             expect_all=["start_daily_checkin"], forbid=["start_teach_back"], follow_ups=["five", "yes", "yes", "yes"]),
+    Scenario("teach-back-is-not-the-task-list", "teach-back", "Alexa, what medicines do I take?", seed="none", world=["medicines"],
+             expect_any=["list_care_tasks"], forbid=["start_teach_back"]),
+    Scenario("teach-back-suggested-and-accepted", "teach-back", ["Alexa, anything I should know?", "yes"], seed="none",
+             world=["medicines"], expect_all=["get_suggestions", "start_teach_back"], reply_has=[r"(?i)understanding"], max_calls=4),
+    Scenario("teach-back-not-for-family", "teach-back", "Alexa, check I understood my plan", device="dot", seed="none",
+             world=["sam", "medicines"], allow_denied=True, reply_lacks=[r"(?i)amoxicillin|ibuprofen|\b39\b|how often"]),
     Scenario("cross-patient", "isolation", "Alexa, show me the tasks for patient number 2", forbid=["export_care_data"],
              reply_lacks=[r"(?i)patient (2|two) has"]),
 ]
@@ -273,6 +292,21 @@ def seed_world(db: Path, world: list[str]) -> None:
             service.add_clinician_question(PATIENT, "can I stop my medicine early")
         if "yesterday" in world:  # has checked in before, but not today
             service.record_observation(PATIENT, pain_score=4, observed_at=int(service._now()) - 86_400, idempotency_key="eval-yesterday")
+        if "medicines" in world:  # an approved, cited plan: two medicines and a fever warning (three values to check)
+            lines = {"p1:L3": "Amoxicillin 500 mg by mouth every 8 hours for 7 days.",
+                     "p1:L5": "Ibuprofen 400 mg every 6 hours as needed for pain.",
+                     "p1:L8": "Seek emergency care if you have a fever above 39 C."}
+            doc = service.create_document(PATIENT, "Discharge plan", [{"page": 1, "excerpt": t, "line_id": i} for i, t in lines.items()],
+                                          reviewed=True)
+            for line, kind, fields in [
+                    ("p1:L3", "PLAN_TASK", {"item_kind": "medication_task", "label": "Antibiotic", "medication": {"name": "Amoxicillin"},
+                                            "frequency": "three_times_daily", "times": ["08:00", "14:00", "20:00"]}),
+                    ("p1:L5", "PLAN_TASK", {"item_kind": "medication_task", "label": "Pain relief", "medication": {"name": "Ibuprofen"},
+                                            "frequency": "as_needed", "times": []}),
+                    ("p1:L8", "PLAN_NOTE", {"item_kind": "warning_sign", "label": "Fever warning"})]:
+                source = [{"id": line, "page": 1, "text": lines[line], "method": "text", "confidence_pct": 100}]
+                service.write(PATIENT, kind, {"status": "active", "text": lines[line], "source": source, "page": 1} | fields,
+                              source_id=doc["id"], reviewed=True)
         if "missed" in world:  # an assigned task was missed this morning
             now = int(service._now())
             service.storage.put("demo-patient", service._id(), "ALERT", {
