@@ -24,7 +24,7 @@ $$s_{t-k+1}, \dots, s_t \ge \theta, \qquad s_i \in \{0, 1, \dots, 10\}.$$
 
 ## How we built it
 
-CareLoop is a Python MCP server (FastAPI, the official MCP SDK, SQLite) that exposes 30 tools over Streamable HTTP. Identity comes from the credential, so no tool argument can select another patient.
+CareLoop is a Python MCP server (FastAPI, the official MCP SDK, SQLite) that exposes 31 tools over Streamable HTTP. Identity comes from the credential, so no tool argument can select another patient.
 
 **Voice-safe results.** Every tool returns a short `speakable` sentence plus opaque references. Detail reaches the patient only through MCP Apps screens on the Echo Show.
 

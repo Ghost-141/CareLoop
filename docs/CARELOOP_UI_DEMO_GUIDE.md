@@ -79,7 +79,7 @@ Type each line in the **Show's** box, or click the chip (for the first one, **Go
 | --- | --- |
 | "Go through them" | "Item 1 of 4: Take a short walk every morning, at 8 AM. Approve, change the time, give it to someone, skip, or stop?" |
 | "make it 9" | The walk moves to 9 AM and the next item is read: "Item 2 of 4: Change the wound dressing every evening, at 7 PM…" |
-| "give it to Sam" | Item 2 is given to Sam, then "Item 3 of 4: Seek emergency care if you have a fever above 39 C…" |
+| "give it to Sam" | Item 2 is given to Sam, then "Item 3 of 4: Seek emergency care if you have a fever above 39 C…". **Sam's Dot says "Maya gave you a new task."** and says nothing about which task. His ring stays dark. |
 | "approve" | "Item 4 of 4: Follow-up appointment on 2026-10-24 at Riverside Family Clinic…" |
 | "approve" | "Done: 4 approved. 4 items are waiting on your screen." |
 
@@ -134,8 +134,8 @@ This is the key privacy point: a family member's shared speaker never hears the 
 
 | Do | You should see |
 | --- | --- |
-| On the Dot, click **Any CareLoop updates?** | "You have 1 new CareLoop update." |
-| Click **Mark it seen** | "CareLoop update acknowledged." The ring goes back to grey |
+| On the Dot, click **Any CareLoop updates?** | "You have 1 new CareLoop update and 1 new task from Maya." The new task is the one from step 3. Its details come only if Sam asks "what are my tasks for Maya?" |
+| Click **Mark it seen** | "CareLoop updates acknowledged." The ring goes back to grey |
 
 ### Step 9: The medical-advice boundary
 

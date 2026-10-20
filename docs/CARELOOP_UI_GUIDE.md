@@ -40,7 +40,7 @@ One page with five areas: a top bar, Maya's Echo Show, Sam's Echo Dot, a simulat
 | **Light bar** | Under the screen. It pulses while listening and speaking and sweeps while thinking. |
 | **Microphone button** | Tap to speak. A second tap ends the utterance early. The button highlights while live. With Whisper, it stops on silence (about 0.8 s) or after 12 s, and gives up if nothing is said for 7 s. |
 | **Text box and Send** | Type a request instead of speaking. Typing while the mic is open cancels the mic. |
-| **Prompt chips** | One-tap example requests for the patient: import a plan, approve it, invite Sam, check-in, record pain, appointment handoff, who has access, remove Sam, medical-advice question, document status, family tasks, clinician question, access log, voice review, and "move it to 8 pm". |
+| **Prompt chips** | One-tap example requests for the patient: import a plan, approve it, invite Sam, check-in, "anything I should know?", record pain, appointment handoff, who has access, remove Sam, medical-advice question, document status, family tasks, clinician question, access log, voice review, and "move it to 8 pm". |
 
 Behaviors that apply to both devices:
 - **Interrupting:** saying or typing "stop", "quiet" or "cancel that" stops speech immediately. Speaking again also interrupts.
@@ -53,7 +53,7 @@ Behaviors that apply to both devices:
 | Part | What it shows or does |
 | --- | --- |
 | **State label** | Same four states as the Show. |
-| **Light ring** | A circle that changes with the state: blue while listening and speaking, spinning while thinking, grey while idle. **A pulsing yellow ring means Sam has a new CareLoop update.** The ring clears once the update is acknowledged ("mark it seen"). |
+| **Light ring** | A circle that changes with the state: blue while listening and speaking, spinning while thinking, grey while idle. **A pulsing yellow ring means Sam has a new CareLoop update.** A new task is announced in words ("Maya gave you a new task.") and does not light the ring. The ring clears once the update is acknowledged ("mark it seen"). |
 | **Caption** | Exactly what Sam hears, shown as text. Until he speaks it reads "Voice only. This caption shows exactly what Sam hears." Private detail never appears here, only the spoken line. |
 | **Microphone, text box, Send** | Same as the Show. |
 | **Prompt chips** | Updates, mark it seen, "what was Maya's pain score?" (a privacy probe, answered with no value), "show Maya's tasks", "what are my tasks for Maya?", and "I've done Maya's evening task". |
@@ -132,7 +132,7 @@ These are the MCP Apps views. A tool result names a view in its metadata, the Sh
 | **Care tasks** | Listing or changing tasks | Active plan items sorted by time with their status, who handles each ("Sam handles this"), and the source line | **Mark done** on an active task |
 | **Plan source** | Opening a source | The document excerpts that approved items came from, under "From your clinician" | None |
 | **Care circle** | Inviting, listing or revoking caregivers | **People with access** with status, permissions and end date, and **Who looked at your care data** for the last 7 days (what each person viewed or did, never the content) | **Remove** on active or pending access |
-| **CareLoop updates** | Caregiver notifications | Generic updates only, with the note that details stay in the patient's record | **Mark as seen** |
+| **CareLoop updates** | Caregiver notifications | Generic updates, and a "New task" row when the patient has given you a task, with the note that the details come only when you ask | **Mark as seen** |
 | **Check-in trend** | Check-ins and rules | A pain chart from 0 to 10 with a dashed alert line from the approved rule, red points at or above it, and a list of check-ins newest first. Corrections are marked. Missing days are never filled in. | None |
 | **Visit handoff** | Preparing for an appointment | A row of totals (plan items, tasks done, missed, check-ins, alerts, questions, corrections), then questions for the clinician, the plan with its source lines, completed tasks, check-ins, alerts, and notes about gaps | None |
 | **CareLoop records** | Listing records | One row per record with its kind, status and date | None |

@@ -18,7 +18,7 @@ CareLoop is intentionally bounded. It does **not** diagnose, prescribe, adjust m
 | Identity | Credential-derived patient/caregiver identities; no caller-supplied patient scope |
 | Privacy | Voice-safe tool results, patient-owned expiring grants, generic caregiver notifications, deletion and purge |
 | Document intake | Prescription/plan upload: PDF text first, PaddleOCR fallback, local LLM proposes items, deterministic checks, patient approves each item |
-| Tests | 241 tests, including live end-to-end runs against a real server; an intake eval against the configured model |
+| Tests | 318 tests, including live end-to-end runs against a real server; an intake eval against the configured model |
 
 ## Contents
 
@@ -47,7 +47,8 @@ Alexa+ can remember documents, set reminders, and alert family about activity. C
 | Deterministic rules | Only a patient-approved, source-backed rule can create an alert, at most once per episode |
 | Privacy on shared speakers | Tool results expose only a `speakable` line plus opaque `refs`. The caregiver's speaker hears "You have 1 new CareLoop update", never the symptom |
 | Patient-controlled consent | Scoped, expiring caregiver invitations; revocation is confirmed by voice and applies on the next request |
-| Family task assignment | The patient assigns a task to a named family member; Alexa+ gets reminder suggestions; the family member marks it done; a missed task raises a generic update |
+| Family task assignment | The patient assigns a task to a named family member; Alexa+ gets reminder suggestions; the family member is told they have a new task, with the details only when they ask; they mark it done; a missed task raises a generic update |
+| Suggestions | "Anything I should know?" raises what is worth a look from the patient's own records: a visit coming up, a missed task, no check-in today, plan items waiting. Code decides, every suggestion is tied to its source, and nothing new is stored |
 | Questions for the clinician | Saved by voice, never answered or read back, and placed in the next handoff |
 | Multi-turn workflows | Check-ins ask follow-up questions from the approved plan; a guided voice review walks through draft items (change the time, give it to someone, skip, stop) and resumes later; CareLoop offers the next step; "move it to 8 pm" refers to the task just mentioned; a new "Alexa, …" request pauses a waiting workflow |
 | Access transparency | "Who has seen my care data this week?" is answered from the audit log: who viewed or did what, never the content |
@@ -116,7 +117,7 @@ Without a model the demo uses the scripted planner, and documents are read by pa
 
 ```bash
 uv run pytest -q
-# 241 passed
+# 318 passed
 ```
 
 ## Run the Alexa+ demo
@@ -180,7 +181,7 @@ For exact buttons and screens with screenshots, use the [click-by-click demo gui
 ## Testing
 
 ```bash
-uv run pytest -q                       # all 241 tests
+uv run pytest -q                       # all 318 tests
 uv run pytest -q server/tests          # MCP server, tools, consent, MCP Apps views, elicitation
 uv run pytest -q alexa_sim/tests       # simulator host and scripted evaluator, incl. a live run of the demo story
 ```
@@ -214,9 +215,10 @@ Endpoint `http://127.0.0.1:8010/mcp` (Streamable HTTP, bearer token required). `
 | `review_plan_by_voice` | Guided, resumable review of draft items by voice (MCP elicitation per item); medicine and flagged items stay on screen |
 | `update_task_time` | Move a task to a new spoken time ("8 pm", "9"), by name or id |
 | `accept_data_use` | The patient accepts the one-time data-use disclosure; voice tools ask for it before first use |
-| `set_my_details` | The patient's spoken name (used in family members' messages) and time zone |
+| `set_my_details` | The patient's spoken name (used in family members' messages), time zone, and whether suggestions are on |
+| `get_suggestions` | **Patient only.** Up to three things worth raising now, each with an offer a "yes" can run (for example the visit handoff). Computed from approved records; never about symptoms |
 | `who_accessed_my_care_data` | Who else viewed or acted on the patient's data (default: last 7 days) |
-| `list_generic_notifications` / `acknowledge_alert` | Generic caregiver updates; no private alert detail |
+| `list_generic_notifications` / `acknowledge_alert` | Generic caregiver updates and new-task notices, as counts only ("You have 1 new task from Maya."). No alert detail and no task name; "mark it seen" clears them |
 | `create_visit_handoff` | Date-bounded, cited handoff (ISO dates, epochs, or `last_7_days`) |
 | `export_care_data` / `delete_care_record` | Patient data rights |
 | `get_intake_status` | Status of the latest uploaded document: reading, ready with counts, or unreadable |

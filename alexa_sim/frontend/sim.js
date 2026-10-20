@@ -7,6 +7,7 @@
     "Alexa, approve my plan",
     "Alexa, let my brother Sam see my tasks and get updates for two weeks",
     "Alexa, do my check-in",
+    "Alexa, anything I should know?",
     "Alexa, my pain is 8 yesterday",
     "Alexa, my pain is 9",
     "Alexa, get me ready for my appointment",

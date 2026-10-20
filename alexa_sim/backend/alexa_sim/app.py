@@ -72,7 +72,7 @@ def create_alexa_sim_app(settings: AlexaSimSettings | None = None, pool: MCPClie
     traces: list[dict[str, Any]] = []
     sockets: set[WebSocket] = set()
     devices = {"show": Device("show", DeviceKind.SHOW, owner="maya"), "dot": Device("dot", DeviceKind.DOT, owner="sam")}
-    host_state: dict[str, Any] = {"invitation_id": None, "reminders": [], "last_used": time.monotonic(), "used": False,
+    host_state: dict[str, Any] = {"invitation_id": None, "reminders": [], "announced_notices": set(), "last_used": time.monotonic(), "used": False,
                                 "announcements": [], "announce_seq": 0, "intake_ready_unannounced": False}
 
     async def broadcast(message: dict[str, Any]) -> None:
@@ -166,7 +166,14 @@ def create_alexa_sim_app(settings: AlexaSimSettings | None = None, pool: MCPClie
         else:
             result = await pool.call_tool(dot.account, "list_generic_notifications", {}, source="push-sim")
             refs = structured(result).get("refs") or [] if not result["isError"] else []
-            dot.notification = any(ref.get("status") == "action_required" for ref in refs)
+            # The ring is for care alerts. A new-task notice is told once, in words, and stays pending
+            # (without the ring) until Sam asks for the details.
+            dot.notification = any(ref.get("status") == "action_required" and ref.get("kind") != "assigned_task" for ref in refs)
+            fresh = [ref["id"] for ref in refs if ref.get("kind") == "assigned_task" and ref.get("status") == "action_required"
+                     and ref["id"] not in host_state["announced_notices"]]
+            if fresh:
+                host_state["announced_notices"].update(fresh)
+                await announce("dot", "Maya gave you a new task." if len(fresh) == 1 else f"Maya gave you {len(fresh)} new tasks.")
         await device_event(dot)
 
     async def remember_reminders(results: list[dict[str, Any]]) -> None:
@@ -208,7 +215,7 @@ def create_alexa_sim_app(settings: AlexaSimSettings | None = None, pool: MCPClie
         for device in devices.values():
             device.forget_conversation()
         host_state.update(invitation_id=None, reminders=[], last_used=time.monotonic(), used=False,
-                          announcements=[], intake_ready_unannounced=False)
+                          announcements=[], intake_ready_unannounced=False, announced_notices=set())
         traces.clear()
         for account, device_id in ACCOUNTS.items():
             await pool.link(account, settings.token_for(account))

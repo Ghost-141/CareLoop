@@ -50,6 +50,7 @@ Status: **Resolved**, **Workaround** (we went around it), **Open** (still a prob
 | F-35 | Local LLM planner | Medium | Resolved | "Who has access to my care?" was answered from the access log instead of the care circle |
 | F-36 | Local LLM planner | Medium | Resolved | After other turns, a family member's question about Maya's pain score got an invented excuse or a clarifying question, not a tool call |
 | F-37 | Local LLM planner | Medium | Resolved | Sam's "mark it seen" made gemma ask for an alert ID after an unrelated question |
+| F-38 | Caregiver notifications | Medium | Resolved | Nothing told a family member that a task was assigned; "any updates?" said none while their task list was not empty |
 | F-24 | PDF/OCR tooling | Low | Resolved | `pypdf` can't render pages for OCR; PaddleOCR's first run downloads models; storage rejects floats |
 
 ---
@@ -305,6 +306,16 @@ Status: **Resolved**, **Workaround** (we went around it), **Open** (still a prob
 - **Got:** after an unrelated turn, gemma replied `I need a specific notification or alert ID to mark something as seen` and did not call `acknowledge_alert`. It had worked earlier when the update list was still the previous turn.
 - **Resolution:** a server-side fix only. `acknowledge_alert` now takes an optional `alert_id`. With no id it acknowledges the updates still waiting for that caregiver, and errors generically if none are waiting. A caregiver can still pass an id. The same pattern as F-29 and F-31: do not make the person or the model supply an id the server can find itself.
 - **Not baselined separately:** the failing evidence is from the story run. The eval scenarios for this were added together with the fix.
+
+### F-38: A family member was never told a task was assigned · Medium · Resolved
+- **Doing:** assigning the evening task to Sam, then asking Sam's Dot "any CareLoop updates?".
+- **Got:** `There are no new CareLoop updates.` while "what are my tasks for Maya?" listed the task. Updates only held rule alerts and missed-task alerts, so an assignment was invisible there, and nothing spoke to the Dot when it happened.
+- **Impact:** a family member had to know to ask. Alexa+ add-ons have no documented server push, so the server cannot speak to a speaker by itself.
+- **Resolution:**
+  - **A generic notice on assignment.** It names no task, time or care content, expires after 7 days, and is withdrawn if the task is reassigned, taken back or completed. "Any updates?" now says "You have 1 new task from Maya." The details come only when the family member asks for their tasks, which also clears the notice.
+  - **A permission gap closed.** Notifications needed the receive-alerts permission, and a voice invitation like "let Sam help with my tasks" does not grant it. The notice is visible to anyone allowed to be assigned tasks.
+  - **The simulator announces it once** on Sam's Dot, in generic words. The ring stays for care alerts, so the high-check-in moment in the demo is unchanged.
+- **Not verified:** whether real Alexa+ would push the notice. The server keeps it pending and returns it the next time Sam's account asks, and `assign_task` still returns the reminder suggestion for Alexa+ to create.
 
 ## Open questions for the Alexa+ team
 

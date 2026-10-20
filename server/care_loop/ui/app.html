@@ -305,7 +305,10 @@
     "notifications": (d) => {
       const updates = d.updates || [];
       if (!updates.length) return empty("You're all caught up", "New CareLoop updates will show here.");
-      root.replaceChildren(section(null, [rows(updates.map((u, i) => card("Update " + (i + 1), u.status, "Details stay in the patient's private record.",
+      root.replaceChildren(section(null, [rows(updates.map((u, i) => u.kind === "task_assigned"
+        ? card("New task", u.status, "Ask for your tasks to see the details.",
+            action("Mark as seen", "small", () => callTool("acknowledge_alert", { alert_id: u.case_id })))
+        : card("Update " + (i + 1), u.status, "Details stay in the patient's private record.",
         action("Mark as seen", "small", () => callTool("acknowledge_alert", { alert_id: u.case_id })))))]));
     },
     "check-in-trend": renderTrend,
