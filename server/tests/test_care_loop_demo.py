@@ -82,3 +82,68 @@ def test_document_reading_keeps_its_ollama_address_when_the_planner_is_openai_co
     assert Settings.from_env({"LLM_BASE_URL": "http://box:11434"}).llm_base_url == "http://box:11434"
     assert Settings.from_env({"LLM_BASE_URL": gateway, "CARELOOP_AGENT_LLM": "openai",
                               "CARELOOP_INTAKE_BASE_URL": "http://box:11434"}).llm_base_url == "http://box:11434"
+
+
+# ---- "day four at home": history for suggestions, teach-back and the handoff ---------------------------------
+import asyncio  # noqa: E402
+
+import pytest  # noqa: E402
+
+from care_loop.demo import demo_story, seed_history  # noqa: E402
+
+
+def history_at(hour: int, minute: int = 0, zone: str = "UTC"):
+    when = int(datetime(2026, 10, 16, hour, minute, tzinfo=UTC).timestamp())
+    clock = [when]
+    storage = CareLoopStorage(":memory:", clock=lambda: clock[0])
+    svc = CareLoopService(storage, clock=lambda: clock[0], timezone=zone)
+    svc.default_patient_name = "Maya"
+    summary = seed_history(svc, "demo-patient", "demo-caregiver")
+    return clock, svc, summary
+
+
+@pytest.mark.parametrize("hour, minute", [(6, 30), (12, 0), (21, 30), (23, 45)])
+def test_history_raises_the_same_two_things_at_any_time_of_day(hour, minute) -> None:
+    _clock, svc, summary = history_at(hour, minute)
+    assert summary["story"] == "history" and summary["missed_tasks"] == 1
+    found = svc.suggestions(PATIENT)
+    assert [s["kind"] for s in found] == ["missed_task", "teach_back_due"]
+    assert found[0]["say"] == "Sam missed Evening dressing change."
+    assert found[1]["say"] == "Part of your plan needs another look." and found[1]["offer"]["tool"] == "start_teach_back"
+
+
+def test_history_has_an_approved_cited_plan_and_three_days_of_records() -> None:
+    _clock, svc, _summary = history_at(12)
+    plan = svc.list_care_tasks(PATIENT)
+    assert len(plan) == 8 and all(i["status"] == "active" and i["source"] for i in plan)
+    assert [o["pain_score"] for o in svc.list_observations(PATIENT)] == [3, 4, 7, 5]
+    assert svc.storage.list("demo-patient", "ALERT")[0]["acknowledgements"]  # Sam saw yesterday's miss: his ring is dark
+    assert svc.notifications(SAM)[0]["status"] == "acknowledged"
+    dressing = next(t for t in plan if t.get("label") == "Evening dressing change")
+    assert dressing["times"] == ["21:00"] and not dressing.get("assignee_id")  # Maya took it back this morning
+    assert [q["text"] for q in svc.clinician_questions(PATIENT)] == ["When can I go back to work?"]
+
+
+def test_history_rule_fires_on_the_next_high_score_and_the_teach_back_asks_one_thing() -> None:
+    from care_loop.tools.records import register
+    from test_care_loop_teach_back import Deps, FakeMCP, Script
+    _clock, svc, _summary = history_at(15)
+    svc.record_observation(PATIENT, pain_score=8, idempotency_key="on-camera")
+    fired = [a for a in svc.storage.list("demo-patient", "ALERT") if a.get("rule_id")]
+    assert len(fired) == 1 and len(fired[0]["observation_ids"]) == 2
+    mcp = FakeMCP()
+    register(mcp, Deps(svc))
+    person = Script("8 am", "7:30 in the morning")
+    result = asyncio.run(mcp.tools["start_teach_back"](person))
+    assert person.asked == ["Let's check 1 thing. When do you take Omeprazole?", "Not quite. Try again: When do you take Omeprazole?"]
+    assert result["speakable"] == "That's right. Done. You got 1 of 1 right."
+
+
+def test_the_story_is_chosen_by_environment_and_reset_follows_it(monkeypatch) -> None:
+    monkeypatch.delenv("CARELOOP_DEMO_STORY", raising=False)
+    assert demo_story() == "first-visit"
+    monkeypatch.setenv("CARELOOP_DEMO_STORY", "history")
+    svc = service()
+    assert reset_demo(svc, "demo-patient", "demo-caregiver")["story"] == "history"
+    monkeypatch.setenv("CARELOOP_DEMO_STORY", "something-else")
+    assert demo_story() == "first-visit"

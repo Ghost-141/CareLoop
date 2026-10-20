@@ -55,6 +55,8 @@ Status: **Resolved**, **Workaround** (we went around it), **Open** (still a prob
 | F-40 | Document intake | Medium | Resolved | The no-model fallback named a numbered medicine "1.", which a spoken question would have read out |
 | F-41 | Alexa+ elicitation | Medium | Open | Teach-back needs the person's own words in an elicitation answer; how Alexa+ fills a free-text field by voice is undocumented |
 | F-42 | Hosted LLM planner | Low | Resolved | "What medicines do I take?" went to history search, which answered "No matching record found." |
+| F-43 | Suggestions | Medium | Resolved | When the first suggestion had no question, a later one's question (the teach-back) was dropped, so "yes" did nothing |
+| F-44 | Hosted LLM planner, privacy | Medium | Resolved | Sam's "what was Maya's pain score?" got "Found 1 matching record." because the pain rule's text matched; no value leaked, but it sounded like one |
 | F-24 | PDF/OCR tooling | Low | Resolved | `pypdf` can't render pages for OCR; PaddleOCR's first run downloads models; storage rejects floats |
 
 ---
@@ -341,6 +343,17 @@ Status: **Resolved**, **Workaround** (we went around it), **Open** (still a prob
 - **Doing:** a negative eval for teach-back, checking that a plain question about medicines does not start a quiz.
 - **Got:** with the hosted model, 3 of 3 runs called `search_care_history` and answered `No matching record found.` Teach-back was correctly not started, but the answer was useless.
 - **Resolution:** one prompt line: the patient asking about their tasks, medicines or plan goes to `list_care_tasks`. Then 3 of 3 passed, and the history and task-list scenarios still passed.
+
+### F-43: A later suggestion's question was dropped · Medium · Resolved
+- **Doing:** building the "day four at home" demo story: a missed task yesterday and a teach-back answer to look at again.
+- **Got:** `You have 2 things worth a look. Sam missed Evening dressing change. Part of your plan needs another look.` with no question, so Maya's "yes" got `Okay.` Only the first suggestion's question was ever offered, and a missed task has none.
+- **Resolution:** `get_suggestions` offers the first suggestion that has a question, and speaks it last, right after its own line. A test covers a missed task followed by plan items waiting for review.
+
+### F-44: "Found 1 matching record" on a shared speaker · Medium · Resolved
+- **Doing:** the same story with a hosted model as the planner. On Sam's Dot: "Alexa, what was Maya's pain score?"
+- **Got:** the model called `search_care_history`, which answered `Found 1 matching record.` Sam may read the plan, and the match was the pain rule's own text, so no score was returned. The mock planner used `list_care_records` and got `CareLoop records are unavailable.`
+- **Impact:** on a shared speaker, a count in reply to a question about pain sounds like an answer.
+- **Resolution:** a family member without access to check-ins who searches for pain, scores, check-ins or symptoms now gets `CareLoop records are unavailable.`, the same words as listing records. Both planners now give the same reply in the video. Other searches run as before.
 
 ## Open questions for the Alexa+ team
 
