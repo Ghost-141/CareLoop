@@ -351,9 +351,13 @@
     if (v.as_needed !== undefined) return v.as_needed ? "only when needed" : "at set times";
     if (v.every_hours) return "every " + Math.round(v.every_hours * 10) / 10 + " hours";
     if (v.period) return "in the " + v.period;
-    const t = v.time || (v.times || []).join(", ");
-    if (t) return t;
+    const t = v.time ? [v.time] : (v.times || []);
+    if (t.length) return t.map(clock).join(", ");
     return String(v.number);
+  }
+  function clock(hhmm) {  // "07:30" -> "7:30 AM", in the viewer's own format
+    const [h, m] = String(hhmm).split(":").map(Number);
+    return new Date(2000, 0, 1, h, m || 0).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
   }
   function emptyRow(text) { return rows([el("div", "item meta", text)]); }
   function sentence(t) { return t ? t.charAt(0).toUpperCase() + t.slice(1) : "Access"; }
@@ -575,7 +579,7 @@
     group("Plan", h.plan_items, (p) => cite(card(p.text, p.status, [p.type === "PLAN_RULE" ? "Follow-up rule" : "Task", (p.times || []).join(", "),
         p.type === "PLAN_TASK" ? (p.assignee === "patient" ? "Patient" : p.assignee) : null].filter(Boolean).join(". ")), p.source_citation, p.text));
     group("Understanding check", h.understanding, (u) => {
-      const c = card(u.label || "Plan item", u.result, "Checked " + when(u.asked_at) + (u.attempts > 1 ? ", " + u.attempts + " tries" : ""));
+      const c = card(u.question || u.label || "Plan item", u.result, "Checked " + when(u.asked_at) + (u.attempts > 1 ? ", " + u.attempts + " tries" : ""));
       return cite(c, u.source_citation, u.text);
     }, t.checkable ? (h.understanding || []).length + " of " + t.checkable + " plan values checked back by voice" : null);
     group("Completed tasks", h.task_events, (e) => cite(card(e.task_label || "Task completed", "completed",

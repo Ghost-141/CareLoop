@@ -1082,12 +1082,14 @@ class CareLoopService:
         for row in sorted(self.storage.list(patient, "TEACH_BACK"), key=lambda r: (r.get("asked_at", 0), r.get("seq", 0))):
             if row.get("result") != "skipped":
                 latest[(row["item_id"], row["check"])] = row
+        from .teach_back import question_for
         out = []
         for (item_id, check), row in latest.items():
             item = self.storage.get(patient, item_id)
             if not item or item.get("status") != "active":
                 continue
-            out.append({"item_id": item_id, "check": check, "result": row["result"], "asked_at": row["asked_at"],
+            out.append({"item_id": item_id, "check": check, "question": question_for(item, check),
+                        "result": row["result"], "asked_at": row["asked_at"],
                         "attempts": row.get("attempts"), "expected": row.get("expected"), "heard": row.get("heard"),
                         "label": item.get("label"), "text": item.get("text"), "source_citation": self.citation(patient, item)})
         return sorted(out, key=lambda r: r["asked_at"])

@@ -143,7 +143,8 @@
   async function say(id, text) {
     text = text.trim();
     if (!text) return;
-    if (/^(alexa[, ]*)?(stop|quiet|cancel that)\b/i.test(text)) { stopSpeaking(); return; }
+    // "Stop" while a device is talking cuts it off. Otherwise it is an answer, e.g. pausing a review or a teach-back.
+    if (/^(alexa[, ]*)?(stop|quiet|cancel that)\b/i.test(text) && speakingDevice === id) { stopSpeaking(); return; }
     if (activeListen && activeListen.id === id) activeListen.cancel();  // typed while the mic was open
     stopSpeaking();
     if (id === "show") bubble(text, "user"); else $("#dot-caption").textContent = "“" + text + "”";

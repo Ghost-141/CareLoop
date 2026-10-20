@@ -39,7 +39,10 @@ def is_dont_know(text: str) -> bool:
 
 def _name(item: dict[str, Any]) -> str:
     """What the patient calls the medicine: its name as written, or the spoken label."""
-    return ((item.get("medication") or {}).get("name") or item.get("label") or "this medicine").strip()
+    name = ((item.get("medication") or {}).get("name") or "").strip()
+    if not re.search(r"[A-Za-z]{3}", name):  # never "1." from a numbered list
+        name = item.get("label") or "this medicine"
+    return name.strip()
 
 
 def _interval(item: dict[str, Any]) -> float | None:

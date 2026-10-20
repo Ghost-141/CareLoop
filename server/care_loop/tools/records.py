@@ -234,6 +234,7 @@ def _describe(service, item: dict[str, Any]) -> str:
         return "Follow-up rule"
     # Document lines end in their own full stop; the prompt adds its own punctuation.
     text = (item.get("text") or item.get("label") or "Care item").rstrip(" .")
+    text = re.sub(r"^\s*(?:\d{1,2}|[a-z])[.)]\s+", "", text)  # a document's list numbering is not part of the instruction
     if item["type"] == "PLAN_TASK" and item.get("times"):
         text += f", at {_say_times(item['times'])}"
     return text

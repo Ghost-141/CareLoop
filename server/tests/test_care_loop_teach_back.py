@@ -113,6 +113,12 @@ def test_only_medicines_rules_and_a_single_number_warning_are_checked_in_documen
                       (items["rule"]["id"], "threshold"), (items["rule"]["id"], "days")]
 
 
+def test_a_name_without_letters_falls_back_to_the_spoken_label() -> None:
+    item = {"id": "x", "type": "PLAN_TASK", "status": "active", "item_kind": "medication_task", "label": "Medicine routine 1",
+            "medication": {"name": "1."}, "frequency": "three_times_daily", "times": ["08:00", "14:00", "20:00"]}
+    assert question_for(item, "frequency") == "How often do you take Medicine routine 1?"
+
+
 @pytest.mark.parametrize("fields", [
     {"type": "PLAN_TASK", "item_kind": "care_task", "frequency": "once_daily", "times": ["08:00"]},  # a walk is not quizzed
     {"type": "PLAN_TASK", "item_kind": "medication_task", "frequency": "weekly", "times": ["09:00"]},
@@ -350,7 +356,7 @@ def test_the_handoff_shows_the_latest_result_for_each_checked_value_with_its_lin
     totals = handoff["totals"]
     assert (totals["understood"], totals["needs_clarification"], totals["checkable"]) == (5, 1, 6)
     (amoxicillin,) = [u for u in handoff["understanding"] if u["item_id"] == items["amoxicillin"]["id"]]
-    assert amoxicillin["result"] == "needs_clarification"
+    assert amoxicillin["result"] == "needs_clarification" and amoxicillin["question"] == "How often do you take Amoxicillin?"
     assert [e["line_id"] for e in amoxicillin["source_citation"]["page_excerpts"]] == ["p1:L3"]
 
 
@@ -373,3 +379,21 @@ def test_the_teach_back_suggestion_comes_last_and_never_pushes_out_the_others() 
                                          "text": "Follow-up on 2026-10-17.", "due_date": "2026-10-17"}, reviewed=True)
     service.intake_text_document(PATIENT, "New plan", "TASK: Drink water | schedule: morning")
     assert [s["kind"] for s in service.suggestions(PATIENT)] == ["visit_soon", "review_waiting", "teach_back_due"]
+
+
+def test_the_pattern_fallback_names_the_medicine_not_the_list_number() -> None:
+    from care_loop.structuring.validate import pattern_extraction
+    from care_loop.extraction import SourceLine
+    line = SourceLine(page=1, number=5, text="1. Amoxicillin 500 mg capsule: Take 1 capsule by mouth three times daily.",
+                      method="text", confidence_pct=100)
+    (item,) = pattern_extraction([line]).items
+    assert item.medication.name == "Amoxicillin"
+
+
+def test_the_read_back_leaves_out_the_documents_list_numbering() -> None:
+    clock, service, _deps, tools, items = world()
+    amoxicillin = service.storage.get("demo-patient", items["amoxicillin"]["id"])
+    service.storage.put("demo-patient", amoxicillin["id"], "PLAN_TASK", amoxicillin | {"text": "1. " + amoxicillin["text"]})
+    person = Script("I don't know", "stop")
+    run(tools["start_teach_back"](person))
+    assert person.asked[1].startswith("That's okay. Your plan says: Amoxicillin 500 mg")
