@@ -149,7 +149,8 @@ Start from the seeded day and do steps 1 and 2 of the main story. Then:
 
 | Device | Say | Result |
 | --- | --- | --- |
-| Show | "yes" (to "Want Sam to handle…?") | "Done. Sam will handle Complete the evening check-in at 7 PM." A simulated Alexa+ reminder is queued. |
+| Show | "yes" (to "Want Sam to handle…?") | "Done. Sam will handle Complete the evening check-in at 7 PM." A simulated Alexa+ reminder is queued. **Sam's Dot says "Maya gave you a new task."** and nothing about which task. His ring stays dark. |
+| Dot | "any CareLoop updates?" | "You have 1 new task from Maya." Counts only. |
 | Backstage | **Ring next reminder** | Reminders ring in order. The first is Maya's own ("Take a short walk"). Press again for Sam's. |
 | Dot | "what are my tasks for Maya?" | "You have 1 task to help Maya with: Complete the evening check-in at 7 PM." |
 | Dot | "I've done Maya's evening task" | "Thanks. I've recorded that you did it." |
@@ -159,6 +160,12 @@ Start from the seeded day and do steps 1 and 2 of the main story. Then:
 | Show | "get me ready for my appointment" | "…It includes 2 questions for your clinician." The handoff shows who completed each task and any missed ones. |
 
 If an assigned task is not done within an hour of its time, Sam's ring lights up with a generic update and the miss appears in the handoff.
+
+Asking for the details ("what are my tasks for Maya?") or saying "mark it seen" clears the notice. Giving the same task to the same person again says nothing new.
+
+### 6.2b Suggestions
+
+Maya asks "Alexa, anything I should know?" The server works out what is worth a look from her own records and the assistant only phrases it: a visit within 3 days, a missed task, no check-in today after 6 PM, or plan items waiting for review. If a suggestion carries a question, "yes" runs it. Nothing applies gives "Nothing needs your attention right now." "Turn suggestions off" switches them off. They are for the patient only, and they never quote a saved question or a score. The full table of replies is in [CARELOOP_DEMO_WALKTHROUGH.md](CARELOOP_DEMO_WALKTHROUGH.md).
 
 ### 6.3 Invite a family member from scratch
 

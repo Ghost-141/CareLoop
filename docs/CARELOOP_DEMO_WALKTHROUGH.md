@@ -39,14 +39,28 @@ Steps 6–8 also work by voice end to end: answer the question out loud when the
 | # | Device | Say / action | Expected |
 |---|---|---|---|
 | G | Show | "Alexa, let Sam help with my tasks", then **Sam opens Maya's invitation link** | Alexa reads the permissions back ("Sam will be able to see your tasks and be given tasks to do. Is that right?"); say "yes". Sam's Dot hears that he was invited |
-| H | Show | "Alexa, Sam handles my evening task" | "Done. Sam will handle Complete the evening check-in at 7 PM." Backstage shows the simulated Alexa+ reminder |
+| H | Show | "Alexa, Sam handles my evening task" | "Done. Sam will handle Complete the evening check-in at 7 PM." Backstage shows the simulated Alexa+ reminder. **Sam's Dot says "Maya gave you a new task."** with no detail and no ring |
+| H2 | Dot | "Alexa, any CareLoop updates?" | "You have 1 new task from Maya." Counts only, no task name |
 | I | Backstage | **Ring next reminder** | Sam's Dot: "Reminder for Sam: Maya's Complete the evening check-in." |
-| J | Dot | "Alexa, what are my tasks for Maya?" then "Alexa, I've done Maya's evening task" | "You have 1 task to help Maya with: … at 7 PM." then "Thanks. I've recorded that you did it." |
+| J | Dot | "Alexa, what are my tasks for Maya?" (this also clears the new-task notice) then "Alexa, I've done Maya's evening task" | "You have 1 task to help Maya with: … at 7 PM." then "Thanks. I've recorded that you did it." |
 | K | Show | "Alexa, add a question for my doctor: can I stop my medicine early" | "Saved. You have 1 question ready for your next appointment." Saved, not refused, and never read back |
 | L | Show | "Alexa, get me ready for my appointment" | "…It includes 1 question for your clinician." The handoff shows who completed each task and any missed tasks |
 | M | Show | "Alexa, who has seen my care data this week?" | "In the last 7 days, Sam …", listing what Sam viewed or did, never the content |
 
 If an assigned task isn't marked done within an hour of its time, Sam's ring lights up with a generic update, and the miss appears in the handoff.
+
+**Suggestions (add-on).** "Anything I should know?" raises what is worth a look from Maya's own records. What it says depends on what is there, so it can be shown on the seeded day:
+
+| What is in the records | Maya says "Alexa, anything I should know?" and hears |
+| --- | --- |
+| A visit within 3 days, with saved questions | "Your visit is tomorrow. You have 1 question saved for your clinician. Want me to prepare the handoff?" A "yes" prepares the handoff |
+| Checked in before, not today, after 6 PM | "You haven't checked in today. Want to do your check-in now?" |
+| An assigned task missed in the last 2 days | "Sam missed Take a short walk." |
+| Plan items still waiting for review | "3 plan items are waiting for your review. Want to go through them now?" |
+| Nothing applies | "Nothing needs your attention right now." |
+| "Turn suggestions off" | Suggestions answer "Suggestions are turned off." until "turn suggestions on" |
+
+Suggestions are for the patient only: on Sam's Dot the same question gets "Suggestions are unavailable." A suggestion never quotes a saved question or a score.
 
 **Multi-turn conversation (add-on).** Start fresh, do step G (Sam can help with tasks), then:
 

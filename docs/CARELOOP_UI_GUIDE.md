@@ -40,7 +40,7 @@ One page with five areas: a top bar, Maya's Echo Show, Sam's Echo Dot, a simulat
 | **Light bar** | Under the screen. It pulses while listening and speaking and sweeps while thinking. |
 | **Microphone button** | Tap to speak. A second tap ends the utterance early. The button highlights while live. With Whisper, it stops on silence (about 0.8 s) or after 12 s, and gives up if nothing is said for 7 s. |
 | **Text box and Send** | Type a request instead of speaking. Typing while the mic is open cancels the mic. |
-| **Prompt chips** | One-tap example requests for the patient: import a plan, approve it, invite Sam, check-in, record pain, appointment handoff, who has access, remove Sam, medical-advice question, document status, family tasks, clinician question, access log, voice review, and "move it to 8 pm". |
+| **Prompt chips** | One-tap example requests for the patient: import a plan, approve it, invite Sam, check-in, "anything I should know?", record pain, appointment handoff, who has access, remove Sam, medical-advice question, document status, family tasks, clinician question, access log, voice review, and "move it to 8 pm". |
 
 Behaviors that apply to both devices:
 - **Interrupting:** saying or typing "stop", "quiet" or "cancel that" stops speech immediately. Speaking again also interrupts.
@@ -53,7 +53,7 @@ Behaviors that apply to both devices:
 | Part | What it shows or does |
 | --- | --- |
 | **State label** | Same four states as the Show. |
-| **Light ring** | A circle that changes with the state: blue while listening and speaking, spinning while thinking, grey while idle. **A pulsing yellow ring means Sam has a new CareLoop update.** The ring clears once the update is acknowledged ("mark it seen"). |
+| **Light ring** | A circle that changes with the state: blue while listening and speaking, spinning while thinking, grey while idle. **A pulsing yellow ring means Sam has a new CareLoop update.** A new task is announced in words ("Maya gave you a new task.") and does not light the ring. The ring clears once the update is acknowledged ("mark it seen"). |
 | **Caption** | Exactly what Sam hears, shown as text. Until he speaks it reads "Voice only. This caption shows exactly what Sam hears." Private detail never appears here, only the spoken line. |
 | **Microphone, text box, Send** | Same as the Show. |
 | **Prompt chips** | Updates, mark it seen, "what was Maya's pain score?" (a privacy probe, answered with no value), "show Maya's tasks", "what are my tasks for Maya?", and "I've done Maya's evening task". |
