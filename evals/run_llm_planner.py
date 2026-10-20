@@ -171,7 +171,8 @@ SCENARIOS = [
              expect_all=["get_suggestions", "create_visit_handoff"], forbid=["export_care_data"], max_calls=4),
     Scenario("suggestions-coming-up", "suggestions", "Alexa, is there anything coming up?", world=["visit"], expect_all=["get_suggestions"],
              reply_has=[r"(?i)visit is tomorrow"]),
-    Scenario("suggestions-nothing", "suggestions", "Alexa, anything I should know?", expect_all=["get_suggestions"],
+    # No plan at all: an approved rule that was never checked back would itself be worth raising (teach-back).
+    Scenario("suggestions-nothing", "suggestions", "Alexa, anything I should know?", seed="none", expect_all=["get_suggestions"],
              reply_has=[r"(?i)nothing needs your attention"], forbid=["create_visit_handoff", "start_daily_checkin", "review_plan_by_voice"],
              reply_lacks=[r"(?i)visit|check-in|checked in"]),
     Scenario("suggestions-only-what-was-returned", "suggestions", "Alexa, what's next?", seed="active", world=["missed"],
