@@ -45,6 +45,24 @@ def _name(item: dict[str, Any]) -> str:
     return name.strip()
 
 
+medicine_name = _name
+
+
+def period_named(text: str) -> str | None:
+    """The part of the day a phrase names: "before breakfast" → "morning", "dinner" → "evening"."""
+    return next((p for pattern, p in _PERIOD_WORDS if re.search(pattern, (text or "").lower())), None)
+
+
+def in_period(clock: str, period: str) -> bool:
+    """Whether a "HH:MM" time falls in that part of the day (night runs past midnight)."""
+    try:
+        hour = int(clock.split(":")[0])
+    except ValueError:
+        return False
+    start, end = _PERIODS[period]
+    return start <= (hour + 24 if hour < 5 else hour) < end
+
+
 def _interval(item: dict[str, Any]) -> float | None:
     if item.get("frequency") == "every_n_hours" and item.get("interval_hours"):
         return float(item["interval_hours"])

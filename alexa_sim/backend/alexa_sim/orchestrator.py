@@ -24,6 +24,12 @@ _WAKE = re.compile(r"^\s*(hey\s+)?alexa[\s,.!:-]*", re.IGNORECASE)
 _CONFIRM = re.compile(r"^(confirm|yes|yeah|yep|sure|ok(ay)?|please|do it|go ahead|sounds good)\b", re.IGNORECASE)
 _DECLINE = re.compile(r"^(no|nope|not now|no thanks|later|maybe later)\b", re.IGNORECASE)
 _MEDICAL = re.compile(r"\b(dose|dosage|medication|medicine|diagnos\w*|prescri\w*|should i take|emergency|double my)\b", re.IGNORECASE)
+# "What medicine do I take before breakfast?" reads the patient's approved plan back; it is not advice.
+# Anything that asks what to change or whether it is safe is still refused.
+_PLAN_MEDICINES = re.compile(r"\b(what|which|when)\b.*\b(medicines?|medications?|meds|pills?)\b"
+                             r"|\bmy (medicines|medications|meds|pills)\b", re.IGNORECASE)
+_ADVICE = re.compile(r"\b(should|dose|dosage|double|extra|more|less|skip|stop|instead|safe|how (much|many)|"
+                     r"side effects?|diagnos\w*|emergency|can i)\b", re.IGNORECASE)
 # A question saved for the clinician is not a request for advice: CareLoop stores it and never answers.
 _CLINICIAN_QUESTION = re.compile(r"\b(question|ask)\b.*\b(doctor|clinician|nurse|care team)\b", re.IGNORECASE)
 # Self-harm or a medical emergency: never routed to a tool or a model.
@@ -235,7 +241,8 @@ class Orchestrator:
         if _CRISIS.search(text):
             device.remember(text, CRISIS_REPLY)
             return Turn(CRISIS_REPLY, planner="policy")
-        if _MEDICAL.search(text) and not _CLINICIAN_QUESTION.search(text):
+        plan_lookup = _PLAN_MEDICINES.search(text) and not _ADVICE.search(text)
+        if _MEDICAL.search(text) and not _CLINICIAN_QUESTION.search(text) and not plan_lookup:
             device.remember(text, REFUSAL)
             return Turn(REFUSAL, planner="policy")
         tools, by_name = account.model_tools, {tool["name"]: tool for tool in account.model_tools}

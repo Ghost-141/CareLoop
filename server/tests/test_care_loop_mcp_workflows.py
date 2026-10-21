@@ -390,3 +390,32 @@ def test_list_care_records_accepts_plain_kind_names() -> None:
     deps.service.record_observation(patient(), pain_score=5, idempotency_key="p1")
     for phrase in ("pain check-in", "pain", "OBSERVATION", "Pain Score"):
         assert len(mcp.tools["list_care_records"](FakeContext(), record_type=phrase)["refs"]) == 1, phrase
+
+
+def test_patient_hears_their_medicines_with_time_meal_and_line_but_family_hears_counts() -> None:
+    now = [1_791_936_000]
+    mcp, deps = build(now, patient())
+    service = deps.service
+    service.accept_data_use(patient())
+    plan = [("p1:L5", "Amoxicillin 500 mg: Take 1 capsule three times daily for 7 days.", "Amoxicillin", ["08:00", "14:00", "20:00"]),
+            ("p1:L6", "Omeprazole 20 mg: Take 1 capsule once daily before breakfast.", "Omeprazole", ["07:30"]),
+            ("p1:L7", "Ibuprofen 400 mg: Take 1 tablet every 8 hours as needed for pain.", "Ibuprofen", [])]
+    document = service.create_document(patient(), "Prescription", [{"page": 1, "excerpt": text, "line_id": line} for line, text, _, _ in plan],
+                                       reviewed=True)
+    for line, text, name, times in plan:
+        service.write(patient(), "PLAN_TASK", {"text": text, "source": [{"id": line, "page": 1, "text": text}], "status": "active",
+                                               "item_kind": "medication_task", "label": "Medicine routine", "medication": {"name": name},
+                                               "times": times}, source_id=document["id"])
+    say = lambda **kw: mcp.tools["list_care_tasks"](FakeContext(), **kw)["speakable"]
+    assert say(medicines=True, when="breakfast") == ("In the morning: Omeprazole at 7:30 AM, before breakfast, from line 6; "
+                                                    "Amoxicillin at 8 AM, from line 5.")
+    assert say(medicines=True, when="dinner") == "In the evening: Amoxicillin at 8 PM, from line 5."
+    assert say(medicines=True, when="lunch") == "In the afternoon: Amoxicillin at 2 PM, from line 5."
+    assert "Ibuprofen as needed, from line 7" in say(medicines=True)
+    assert say().startswith("You have 3 active tasks")  # a plain task list still gives counts
+
+    invitation = service.invite(patient(), ["read_tasks"], name="Sam")
+    service.accept_invitation(caregiver(), invitation["id"])
+    deps.local_identity = caregiver()
+    family = say(medicines=True, when="breakfast")
+    assert family.startswith("You have 3 active tasks") and "Omeprazole" not in family

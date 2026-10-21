@@ -147,6 +147,26 @@ async def test_medical_advice_is_refused_without_any_tool_call() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("phrase, when", [("Alexa, what medicine do I take before breakfast?", "breakfast"),
+                                          ("Alexa, what medicine do I have to take before dinner?", "dinner"),
+                                          ("which medications do I take?", None)])
+async def test_asking_which_medicines_reads_the_plan_instead_of_refusing(phrase, when) -> None:
+    pool = FakePool(TOOLS, {"list_care_tasks": ok("In the morning: Omeprazole at 7:30 AM, before breakfast, from line 6.")})
+    turn = await Orchestrator(pool).respond(Device("show", DeviceKind.SHOW, "maya", account="maya"), phrase)
+    expected = {"medicines": True} | ({"when": when} if when else {})
+    assert pool.calls == [("list_care_tasks", expected)] and "can't give medical advice" not in turn.reply
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("phrase", ["Alexa, what medicine should I take for my headache?",
+                                    "Alexa, which medicine can I skip today?", "Alexa, what dose of my medicine is safe?"])
+async def test_medicine_questions_asking_for_advice_are_still_refused(phrase) -> None:
+    pool = FakePool(TOOLS, {})
+    turn = await Orchestrator(pool).respond(Device("show", DeviceKind.SHOW, "maya", account="maya"), phrase)
+    assert pool.calls == [] and "can't give medical advice" in turn.reply
+
+
+@pytest.mark.asyncio
 async def test_unlinked_device_and_wake_word() -> None:
     assert strip_wake_word("Hey Alexa, show my tasks") == "show my tasks"
     turn = await Orchestrator(FakePool(TOOLS, {})).respond(Device("dot", DeviceKind.DOT, "sam"), "Alexa, any updates?")

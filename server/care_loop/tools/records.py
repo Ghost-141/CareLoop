@@ -28,6 +28,7 @@ from mcp.types import ToolAnnotations
 from pydantic import BaseModel, Field, create_model
 
 from ..core import CRISIS, CRISIS_REPLY, AccessDenied, ConsentRequired, NoCareAccess, PastExpiry
+from ..teach_back import in_period, medicine_name, period_named
 
 
 Surface = Literal["glance", "private_screen"]
@@ -112,6 +113,39 @@ def _say_time(value: str) -> str:
 
 def _say_times(times: list[str]) -> str:
     return _join([_say_time(t) for t in times])
+
+
+# Meal wording the prescription itself uses. It is spoken as written, never inferred from a time.
+_MEAL = re.compile(r"\b(?:before|after|with)\s+(?:breakfast|lunch|dinner|supper|meals?|food)\b|\bon an empty stomach\b"
+                   r"|\bat bedtime\b", re.IGNORECASE)
+_PERIOD_PHRASE = {"morning": "in the morning", "afternoon": "in the afternoon", "evening": "in the evening", "night": "at night"}
+
+
+def _medicines_speakable(items: list[dict[str, Any]], when: str | None) -> str:
+    """The patient's own approved medicines, each with its time, the plan's meal wording and its source line."""
+    period = period_named(when) if when else None
+    parts = []
+    for item in items:
+        if item.get("item_kind") != "medication_task" or item.get("status", "active") != "active":
+            continue
+        times = list(item.get("times") or [])
+        if period:
+            times = [t for t in times if in_period(t, period)]
+            if not times:
+                continue
+        part = f"{medicine_name(item)} at {_say_times(times)}" if times else f"{medicine_name(item)} as needed"
+        if meal := _MEAL.search(item.get("text") or ""):
+            part += f", {meal.group(0).lower()}"
+        line = re.search(r"L(\d+)$", str(((item.get("source") or [{}])[0]).get("id") or ""))
+        if line:
+            part += f", from line {line.group(1)}"
+        parts.append((min(times) if times else "99", part))  # in time order; "as needed" last
+    parts = [part for _, part in sorted(parts)]
+    if not parts:
+        return (f"No medicine in your approved plan is due {_PERIOD_PHRASE[period]}." if period
+                else "Your approved plan has no medicines yet.")
+    lead = f"{_PERIOD_PHRASE[period][0].upper()}{_PERIOD_PHRASE[period][1:]}" if period else "Your medicines"
+    return f"{lead}: {'; '.join(parts)}."
 
 
 DATA_USE_PROMPT = ("Before I save anything: CareLoop keeps your care plan, your check-ins, and who you share them "
@@ -493,13 +527,21 @@ def register(mcp: MCPServer, deps) -> None:
 
     @tool("list_care_tasks", "tasks", _READ)
     @_safe_tool("Care tasks are unavailable.")
-    def list_care_tasks(ctx: Context) -> VoiceResult:
+    def list_care_tasks(ctx: Context, medicines: bool = False, when: str | None = None) -> VoiceResult:
         """List counts and ref ids of the person's plan tasks/rules.
 
         Patients also see their own unapproved drafts; caregivers never receive
         draft instructions.  Task wording is shown only in the private view.
+
+        When the patient asks which medicines they take ("what medicine do I take before breakfast?",
+        "when do I take omeprazole?"), pass ``medicines=true`` and, if they name a part of the day or a
+        meal, ``when`` ("breakfast", "dinner", "morning", "bedtime"). The patient then hears each approved
+        medicine with its time and source line. A family member still hears only counts.
         """
-        items = deps.service.list_care_tasks(_patient(deps, ctx))
+        identity = _patient(deps, ctx)
+        items = deps.service.list_care_tasks(identity)
+        if (medicines or when) and identity.role == "patient":
+            return _result(_medicines_speakable(items, when), view="tasks", refs=_plan_refs(items))
         tasks = [i for i in items if i["type"] == "PLAN_TASK" and i.get("status", "active") == "active"]
         rules = [i for i in items if i["type"] == "PLAN_RULE" and i.get("status", "active") == "active"]
         drafts = [i for i in items if i.get("status", "active") in {"draft", "pending_review", "needs_review"}]

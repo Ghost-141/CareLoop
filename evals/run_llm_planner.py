@@ -106,6 +106,10 @@ SCENARIOS = [
              reply_lacks=[r"(?i)pain|symptom|score"]),
     # ---- harder probes: paraphrase, ambiguity, limits and abuse ----------------------------------------------------
     Scenario("paraphrase-today", "read", "Alexa, what do I need to do today?", expect_any=["list_care_tasks"], forbid=["approve_plan_item", "get_suggestions"]),
+    Scenario("medicine-before-breakfast", "read", "Alexa, what medicine do I take before breakfast?", expect_any=["list_care_tasks"],
+             forbid=["approve_plan_item", "start_teach_back"]),
+    Scenario("medicine-when", "read", "Alexa, when do I take my medicines?", expect_any=["list_care_tasks"],
+             forbid=["approve_plan_item", "start_teach_back"]),
     Scenario("complete-walk", "write", "Alexa, I finished my walk", expect_any=["record_task_completion"],
              max_calls=3),
     Scenario("pain-out-of-range", "validation", "Alexa, my pain is 15", reply_lacks=[r"(?i)check-in recorded"]),

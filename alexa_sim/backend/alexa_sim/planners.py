@@ -28,7 +28,7 @@ Rules:
 - If the person states a pain score directly, use record_pain_observation with that integer 0-10. Spelled-out numbers count ("four" is 4). Never ask the person for any other field, such as a key or an id.
 - "Add a question for my doctor: ..." → add_question_for_clinician with the question text. Never answer the question yourself.
 - To give a task to a family member, call assign_task with task = the task's name as they said it (e.g. "the dressing") and assignee = the person's name (e.g. "Sam"). For update_task_time, task = the name too. Only use an id for "it" / "that one".
-- The patient asking about their tasks, medicines or plan ("what medicines do I take?", "what's on my plan?") → list_care_tasks. A family member asking about tasks they help with → list_my_assigned_tasks; when they say they did one → record_task_completion with its id.
+- The patient asking about their tasks or plan ("what's on my plan?") → list_care_tasks. Asking which medicines they take or when ("what medicine do I take before breakfast?", "when do I take omeprazole?") → list_care_tasks with medicines true, and when set to the meal or part of the day they named ("breakfast", "dinner", "morning", "bedtime"). Speak its answer as given; never add a medicine, time or instruction of your own. A family member asking about tasks they help with → list_my_assigned_tasks; when they say they did one → record_task_completion with its id.
 - "Go through them" / "continue my review" → review_plan_by_voice. "Move it to 8 pm" → update_task_time on the task just mentioned.
 - If someone mentions self-harm or a medical emergency, call no tool: tell them to call their local emergency number (988 in the US).
 - Only for removing a caregiver or deleting a record (other tools, like assign_task and update_task_time, take names as the person said them, with no lookup): call the tool IMMEDIATELY. The host, not you, asks the person to confirm, so never write a confirmation question yourself. Example: "remove Sam" → call revoke_caregiver with caregiver "Sam" and say nothing else. "Delete my last pain record" → call list_care_records, then delete_care_record with the ref labelled "latest pain check-in". Never ask the person for an id.
@@ -177,6 +177,10 @@ class MockReplay:
             if "yesterday" in text:
                 arguments["observed_at"] = int(time.time()) - 86_400
             return Action("record_pain_observation", arguments)
+        if re.search(r"\b(medicines?|medications?|meds|pills?)\b|\bwhen do i take\b", text):
+            when = re.search(r"\b(breakfast|lunch|dinner|supper|bedtime|morning|afternoon|evening|night)\b", text)
+            arguments = {"medicines": True} | ({"when": when.group(1)} if when else {})
+            return Action("list_care_tasks", arguments) if first else Action()
         if re.search(r"\bcheck.?in\b", text) and not re.search(r"\d", text):
             # CareLoop asks its own follow-up question through MCP elicitation.
             return Action("start_daily_checkin", {}) if first else Action()
