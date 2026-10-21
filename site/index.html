@@ -630,11 +630,11 @@
   <section id="teach-back" class="sheet" aria-labelledby="tb-title">
     <div class="wrap">
       <h2 id="tb-title">Approved is not the same as understood.</h2>
-      <p class="intro">After Maya approves her medicines, she can ask Alexa to check she understood them. CareLoop asks her to say each one back. Alexa only passes on her words: the server checks every answer against the approved, cited line, and a miss is answered by reading that line, never by explaining it.</p>
+      <p class="intro">Maya asks Alexa to check she understood her plan. She says each item back, and the server, not the model, checks her answer against the line she approved.</p>
       <div class="tb">
         <div>
           <div class="check" role="table" aria-label="A teach-back: each question, what Maya said, and the result">
-            <div class="check-row head" role="row"><span role="columnheader">CareLoop asked</span><span role="columnheader">Maya said</span><span role="columnheader">Checked in code</span></div>
+            <div class="check-row head" role="row"><span role="columnheader">CareLoop asked</span><span role="columnheader">Maya said</span><span role="columnheader">Result</span></div>
             <div class="check-row" role="row"><span role="cell">How often do you take Amoxicillin?</span><span class="heard-as" role="cell">"Three times a day"</span><span role="cell"><span class="verdict ok">Understood</span></span></div>
             <div class="check-row" role="row"><span role="cell">When do you take Omeprazole?</span><span class="heard-as" role="cell">"8 am"<small>then "8 in the morning"</small></span><span role="cell"><span class="verdict warn">Needs another look</span></span></div>
             <div class="check-row" role="row"><span role="cell">Do you take Ibuprofen at set times, or only when you need it?</span><span class="heard-as" role="cell">"Only when I need it"</span><span role="cell"><span class="verdict ok">Understood</span></span></div>
@@ -662,9 +662,9 @@
         </figure>
       </div>
       <ul class="rules3">
-        <li><h3>Checked in code</h3><p>"Every 8 hours" and "three times a day" are the same answer. A wrong one gets a second try; then the plan is read back and the check moves on.</p></li>
-        <li><h3>Read back, never explained</h3><p>Alexa says what the approved line says, in its own words. It never gives a reason or advice. Three misses in a row leave the rest for the clinician.</p></li>
-        <li><h3>Only the value is kept</h3><p>CareLoop stores "8:00 AM", never Maya's words. Sam can't see the results. Her clinician sees them in the visit handoff.</p></li>
+        <li><h3>Checked in code</h3><p>"Every 8 hours" counts as "three times a day".</p></li>
+        <li><h3>Read back, never explained</h3><p>A miss gets one retry, then the line is read back. No advice.</p></li>
+        <li><h3>Only the value is kept</h3><p>Her clinician sees the results. Sam doesn't.</p></li>
       </ul>
     </div>
   </section>
