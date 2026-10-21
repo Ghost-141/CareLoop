@@ -192,7 +192,7 @@ class MockReplay:
             return Action("list_generic_notifications", {}) if first else Action()
         if "export" in text:
             return Action("export_care_data", {}) if first else Action()
-        if re.search(r"\b(tasks?|plan|to do|todo)\b", text):
+        if re.search(r"\b(tasks?|plan|to do|todo|rules?)\b", text):
             return Action("list_care_tasks", {}) if first else Action()
         if first:
             return Action(say="Sorry, I can't help with that in CareLoop yet.")

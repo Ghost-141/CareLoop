@@ -403,7 +403,8 @@ def test_patient_hears_their_medicines_with_time_meal_and_line_but_family_hears_
     document = service.create_document(patient(), "Prescription", [{"page": 1, "excerpt": text, "line_id": line} for line, text, _, _ in plan],
                                        reviewed=True)
     for line, text, name, times in plan:
-        service.write(patient(), "PLAN_TASK", {"text": text, "source": [{"id": line, "page": 1, "text": text}], "status": "active",
+        source = [{"id": line, "page": 1, "text": text, "method": "text", "confidence_pct": 100}]
+        service.write(patient(), "PLAN_TASK", {"text": text, "source": source, "status": "active",
                                                "item_kind": "medication_task", "label": "Medicine routine", "medication": {"name": name},
                                                "times": times}, source_id=document["id"])
     say = lambda **kw: mcp.tools["list_care_tasks"](FakeContext(), **kw)["speakable"]
@@ -414,8 +415,12 @@ def test_patient_hears_their_medicines_with_time_meal_and_line_but_family_hears_
     assert "Ibuprofen as needed, from line 7" in say(medicines=True)
     assert say().startswith("You have 3 active tasks")  # a plain task list still gives counts
 
+    assert all(i["can_complete"] for i in mcp.tools["get_private_view"]("tasks", FakeContext())["data"]["items"])
+
     invitation = service.invite(patient(), ["read_tasks"], name="Sam")
     service.accept_invitation(caregiver(), invitation["id"])
     deps.local_identity = caregiver()
     family = say(medicines=True, when="breakfast")
     assert family.startswith("You have 3 active tasks") and "Omeprazole" not in family
+    # On his own screen Sam sees the plan his grant allows, but can mark done only what is assigned to him.
+    assert not any(i["can_complete"] for i in mcp.tools["get_private_view"]("tasks", FakeContext())["data"]["items"])

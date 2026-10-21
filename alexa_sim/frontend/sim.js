@@ -28,6 +28,7 @@
     "Alexa, mark it seen",
     "Alexa, what was Maya's pain score?",
     "Alexa, show Maya's tasks",
+    "Alexa, what is Maya's follow-up rule?",
     "Alexa, what are my tasks for Maya?",
     "Alexa, I've done Maya's evening task",
   ];
@@ -62,6 +63,8 @@
     const now = new Date();
     $("#clock").textContent = now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
     $("#date").textContent = now.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" });
+    $("#phone-clock").textContent = now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }).replace(/\s?[AP]M/i, "");
+    $("#phone-date").textContent = $("#date").textContent;
   }
   setInterval(tick, 15000); tick();
 
@@ -346,14 +349,22 @@
   });
 
   // ---- MCP Apps host bridge -----------------------------------------------------------
-  let activeApp = null;
+  // Two screens can show a CareLoop view: Maya's Show, and Sam's phone (as Sam, limited by his grant).
+  const SURFACES = { show: { slot: "#app-slot", box: "#screen" }, phone: { slot: "#phone-app-slot", box: "#phone-app-slot" } };
+  const activeApps = {};
   function refreshApp() {
     // Re-send the view's last tool result; the app reloads its private data through the bridge.
+    const activeApp = activeApps.show;
     if (activeApp) activeApp.post({ jsonrpc: "2.0", method: "ui/notifications/tool-result", params: activeApp.result });
   }
-  async function mountApp(screen) {
-    const { html } = await api(`/api/apps/resource?device_id=show&uri=${encodeURIComponent(screen.resource_uri)}`);
-    if (activeApp) { window.removeEventListener("message", activeApp.listener); activeApp.frame.remove(); }
+  function unmountApp(surface) {
+    const activeApp = activeApps[surface];
+    if (activeApp) { window.removeEventListener("message", activeApp.listener); activeApp.frame.remove(); delete activeApps[surface]; }
+  }
+  async function mountApp(screen, surface = "show") {
+    const { slot, box } = SURFACES[surface];
+    const { html } = await api(`/api/apps/resource?device_id=${surface}&uri=${encodeURIComponent(screen.resource_uri)}`);
+    unmountApp(surface);
     const frame = document.createElement("iframe");
     frame.className = "app-frame"; frame.title = "CareLoop private view";
     frame.setAttribute("sandbox", "allow-scripts"); // no same-origin: no cookies, storage, or parent DOM
@@ -370,14 +381,14 @@
             hostInfo: { name: "careloop-assistant-simulator", version: "1" },
             hostCapabilities: { serverTools: {} },
             hostContext: { theme: "light", displayMode: "inline", platform: "web",
-              containerDimensions: { maxHeight: Math.max(240, $("#screen").clientHeight) } } });
+              containerDimensions: { maxHeight: Math.max(240, $(box).clientHeight) } } });
           break;
         case "ui/notifications/initialized":
           post({ jsonrpc: "2.0", method: "ui/notifications/tool-result", params: screen.result });
           break;
         case "tools/call":
           try {
-            const result = await api("/api/apps/call", { device_id: "show", name: m.params?.name, arguments: m.params?.arguments || {} });
+            const result = await api("/api/apps/call", { device_id: surface, name: m.params?.name, arguments: m.params?.arguments || {} });
             reply(result);
           } catch (e) { fail("CareLoop action unavailable"); }
           break;
@@ -390,10 +401,55 @@
     };
     window.addEventListener("message", listener);
     frame.srcdoc = html;
-    $("#app-slot").replaceChildren(frame);
-    $("#screen").classList.add("has-app");
-    activeApp = { frame, listener, post, result: screen.result };
+    $(slot).replaceChildren(frame);
+    if (surface === "show") $("#screen").classList.add("has-app");
+    activeApps[surface] = { frame, listener, post, result: screen.result };
   }
+
+  // ---- Sam's phone: a lock-screen notification with no care detail, then the CareLoop view as Sam ----
+  function showTab(which) {
+    const sam = which === "sam";
+    $("#tab-alexa").setAttribute("aria-selected", String(!sam));
+    $("#tab-sam").setAttribute("aria-selected", String(sam));
+    $("#alexa-app").hidden = sam; $("#sam-phone").hidden = !sam;
+  }
+  $("#tab-alexa").addEventListener("click", () => showTab("alexa"));
+  $("#tab-sam").addEventListener("click", () => showTab("sam"));
+
+  const PHONE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-3-6.2"/><circle cx="19" cy="5.5" r="1.4"/></svg>';
+  let phoneShown = "", lastPhoneId = null;
+  function renderPhone(phone) {
+    $("#phone-hint").textContent = !phone.signed_in ? "Sam isn’t signed in. Enable CareLoop for Sam in the Alexa app."
+      : phone.notifications.length ? "Tap a notification to open CareLoop." : "Signed in to CareLoop as Sam. Nothing waiting.";
+    const newest = Math.max(0, ...phone.notifications.map((n) => n.id));
+    if (lastPhoneId !== null && newest > lastPhoneId) showTab("sam");  // a new one arrived: turn to Sam's phone
+    lastPhoneId = Math.max(lastPhoneId ?? 0, newest);
+    const ids = phone.notifications.map((n) => n.id).join(",");
+    if (ids === phoneShown) return;  // re-rendering would replay the arrival animation
+    phoneShown = ids;
+    $("#phone-notes").replaceChildren(...phone.notifications.slice().reverse().map((n) => {
+      const b = document.createElement("button"); b.type = "button"; b.className = "note";
+      b.innerHTML = `<span class="note-icon">${PHONE_ICON}</span><span><span class="note-top"><span>CareLoop</span><span>now</span></span><strong></strong><span class="note-tap">Tap to open</span></span>`;
+      $("strong", b).textContent = n.text;
+      b.addEventListener("click", () => openPhoneNote(n.id));
+      return b;
+    }));
+  }
+  async function openPhoneNote(id) {
+    const unlock = $("#phone-unlock");
+    unlock.className = "unlock"; $("#phone-unlock-text").textContent = "Face ID"; unlock.hidden = false;
+    await new Promise((r) => setTimeout(r, 700));
+    unlock.classList.add("ok"); $("#phone-unlock-text").textContent = "Sam";
+    try {
+      const { screen } = await api("/api/phone/open", { id });
+      await mountApp(screen, "phone");
+      $("#phone-app").hidden = false;
+    } catch (e) { $("#phone-hint").textContent = e.message; }
+    unlock.hidden = true;
+    refresh().catch(() => {});
+  }
+  function lockPhone() { unmountApp("phone"); $("#phone-app").hidden = true; }
+  $("#phone-lock-btn").addEventListener("click", lockPhone);
 
   // ---- Alexa app panel, director, inspector -----------------------------------------
   async function refresh() {
@@ -411,6 +467,8 @@
       const missed = await api(`/api/announcements?after=${lastAnnounce}`);
       missed.items.forEach((item) => announced(item));  // not awaited: speech must not stall the refresh
     }
+    if (s.phone) renderPhone(s.phone);
+    if (s.phone && !s.phone.signed_in) lockPhone();
     if (s.idle_reset_minutes && $("#demo-reset-note").textContent === "Back to Maya's starting day")
       $("#demo-reset-note").textContent = `Back to Maya's starting day. Also resets itself after ${s.idle_reset_minutes} idle minutes.`;
     if (s.privacy_url) { $("#privacy-link").href = s.privacy_url; $("#terms-link").href = s.terms_url; }
@@ -453,6 +511,7 @@
   });
   function clearDevices() {
     $("#convo").replaceChildren(); $("#convo").hidden = true; $("#home").hidden = false; $("#app-slot").replaceChildren(); $("#screen").classList.remove("has-app");
+    lockPhone(); $("#phone-notes").replaceChildren(); phoneShown = ""; lastPhoneId = null;
     $("#dot-caption").textContent = "Voice only. This caption shows exactly what Sam hears.";
     $("#trace").replaceChildren();
   }
@@ -534,6 +593,7 @@
       if (msg.type === "trace") traceLine(msg.entry);
       else if (msg.type === "announce") announced(msg);
       else if (msg.type === "reset") { clearDevices(); refresh().catch(() => {}); }
+      else if (msg.type === "phone") refresh().catch(() => {});  // the lock screen shows it; refresh() is the one renderer
       else if (msg.type === "device") {
         if (msg.device_id === "dot") devices.dot.classList.toggle("notify", !!msg.notification);
         if (msg.state === "thinking" && speakingDevice !== msg.device_id) setState(msg.device_id, "thinking");

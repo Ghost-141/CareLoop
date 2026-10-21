@@ -40,7 +40,7 @@ class UtteranceIn(BaseModel):
 
 
 class BridgeCall(BaseModel):
-    device_id: str = Field(pattern="^(show|dot)$")
+    device_id: str = Field(pattern="^(show|dot|phone)$")
     name: str = Field(min_length=1, max_length=128)
     arguments: dict[str, Any] = Field(default_factory=dict)
 
@@ -54,6 +54,20 @@ MAX_AUDIO_BYTES = 30 * 16_000 * 2  # 30 s of 16 kHz mono PCM16
 
 class PlannerIn(BaseModel):
     mode: str = Field(pattern="^(mock|ollama|openai)$")
+
+
+class PhoneOpenIn(BaseModel):
+    id: int
+
+
+# Sam's phone (a simulated CareLoop companion app): the lock screen says only that something is waiting.
+PHONE_TEXT = {"assigned_task": "Maya gave you a new task.", "alert": "You have a new CareLoop update.",
+              "asked": "The details you asked for are ready."}
+# What tapping each kind of notification opens, as Sam: his tasks, or the update list.
+PHONE_OPENS = {"assigned_task": "list_my_assigned_tasks", "alert": "list_generic_notifications"}
+# A Dot answer that only gives counts sends the detail to Sam's phone instead of reading it out.
+PHONE_HANDOFF = {"list_care_tasks"}
+HANDOFF_LINE = "I've sent the details to your phone."
 
 
 def build_planner(settings: AlexaSimSettings, mode: str | None = None) -> Planner:
@@ -73,7 +87,10 @@ def create_alexa_sim_app(settings: AlexaSimSettings | None = None, pool: MCPClie
     sockets: set[WebSocket] = set()
     devices = {"show": Device("show", DeviceKind.SHOW, owner="maya"), "dot": Device("dot", DeviceKind.DOT, owner="sam")}
     host_state: dict[str, Any] = {"invitation_id": None, "reminders": [], "announced_notices": set(), "last_used": time.monotonic(), "used": False,
-                                "announcements": [], "announce_seq": 0, "intake_ready_unannounced": False}
+                                "announcements": [], "announce_seq": 0, "intake_ready_unannounced": False,
+                                # Sam's phone: notifications not yet opened, and the updates already pushed
+                                # (None until the first sync, so the story's starting state never pushes).
+                                "phone": [], "phone_seq": 0, "phone_pushed": None}
 
     async def broadcast(message: dict[str, Any]) -> None:
         for socket in list(sockets):
@@ -104,6 +121,15 @@ def create_alexa_sim_app(settings: AlexaSimSettings | None = None, pool: MCPClie
         await trace({"type": "turn", "device_id": device_id, "planner": "host", "tools": [], "reply": reply,
                      "needs_confirmation": False})
         await broadcast({"type": "announce", **entry})
+
+    async def push_to_phone(kind: str, screen: dict[str, Any] | None = None) -> None:
+        """Simulated push to Sam's phone. A real CareLoop app would get it from CareLoop's own server
+        (Apple or Google push); the text never names a task, a medicine or a value."""
+        host_state["phone_seq"] += 1
+        entry = {"id": host_state["phone_seq"], "kind": kind, "text": PHONE_TEXT[kind], "screen": screen}
+        host_state["phone"] = (host_state["phone"] + [entry])[-5:]
+        await trace({"type": "host", "text": f"Push to Sam's phone (simulated CareLoop app): \"{entry['text']}\""})
+        await broadcast({"type": "phone", **entry})
 
     def careloop_http(method: str, path: str, account: str, body: bytes | None = None,
                       content_type: str | None = None) -> dict[str, Any]:
@@ -174,6 +200,13 @@ def create_alexa_sim_app(settings: AlexaSimSettings | None = None, pool: MCPClie
             if fresh:
                 host_state["announced_notices"].update(fresh)
                 await announce("dot", "Maya gave you a new task." if len(fresh) == 1 else f"Maya gave you {len(fresh)} new tasks.")
+            waiting = {ref["id"]: ref.get("kind") for ref in refs if ref.get("status") == "action_required"}
+            if host_state["phone_pushed"] is None:
+                host_state["phone_pushed"] = set(waiting)  # already there when the story starts: no push
+            for ref_id, kind in waiting.items():
+                if ref_id not in host_state["phone_pushed"]:
+                    host_state["phone_pushed"].add(ref_id)
+                    await push_to_phone("assigned_task" if kind == "assigned_task" else "alert")
         await device_event(dot)
 
     async def remember_reminders(results: list[dict[str, Any]]) -> None:
@@ -209,13 +242,24 @@ def create_alexa_sim_app(settings: AlexaSimSettings | None = None, pool: MCPClie
             raise HTTPException(401, "Enable CareLoop for this device first")
         return device.account  # type: ignore[return-value]
 
+    def screen_account(device_id: str) -> str:
+        """The account behind a screen: Maya's Show, or Sam's phone (signed in when his Dot is enabled)."""
+        if device_id == "phone":
+            if devices["dot"].account != "sam" or not pool.linked("sam"):
+                raise HTTPException(401, "Sam's phone isn't signed in to CareLoop")
+            return "sam"
+        if device_id != "show":
+            raise HTTPException(403, "Voice-only devices do not render private views")
+        return device_account(device_id)
+
     async def reset_demo() -> dict[str, Any]:
         """Shared demo: CareLoop wipes and reseeds the demo patient; both devices start over, linked."""
         seeded = (await asyncio.to_thread(careloop_http, "POST", "/api/care/demo/reset", "maya"))["seeded"]
         for device in devices.values():
             device.forget_conversation()
         host_state.update(invitation_id=None, reminders=[], last_used=time.monotonic(), used=False,
-                          announcements=[], intake_ready_unannounced=False, announced_notices=set())
+                          announcements=[], intake_ready_unannounced=False, announced_notices=set(),
+                          phone=[], phone_pushed=None)
         traces.clear()
         for account, device_id in ACCOUNTS.items():
             await pool.link(account, settings.token_for(account))
@@ -276,6 +320,7 @@ def create_alexa_sim_app(settings: AlexaSimSettings | None = None, pool: MCPClie
             "announce_seq": host_state["announce_seq"],
             "devices": [{"id": d.id, "kind": d.kind, "owner": d.owner, "account": d.account, "state": d.state,
                          "notification": d.notification, "pending": bool(d.pending)} for d in devices.values()],
+            "phone": {"signed_in": devices["dot"].account == "sam", "notifications": host_state["phone"]},
             "trace": traces[-60:],
             "tools": {account: [t["name"] for t in session.model_tools] for account, session in pool.accounts.items()},
         }
@@ -310,6 +355,8 @@ def create_alexa_sim_app(settings: AlexaSimSettings | None = None, pool: MCPClie
         if device.awaiting is not None and not device.awaiting.question.answer.done():
             device.awaiting.question.answer.set_result({"action": "cancel"})
         device.account, device.pending, device.history, device.disclaimed, device.awaiting = None, None, [], False, None
+        if account == "sam":
+            host_state["phone"] = []  # signed out: the lock screen keeps nothing
         await sync_caregiver_notifications()
         return {"unlinked": True}
 
@@ -395,6 +442,12 @@ def create_alexa_sim_app(settings: AlexaSimSettings | None = None, pool: MCPClie
         await remember_reminders([data for _name, data in turn.results])
         if turn.tools:
             await sync_caregiver_notifications()
+        handoff = next((data for name, data in turn.results if name in PHONE_HANDOFF and data.get("view")), None)
+        if device.id == "dot" and device.account == "sam" and handoff:
+            # Sam's speaker said only counts; the detail his grant allows goes to his phone.
+            await push_to_phone("asked", {"tool": "list_care_tasks", "resource_uri": handoff["view"],
+                                          "result": {"structuredContent": handoff, "isError": False}})
+            turn.reply = f"{turn.reply} {HANDOFF_LINE}"
         # "heard" is the exact text the device understood. It is what to check when an answer is not accepted.
         await trace({"type": "turn", "device_id": device.id, "planner": turn.planner, "tools": turn.tools,
                      "heard": body.text, "reply": turn.reply, "needs_confirmation": turn.needs_confirmation})
@@ -451,9 +504,7 @@ def create_alexa_sim_app(settings: AlexaSimSettings | None = None, pool: MCPClie
     # ---- MCP Apps host bridge (credentials stay in this process) -------------
     @app.get("/api/apps/resource")
     async def app_resource(device_id: str, uri: str) -> dict[str, str]:
-        if device_id != "show":
-            raise HTTPException(403, "Voice-only devices do not render private views")
-        account = device_account(device_id)
+        account = screen_account(device_id)
         declared = {((t.get("_meta") or {}).get("ui") or {}).get("resourceUri") for t in pool.accounts[account].tools}
         if uri not in declared:
             raise HTTPException(404, "Private app resource is unavailable")
@@ -461,9 +512,7 @@ def create_alexa_sim_app(settings: AlexaSimSettings | None = None, pool: MCPClie
 
     @app.post("/api/apps/call")
     async def app_call(body: BridgeCall) -> dict[str, Any]:
-        if body.device_id != "show":
-            raise HTTPException(403, "Voice-only devices do not render private views")
-        account = device_account(body.device_id)
+        account = screen_account(body.device_id)
         if body.name not in {t["name"] for t in pool.accounts[account].tools}:
             raise HTTPException(404, "Unknown CareLoop tool")
         result = await pool.call_tool(account, body.name, body.arguments, source="app")
@@ -471,6 +520,25 @@ def create_alexa_sim_app(settings: AlexaSimSettings | None = None, pool: MCPClie
             await sync_caregiver_notifications()
             await remember_reminders([result["structuredContent"] or {}])
         return {"structuredContent": result["structuredContent"], "content": result["content"], "isError": result["isError"]}
+
+    @app.post("/api/phone/open")
+    async def phone_open(body: PhoneOpenIn) -> dict[str, Any]:
+        """Sam taps a notification on his phone: the CareLoop view opens as Sam, limited by his grant."""
+        account = screen_account("phone")
+        entry = next((e for e in host_state["phone"] if e["id"] == body.id), None)
+        if entry is None:
+            raise HTTPException(404, "That notification is no longer available")
+        host_state["phone"] = [e for e in host_state["phone"] if e["id"] != body.id]
+        screen = entry["screen"]
+        if screen is None:
+            name = PHONE_OPENS[entry["kind"]]
+            result = await pool.call_tool(account, name, {}, source="phone")
+            data = structured(result)
+            if result["isError"] or not data.get("view"):
+                raise HTTPException(409, "CareLoop has nothing to show Sam right now")
+            screen = {"tool": name, "resource_uri": data["view"], "result": {"structuredContent": data, "isError": False}}
+            await sync_caregiver_notifications()  # opening his task clears the new-task notice
+        return {"screen": screen}
 
     @app.websocket("/ws")
     async def websocket(socket: WebSocket) -> None:

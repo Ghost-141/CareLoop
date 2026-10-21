@@ -107,10 +107,33 @@
   </section>
 
   <aside class="rail">
-    <section class="phone" aria-label="Alexa app, simulated">
+    <section class="phone" aria-label="Phone, simulated">
       <div class="phone-screen">
-        <div class="phone-head"><h2>Alexa app</h2><span class="tag">Simulated</span></div>
-        <div class="phone-body">
+        <div class="phone-head">
+          <div class="phone-tabs" role="tablist" aria-label="Which phone screen">
+            <button type="button" role="tab" id="tab-alexa" aria-selected="true" aria-controls="alexa-app">Alexa app</button>
+            <button type="button" role="tab" id="tab-sam" aria-selected="false" aria-controls="sam-phone">Sam’s phone</button>
+          </div>
+          <span class="tag">Simulated</span>
+        </div>
+        <div class="sam-phone" id="sam-phone" role="tabpanel" aria-labelledby="tab-sam" hidden>
+          <div class="lock" id="phone-lock">
+            <div class="lock-time" id="phone-clock"></div>
+            <div class="lock-date" id="phone-date"></div>
+            <div class="notes" id="phone-notes" aria-live="polite"></div>
+            <p class="lock-hint" id="phone-hint">Sam isn’t signed in. Enable CareLoop for Sam in the Alexa app.</p>
+          </div>
+          <div class="unlock" id="phone-unlock" hidden>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2M9 10v1M15 10v1M12 10v3h-1M9.5 16a4 4 0 0 0 5 0"/></svg>
+            <span id="phone-unlock-text">Face ID</span>
+          </div>
+          <div class="phone-app" id="phone-app" hidden>
+            <div class="phone-app-bar"><span>CareLoop · signed in as Sam</span><button type="button" id="phone-lock-btn" class="quiet">Lock</button></div>
+            <div class="phone-app-slot" id="phone-app-slot"></div>
+          </div>
+          <p class="phone-fine">Simulated CareLoop app. Alexa+ add-ons have no documented push to phones, so a real CareLoop app would get this from CareLoop’s own server. The lock screen never shows care details.</p>
+        </div>
+        <div class="phone-body" id="alexa-app" role="tabpanel" aria-labelledby="tab-alexa">
           <h3>CareLoop skill</h3>
           <div class="account" data-account="maya">
             <span class="avatar" aria-hidden="true">M</span>

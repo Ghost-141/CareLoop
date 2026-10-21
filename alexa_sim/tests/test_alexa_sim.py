@@ -799,6 +799,45 @@ def test_assigning_a_task_tells_sam_without_the_details_until_he_asks_live(carel
         assert say("dot", "Alexa, any CareLoop updates?")["reply"] == "There are no new CareLoop updates."
 
 
+def test_sams_phone_gets_a_notification_without_detail_and_opens_his_scoped_view_live(careloop_server) -> None:
+    settings = AlexaSimSettings(mcp_url=careloop_server, planner="mock")
+    with TestClient(create_alexa_sim_app(settings, planner=MockReplay())) as client:
+        client.post("/api/link", json={"account": "maya"})
+        client.post("/api/link", json={"account": "sam"})
+        say = lambda device, text: client.post("/api/utterance", json={"device_id": device, "text": text}).json()
+        phone = lambda: client.get("/api/state").json()["phone"]
+        say("show", "Alexa, I got a new care plan from my clinic")
+        say("show", "Alexa, approve my plan")
+        say("show", "Alexa, let Sam help with my tasks")
+        say("show", "yes")
+        assert client.post("/api/invite/open").json()["accepted"] is True
+        assert phone() == {"signed_in": True, "notifications": []}  # nothing waiting yet: no push
+
+        # Maya assigns a task: one notification, in generic words.
+        say("show", "Alexa, Sam handles my evening task")
+        notes = phone()["notifications"]
+        assert [n["text"] for n in notes] == ["Maya gave you a new task."]
+        assert "evening" not in str(notes).lower() and "check-in" not in str(notes).lower()
+        say("show", "Alexa, do my check-in")  # unrelated activity doesn't push it again
+        assert len(phone()["notifications"]) == 1
+
+        # Sam opens it: the tasks view, as Sam. The Dot still never renders a view.
+        screen = client.post("/api/phone/open", json={"id": notes[0]["id"]}).json()["screen"]
+        assert screen["resource_uri"] == "ui://careloop/tasks" and phone()["notifications"] == []
+        assert "html" in client.get("/api/apps/resource", params={"device_id": "phone", "uri": screen["resource_uri"]}).json()
+        assert client.get("/api/apps/resource", params={"device_id": "dot", "uri": screen["resource_uri"]}).status_code == 403
+        assert say("dot", "Alexa, any CareLoop updates?")["reply"] == "There are no new CareLoop updates."  # opening cleared it
+
+        # A spoken answer that is only counts sends the detail to the phone.
+        reply = say("dot", "Alexa, show Maya's tasks")["reply"]
+        assert reply.endswith("I've sent the details to your phone.") and "evening" not in reply.lower()
+        assert [n["text"] for n in phone()["notifications"]] == ["The details you asked for are ready."]
+
+        client.post("/api/unlink/sam")
+        assert phone() == {"signed_in": False, "notifications": []}
+        assert client.post("/api/phone/open", json={"id": 1}).status_code == 401
+
+
 # ---- multi-turn: answer parsing, offers, "it" ------------------------------------------------------
 REVIEW_SCHEMA = {"type": "object", "properties": {
     "action": {"anyOf": [{"type": "string", "enum": ["approve", "change time", "skip", "stop"]}, {"type": "null"}]},

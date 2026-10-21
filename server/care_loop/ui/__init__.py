@@ -136,6 +136,8 @@ def view_details(deps: Any, identity: Any, view: str, record_ids: list[str]) -> 
     if view in {"plan-review", "tasks"}:
         items = sorted(service.list_care_tasks(identity), key=_document_order)
         data: dict[str, Any] = {"items": _with_citations(deps, identity, items)}
+        for row in data["items"]:  # the same rule record_task_completion applies: a family member only does their own
+            row["can_complete"] = identity.role == "patient" or row.get("assignee_id") == identity.subject_id
         if view == "tasks" and identity.role == "patient":
             data["suggestions"] = [{"kind": s["kind"], "say": s["say"], "because": _because(service, identity, s)}
                                    for s in service.suggestions(identity)]

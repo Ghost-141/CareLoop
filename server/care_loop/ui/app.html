@@ -484,7 +484,7 @@
 
   function planRow(item) {
     const state = item.status || "active", isTask = item.type === "PLAN_TASK";
-    const button = isTask && state === "active" && VIEW === "tasks"
+    const button = isTask && state === "active" && VIEW === "tasks" && item.can_complete !== false
       ? action("Mark done", "small", () => callTool("record_task_completion", { task_id: item.id })) : null;
     const who = isTask && state === "active" && item.assignee_name ? item.assignee_name + " handles this" : null;
     const metaText = [kindOf(item), who, !isTask && (item.times || []).length ? item.times.join(", ") : !isTask ? item.schedule : null].filter(Boolean).join(". ");
