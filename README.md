@@ -62,7 +62,6 @@ uv run pytest -q       # 410 tests, including live runs against a real server
 | [Simulator walkthrough](docs/CARELOOP_SIMULATOR_WALKTHROUGH.md) | Driving the simulator end to end |
 | [Evals](docs/CARELOOP_EVALS.md) | Document-reading and live-model voice evaluations |
 | [Friction log](docs/FRICTION_LOG.md) | What was hard building for Alexa+, and open questions for the Alexa+ team |
-| [Project story](docs/CARELOOP_PROJECT_STORY.md) | Why we built it and what we learned |
 
 ## License
 

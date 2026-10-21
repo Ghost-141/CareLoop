@@ -131,7 +131,7 @@ alexa_sim/               the one simulator folder: Alexa+ behavior simulator and
 evals/                   standalone eval cases; evals/intake/ synthetic documents + intake eval
 samples/                 synthetic prescription PDF, scan, photo and prompt-injection documents
 scripts/                 run, seed, and end-to-end scripts
-docs/                    setup, configuration, architecture, security, features, demo guides, evals, friction log, project story
+docs/                    setup, configuration, architecture, security, features, demo guides, evals, friction log
 ```
 
 Key documents:
@@ -140,4 +140,3 @@ Key documents:
 - [Evals](CARELOOP_EVALS.md)
 - [Driving the simulator end to end](CARELOOP_SIMULATOR_WALKTHROUGH.md)
 - [UI guide](CARELOOP_UI_GUIDE.md)
-- [Project story](CARELOOP_PROJECT_STORY.md)
