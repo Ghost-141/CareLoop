@@ -193,7 +193,9 @@
     if (ctx.theme === "dark" || ctx.theme === "light") document.documentElement.dataset.theme = ctx.theme;
   }
   function reportSize() {
-    notify("ui/notifications/size-changed", { width: document.documentElement.scrollWidth, height: document.documentElement.scrollHeight });
+    // Measure the body, not the document: the document's scrollHeight never drops below the frame's
+    // current height, so the frame could only grow and left blank space under shorter content.
+    notify("ui/notifications/size-changed", { width: document.documentElement.scrollWidth, height: Math.ceil(document.body.getBoundingClientRect().height) });
   }
 
   function onToolResult(result) {
