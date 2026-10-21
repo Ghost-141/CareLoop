@@ -3,7 +3,6 @@
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => [...el.querySelectorAll(s)];
   const SHOW_CHIPS = [
-    "Alexa, I got a new care plan from my clinic",
     "Alexa, approve my plan",
     "Alexa, let my brother Sam see my tasks and get updates for two weeks",
     "Alexa, do my check-in",
