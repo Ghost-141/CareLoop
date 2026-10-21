@@ -4,17 +4,17 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CareLoop · The accountable care loop for Alexa+</title>
-<meta name="description" content="CareLoop is an MCP add-on for Alexa+ that turns a clinician's plan into tasks the patient approves and understands, family members can help with, and a clinician can trust. Every claim traces back to the line or record it came from.">
+<meta name="description" content="CareLoop is an MCP add-on for Alexa+ that turns a clinician's plan into tasks the patient approves and understands, family members help with from their own speaker and phone, and a clinician can trust. Every claim traces back to the line or record it came from.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M26 16a10 10 0 1 1-4-8' fill='none' stroke='%231c2b45' stroke-width='4' stroke-linecap='round'/%3E%3Ccircle cx='25' cy='8' r='3' fill='%23e0b400'/%3E%3C/svg%3E">
 <meta name="theme-color" content="#1c2b45">
 <link rel="canonical" href="https://ghost-141.github.io/CareLoop/">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="CareLoop">
 <meta property="og:title" content="CareLoop · The accountable care loop for Alexa+">
-<meta property="og:description" content="CareLoop is an MCP add-on for Alexa+ that turns a clinician's plan into tasks the patient approves and understands, family members can help with, and a clinician can trust. Every claim traces back to the line or record it came from.">
+<meta property="og:description" content="CareLoop is an MCP add-on for Alexa+ that turns a clinician's plan into tasks the patient approves and understands, family members help with from their own speaker and phone, and a clinician can trust. Every claim traces back to the line or record it came from.">
 <meta property="og:url" content="https://ghost-141.github.io/CareLoop/">
 <meta property="og:image" content="https://ghost-141.github.io/CareLoop/assets/simulator.png">
-<meta property="og:image:alt" content="The CareLoop simulator: Maya's Echo Show, Sam's Echo Dot and the Alexa app panel">
+<meta property="og:image:alt" content="The CareLoop simulator: Maya's Echo Show answering which medicine she takes before breakfast, with its line; Sam's Echo Dot; Sam's phone showing his task">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -40,7 +40,7 @@
   p, li, figcaption { text-wrap: pretty; }
   h1, h2, h3 { text-wrap: balance; }
   a { color: inherit; text-decoration-thickness: 1px; text-underline-offset: 3px; }
-  a:focus-visible, button:focus-visible { outline: 3px solid var(--voice); outline-offset: 3px; border-radius: 4px; }
+  a:focus-visible, button:focus-visible, pre:focus-visible { outline: 3px solid var(--voice); outline-offset: 3px; border-radius: 4px; }
   img { max-width: 100%; height: auto; display: block; }
   .wrap { width: min(1120px, 100% - 2.5rem); margin-inline: auto; }
 
@@ -94,6 +94,51 @@
   .spoken .q b { font-weight: 700; color: var(--ink); }
   .spoken .q b.alexa { color: var(--voice-text); }
   .spoken p.said { font-size: 1.22rem; }
+  .spoken .q .said { color: var(--ink); font-size: 1.22rem; line-height: 1.4; }
+
+  /* ---- one update, three levels of detail: Sam's speaker, his lock screen, his phone ---- */
+  /* The art and the words of all three levels share two rows, so the three headings line up. */
+  .levels { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: auto auto; gap: 3rem 3.5rem; margin: 0; padding: 0; list-style: none; }
+  .level { display: grid; grid-row: span 2; grid-template-rows: subgrid; row-gap: 1.1rem; }
+  .level-art { min-height: 25rem; display: grid; align-items: end; justify-items: center; }
+  .level h3 { margin: 0; padding-top: 1rem; border-top: 2px solid var(--ink); }
+  .level > div > p { margin: .2rem 0 0; font-size: 1rem; color: var(--ink); }
+  .level:first-child .level-art { align-items: center; }
+  .level .v-dot { width: 168px; height: 168px; }
+  .level .room { width: 100%; display: grid; justify-items: center; gap: 1.6rem; padding-bottom: 1.2rem; }
+  .level .room .v-say { margin: 0; }
+  .level .room .v-say p { background: var(--sheet); box-shadow: 0 1px 0 var(--rule); }
+
+  .device-phone { width: min(15.5rem, 100%); background: #22262b; border-radius: 34px; padding: 9px; box-shadow: 0 24px 40px -22px rgba(28, 43, 69, .55); }
+  .phone-screen { border-radius: 26px; overflow: hidden; aspect-ratio: 9 / 18.2; display: grid; position: relative; }
+  .lock { background: #18212d; color: #e6ebf2; display: grid; align-content: start; justify-items: center; padding: 2.4rem .7rem 1rem; }
+  .lock-time { font: 400 3.1rem/1 var(--sans); letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+  .lock-date { font-size: .82rem; opacity: .8; margin-top: .2rem; }
+  .lock-note { margin-top: 1.6rem; width: 100%; background: #f4f6f5; color: var(--ink); border-radius: 15px; padding: .6rem .65rem .65rem; display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: .55rem; text-align: left; }
+  .app-mark { width: 26px; height: 26px; border-radius: 7px; background: var(--sheet); border: 1px solid var(--rule); display: grid; place-items: center; }
+  .app-mark svg { width: 17px; height: 17px; }
+  .lock-note .top { display: flex; justify-content: space-between; font-size: .75rem; color: var(--muted); }
+  .lock-note b { display: block; font-size: .86rem; line-height: 1.3; }
+  .lock-note small { font-size: .75rem; color: var(--muted); }
+  .lock-hint { margin: auto 0 0; font-size: .75rem; opacity: .7; text-align: center; padding-top: 1rem; }
+  .phone-app { background: #f4f6f5; display: grid; grid-template-rows: auto minmax(0, 1fr); }
+  .phone-bar { background: var(--ink); color: var(--sheet); padding: 1.5rem .75rem .6rem; font-size: .75rem; display: flex; justify-content: space-between; align-items: center; gap: .5rem; }
+  .phone-bar b { font-weight: 700; }
+  .phone-bar span { border: 1px solid rgba(255, 255, 255, .35); border-radius: 6px; padding: .1rem .45rem; }
+  .phone-app .ui { padding: 10px 10px; gap: 8px; border-radius: 0; align-content: start; }
+  .phone-app .ui-title { font-size: 1.05rem; }
+  .phone-app .ui-row.timed { grid-template-columns: 2.7rem minmax(0, 1fr); padding: 10px 10px; gap: 8px; }
+  .phone-app .ui-when { font-size: .85rem; }
+  .phone-app .ui-row b { font-size: .85rem; line-height: 1.25; }
+  .phone-app .ui-meta { font-size: .75rem; }
+  .phone-app .ui-foot { display: flex; align-items: center; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
+  .levels-fine { margin: 2.5rem 0 0; max-width: var(--measure); font-size: .95rem; color: var(--muted); }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .levels.armed .lv { opacity: 0; }
+    .levels.run .lv { animation: lv-in 620ms cubic-bezier(.16, 1, .3, 1) var(--d, 0ms) both; }
+    @keyframes lv-in { from { opacity: 0; transform: translateY(12px); filter: blur(3px); } }
+  }
 
   /* ---- sections ---------------------------------------------------------------------- */
   section { padding: 5rem 0; }
@@ -127,6 +172,7 @@
   .tabs button span { font-weight: 400; font-size: .875rem; }
   .tabs button:hover { color: var(--ink); }
   .tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--ink); }
+  @media (min-width: 901px) { .tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); } }
   .tabs button:focus-visible { outline-offset: 4px; }
 
   .exchange { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: 1.5rem 4rem; align-items: start; }
@@ -158,7 +204,7 @@
   .ui-doc b { display: block; font-weight: 600; }
   .ui-status { display: inline-flex; align-items: center; gap: 6px; font-size: .78rem; font-weight: 500; white-space: nowrap; color: var(--muted); }
   .ui-status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
-  .ui-status.ok { color: var(--ok); } .ui-status.warn { color: var(--warn); }
+  .ui-status.ok { color: var(--ok); } .ui-status.warn { color: var(--warn); } .ui-status.bad { color: var(--danger); }
   .ui-btn { font: 600 .8125rem/1 var(--ui-sans); border-radius: 9px; padding: 0 12px; min-height: 32px; display: inline-flex; align-items: center; white-space: nowrap; }
   .ui-btn.primary { background: var(--ink); color: var(--sheet); }
   .ui-btn.quiet { border: 1px solid var(--hair); }
@@ -245,6 +291,7 @@
   .dev { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 3rem; align-items: start; }
   pre { margin: 0; background: var(--ink); color: #e9eef4; padding: 1.4rem 1.5rem; border-radius: 12px; overflow-x: auto; font: 400 .92rem/1.7 var(--code); }
   pre .c { color: #9fb0c4; }
+  .code { position: relative; min-width: 0; }
   .stack { margin: 0; padding: 0; list-style: none; }
   .stack li { padding: .7rem 0; border-top: 1px solid var(--rule); }
 
@@ -265,7 +312,7 @@
   .ring-track { fill: none; stroke: var(--rule); stroke-width: 2; }
   .ring-back { fill: none; stroke: #9aa6b4; stroke-width: 2; stroke-dasharray: 3 7; stroke-linecap: round; }
   .ring-prog { fill: none; stroke: var(--ink); stroke-width: 4; stroke-linecap: round; }
-  .ring-token { fill: var(--ink); stroke: var(--mark); stroke-width: 5; paint-order: stroke; }
+  .ring-token { fill: var(--ink); stroke: var(--sheet); stroke-width: 5; paint-order: stroke; }
   .ring-next { font: 400 17px var(--sans); fill: var(--muted); }
   .station { position: absolute; transform: translate(-50%, -50%); display: block;
     background: none; border: 0; padding: 0; cursor: pointer; font: 700 1rem/1.2 var(--sans); color: var(--muted); }
@@ -278,7 +325,7 @@
     background: var(--paper); border: 2px solid var(--rule); color: var(--muted); transition: background .3s, border-color .3s, color .3s, box-shadow .3s; }
   .station.done i { border-color: var(--ink); color: var(--ink); }
   .station[aria-current="step"] { color: var(--ink); }
-  .station[aria-current="step"] i { background: var(--ink); border-color: var(--ink); color: var(--sheet); box-shadow: 0 0 0 6px var(--mark); }
+  .station[aria-current="step"] i { background: var(--ink); border-color: var(--ink); color: var(--sheet); outline: 2px solid var(--ink); outline-offset: 3px; }
   .station:hover { color: var(--ink); }
   .station:focus-visible { outline: none; }
   .station:focus-visible i { outline: 3px solid var(--voice); outline-offset: 4px; }
@@ -399,6 +446,8 @@
   }
 
   @media (max-width: 900px) {
+    .levels { grid-template-columns: 1fr; gap: 3.5rem; }
+    .level-art { min-height: 0; }
     .hero .wrap, .exchange, .seeit, .dev, .tb, .src { grid-template-columns: 1fr; gap: 2.5rem; }
     .next, .rules3 { grid-template-columns: 1fr; }
     .rules3 { gap: 1.5rem; margin-top: 2.5rem; }
@@ -422,6 +471,8 @@
   }
   @media (max-width: 520px) {
     body { font-size: 1.05rem; }
+    .code::after { content: ""; position: absolute; top: 0; right: 0; bottom: 0; width: 2.75rem; border-radius: 0 12px 12px 0; pointer-events: none;
+      background: linear-gradient(90deg, rgba(28, 43, 69, 0), var(--ink) 85%); }
     .turn { grid-template-columns: 3.6rem 1fr; }
     .tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 0 1rem; }
     .tabs button { padding: .75rem 0 .7rem; font-size: 1rem; }
@@ -441,11 +492,11 @@
       CareLoop
     </a>
     <nav class="site" aria-label="Page sections">
+      <a href="#family">Family</a>
       <a href="#teach-back">Teach-back</a>
       <a href="#sources">Sources</a>
       <a href="#how">How it works</a>
       <a href="#conversations">Conversations</a>
-      <a href="#safety">Safety</a>
       <a href="#developers">For developers</a>
       <a href="https://github.com/Ghost-141/CareLoop">GitHub</a>
     </nav>
@@ -457,7 +508,7 @@
     <div class="wrap">
       <div>
         <h1 id="hero-title">Every care instruction Alexa says can be traced back to the page it came from.</h1>
-        <p class="lede">CareLoop is an add-on for Alexa+ that turns a clinician's plan into tasks the patient approves and understands, family members can help with, and a clinician can trust.</p>
+        <p class="lede">CareLoop is an add-on for Alexa+ that turns a clinician's plan into tasks the patient approves and understands, family members help with from their own speaker and phone, and a clinician can trust.</p>
         <div class="actions">
           <a class="button primary" href="#see-it">Watch the demo</a>
           <a class="button secondary" href="https://github.com/Ghost-141/CareLoop">Read the code</a>
@@ -465,19 +516,18 @@
         <p class="fineprint">Built for the Amazon Developer Hackathon 2026, Alexa+ track. A demo with synthetic data, not medical advice, and not an Amazon product.</p>
       </div>
 
-      <figure class="trace" aria-label="A teach-back on Maya's Echo Show: her plan is read back from line 5 of the prescription">
+      <figure class="trace" aria-label="Maya asks her Echo Show which medicine she takes before breakfast; Alexa answers from her approved plan and names lines 6 and 5 of the prescription">
         <div class="spoken">
           <div class="who"><span class="ring" aria-hidden="true"></span>Maya's Echo Show</div>
-          <p class="q"><b class="alexa">Alexa</b>How often do you take Amoxicillin?</p>
-          <p class="q"><b>Maya</b>I'm not sure.</p>
-          <p class="said">That's okay. Your plan says: Amoxicillin 500 mg capsule: Take 1 capsule by mouth three times daily for 7 days, at 8 AM, 2 PM and 8 PM.</p>
+          <p class="q"><b>Maya</b>What medicine do I take before breakfast?</p>
+          <p class="q"><b class="alexa">Alexa</b><span class="said">In the morning: Omeprazole at 7:30 AM, before breakfast, from line 6; Amoxicillin at 8 AM, from line 5.</span></p>
         </div>
-        <div class="thread" aria-hidden="true"><span>read back from line 5, never explained</span></div>
+        <div class="thread" aria-hidden="true"><span>the lines it came from, said out loud</span></div>
         <div class="slip">
           <div class="head"><span>Riverside Family Clinic</span><span>Synthetic</span></div>
           <div class="line" data-n="L2">Patient: Maya Demo&emsp;Date: 2026-10-13</div>
           <div class="line hit" data-n="L5"><mark>1. Amoxicillin 500 mg capsule: Take 1 capsule by mouth three times daily for 7 days.</mark></div>
-          <div class="line" data-n="L6">2. Omeprazole 20 mg capsule: Take 1 capsule by mouth once daily before breakfast.</div>
+          <div class="line hit" data-n="L6"><mark>2. Omeprazole 20 mg capsule: Take 1 capsule by mouth once daily before breakfast.</mark></div>
           <div class="line" data-n="L10">Change the wound dressing every evening.</div>
         </div>
       </figure>
@@ -490,15 +540,68 @@
       <p class="intro">After a clinic visit, a family needs a shared record of what was agreed, who may know, and what the clinician will see.</p>
       <div class="pairs" role="table" aria-label="What Alexa+ does, and what CareLoop adds">
           <div class="pair-row head" role="row"><p role="columnheader">Alexa+</p><p role="columnheader">CareLoop adds</p></div>
-          <div class="pair-row" role="row"><p role="cell">Remembers the documents you share.</p><p role="cell">Turns each instruction into an item the patient approves, beside the line it came from, then asks her to say it back.</p></div>
-          <div class="pair-row" role="row"><p role="cell">Reminds the right person.</p><p role="cell">Lets the patient decide who sees what, and for how long. A helper hears that a task is waiting, and what it is only when they ask.</p></div>
-          <div class="pair-row" role="row"><p role="cell">Talks naturally on any speaker.</p><p role="cell">Says less on a shared speaker. Detail stays on the patient's own screen.</p></div>
+          <div class="pair-row" role="row"><p role="cell">Remembers the documents you share.</p><p role="cell">Turns each instruction into an item the patient approves, beside the line it came from, then asks her to say it back. Share the same page twice and nothing is added twice.</p></div>
+          <div class="pair-row" role="row"><p role="cell">Answers questions about them.</p><p role="cell">Answers from the plan she approved, and names the line: "Omeprazole at 7:30 AM, before breakfast, from line 6."</p></div>
+          <div class="pair-row" role="row"><p role="cell">Reminds the right person.</p><p role="cell">Lets the patient decide who sees what, and for how long, and take it back by voice. A helper's speaker says a task is waiting; the detail opens on his own phone.</p></div>
           <div class="pair-row" role="row"><p role="cell">Can tell family about activity.</p><p role="cell">Alerts only when the clinician's own rule says so, once per episode, and shows which check-ins fired it.</p></div>
       </div>
     </div>
   </section>
 
-  <section id="teach-back" aria-labelledby="tb-title">
+  <section id="family" aria-labelledby="family-title">
+    <div class="wrap">
+      <h2 id="family-title">One update, three levels of detail.</h2>
+      <p class="intro">Maya's brother Sam helps from his own Echo Dot and his own phone. When she gives him a task, each place gets only what it can keep private: the room hears that something is waiting, so does a glance at his lock screen, and the task itself opens only after Sam unlocks his phone, inside the access Maya gave him.</p>
+      <ul class="levels" id="levels">
+        <li class="level">
+          <div class="level-art">
+            <div class="room">
+              <div class="v-say dot lv" style="--d:0ms"><p>Maya gave you a new task.</p></div>
+              <div class="v-dot calm lv" style="--d:120ms" role="img" aria-label="Sam's Echo Dot, light ring off"></div>
+            </div>
+          </div>
+          <div><h3>Anyone in the room hears</h3><p>That a task is waiting, and who it's from. Never what it is, and never anything about Maya's health.</p></div>
+        </li>
+        <li class="level">
+          <div class="level-art">
+            <div class="device-phone lv" style="--d:450ms" role="img" aria-label="Sam's phone, locked, with a CareLoop notification: Maya gave you a new task. Tap to open.">
+              <div class="phone-screen"><div class="lock">
+                <div class="lock-time">9:41</div>
+                <div class="lock-date">Wednesday, October 21</div>
+                <div class="lock-note lv" style="--d:800ms">
+                  <span class="app-mark"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M26 16a10 10 0 1 1-4-8" fill="none" stroke="#1c2b45" stroke-width="3.5" stroke-linecap="round"/><circle cx="25" cy="8" r="3" fill="#e0b400"/></svg></span>
+                  <span><span class="top"><span>CareLoop</span><span>now</span></span><b>Maya gave you a new task.</b><small>Tap to open</small></span>
+                </div>
+                <p class="lock-hint">Locked</p>
+              </div></div>
+            </div>
+          </div>
+          <div><h3>Anyone who glances sees</h3><p>The same sentence on his lock screen. No task name, no time, no medicine.</p></div>
+        </li>
+        <li class="level">
+          <div class="level-art">
+            <div class="device-phone lv" style="--d:1150ms" role="img" aria-label="Sam's phone, unlocked: CareLoop's care tasks, signed in as Sam. Maya's medicine at 7:30 can only be read; his evening dressing change at 21:00 has a Mark done button.">
+              <div class="phone-screen"><div class="phone-app">
+                <div class="phone-bar"><b>Signed in as Sam</b><span>Lock</span></div>
+                <div class="ui">
+                  <p class="ui-title">Care tasks</p>
+                  <div class="ui-rows">
+                    <div class="ui-row timed"><span class="ui-when">07:30</span><div><b>Medicine routine 2</b><span class="ui-meta">Medicine</span><span class="ui-foot"><span class="ui-status ok">Active</span></span></div></div>
+                    <div class="ui-row timed"><span class="ui-when">21:00</span><div><b>Evening dressing change</b><span class="ui-meta">Care task. Sam handles this</span><span class="ui-foot"><span class="ui-status ok">Active</span><span class="ui-btn primary">Mark done</span></span></div></div>
+                  </div>
+                  <div class="ui-slip"><span class="from">From Prescription</span><span class="ln">p1:L10</span><span><mark>Change the wound dressing every evening.</mark></span></div>
+                </div>
+              </div></div>
+            </div>
+          </div>
+          <div><h3>Only Sam, once he unlocks</h3><p>What Maya shared, with its source line. He can mark done the task she gave him, and nothing else.</p></div>
+        </li>
+      </ul>
+      <p class="levels-fine">In the demo, Sam's phone is a simulated CareLoop app. Alexa+ add-ons have no documented way to push to a phone, so a real CareLoop app would get these notifications from CareLoop's own server. Maya can remove Sam by voice at any time, and his access ends on his next request.</p>
+    </div>
+  </section>
+
+  <section id="teach-back" class="sheet" aria-labelledby="tb-title">
     <div class="wrap">
       <h2 id="tb-title">Approved is not the same as understood.</h2>
       <p class="intro">After Maya approves her medicines, she can ask Alexa to check she understood them. CareLoop asks her to say each one back. Alexa only passes on her words: the server checks every answer against the approved, cited line, and a miss is answered by reading that line, never by explaining it.</p>
@@ -540,7 +643,7 @@
     </div>
   </section>
 
-  <section id="sources" class="sheet" aria-labelledby="src-title">
+  <section id="sources" aria-labelledby="src-title">
     <div class="wrap">
       <h2 id="src-title">Every claim on Maya's screen says where it came from.</h2>
       <p class="intro">A line read from her document shows that line, highlighted. Anything CareLoop worked out from her records says which record, with a "Because". Nothing on her screen is left for her to take on trust.</p>
@@ -548,6 +651,7 @@
         <div class="pairs" role="table" aria-label="What the screen shows, and where it came from">
           <div class="pair-row head" role="row"><p role="columnheader">On the screen</p><p role="columnheader">Where it came from</p></div>
           <div class="pair-row" role="row"><p role="cell">A plan item</p><p role="cell">The line in her document it was read from.</p></div>
+          <div class="pair-row" role="row"><p role="cell">A spoken medicine answer</p><p role="cell">Each medicine's line, said out loud with its time.</p></div>
           <div class="pair-row" role="row"><p role="cell">Something worth raising</p><p role="cell">The record it was worked out from, and that record's line.</p></div>
           <div class="pair-row" role="row"><p role="cell">A triggered alert</p><p role="cell">The check-ins that fired it, and the rule's own line.</p></div>
           <div class="pair-row" role="row"><p role="cell">The alert line on her chart</p><p role="cell">The rule in words, with its line.</p></div>
@@ -575,7 +679,7 @@
     </div>
   </section>
 
-  <section id="how" aria-labelledby="how-title">
+  <section id="how" class="sheet" aria-labelledby="how-title">
     <div class="wrap">
       <h2 id="how-title">How the loop works</h2>
       <p class="intro">From the clinic's page to the next visit, and around again.</p>
@@ -645,7 +749,7 @@
                 </div></div>
               </div></div>
             </div>
-            <div class="v-row" data-caption="Maya decides what Sam can see. Sam hears a task is waiting, not what it is.">
+            <div class="v-row" data-caption="Maya decides what Sam can see. His speaker says a task is waiting; the task opens on his phone.">
               <div class="grant a-in" style="--d:100ms">
                 <div class="grant-head"><b>Sam</b><span>14 days</span></div>
                 <ul>
@@ -658,7 +762,10 @@
                 <div class="v-dot calm a-in" style="--d:300ms" role="img" aria-label="Sam's Echo Dot"></div>
                 <p class="v-dotcap">Sam's Echo Dot</p>
                 <div class="v-say dot a-in" style="--d:1300ms;margin:.9rem 0 0"><p>Maya gave you a new task.</p></div>
-                <div class="v-task a-in" style="--d:2100ms"><b>19:00</b>Wound dressing<span class="to">Sam</span></div>
+                <div class="lock-note a-in" style="--d:2100ms;margin-top:.9rem;border:1px solid var(--rule)">
+                  <span class="app-mark"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M26 16a10 10 0 1 1-4-8" fill="none" stroke="#1c2b45" stroke-width="3.5" stroke-linecap="round"/><circle cx="25" cy="8" r="3" fill="#e0b400"/></svg></span>
+                  <span><span class="top"><span>CareLoop, on Sam's phone</span><span>now</span></span><b>Maya gave you a new task.</b><small>Tap to open</small></span>
+                </div>
               </div>
             </div>
             <div class="v-row" data-caption="The clinician's rule decides. Sam hears that something changed, never the score.">
@@ -699,14 +806,15 @@
     </div>
   </section>
 
-  <section id="conversations" class="sheet" aria-labelledby="talk-title">
+  <section id="conversations" aria-labelledby="talk-title">
     <div class="wrap">
       <h2 id="talk-title">What Alexa says, and what CareLoop keeps</h2>
       <p class="intro">Alexa says as little as it needs to. The detail goes to Maya's private screen and into CareLoop's record. These exchanges come from CareLoop's end-to-end tests and demo runs against the real server.</p>
       <div class="tabs" role="tablist" aria-label="Exchanges">
         <button role="tab" id="tab-suggest" aria-controls="ex-suggest" aria-selected="true">Anything I should know?<span>Raised from her records</span></button>
-        <button role="tab" id="tab-notice" aria-controls="ex-notice" aria-selected="false" tabindex="-1">A new task for Sam<span>Told it exists, not what</span></button>
-        <button role="tab" id="tab-consent" aria-controls="ex-consent" aria-selected="false" tabindex="-1">Sharing with family<span>Consent, read back</span></button>
+        <button role="tab" id="tab-meds" aria-controls="ex-meds" aria-selected="false" tabindex="-1">Asking about medicines<span>Answered with its line</span></button>
+        <button role="tab" id="tab-notice" aria-controls="ex-notice" aria-selected="false" tabindex="-1">A new task for Sam<span>Detail on his phone</span></button>
+        <button role="tab" id="tab-consent" aria-controls="ex-consent" aria-selected="false" tabindex="-1">Sharing with family<span>Given and taken back</span></button>
         <button role="tab" id="tab-speaker" aria-controls="ex-speaker" aria-selected="false" tabindex="-1">A shared speaker<span>Says less on purpose</span></button>
         <button role="tab" id="tab-review" aria-controls="ex-review" aria-selected="false" tabindex="-1">Reviewing by voice<span>Pause and pick up later</span></button>
         <button role="tab" id="tab-intake" aria-controls="ex-intake" aria-selected="false" tabindex="-1">Reading a prescription<span>Every item cited</span></button>
@@ -740,25 +848,47 @@
         </figure>
       </div>
 
+      <div class="exchange" role="tabpanel" id="ex-meds" aria-labelledby="tab-meds" tabindex="0">
+        <div>
+          <p class="heard"><svg viewBox="0 0 22 18" aria-hidden="true"><rect x="1" y="1" width="20" height="13" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M7 17h8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>Heard on Maya's Echo Show</p>
+          <div class="turn"><span class="speaker">Maya</span><p>Alexa, what medicine do I take before breakfast?</p></div>
+          <div class="turn alexa"><span class="speaker alexa">Alexa</span><p>In the morning: Omeprazole at 7:30 AM, before breakfast, from line 6; Amoxicillin at 8 AM, from line 5.</p></div>
+          <div class="turn"><span class="speaker">Maya</span><p>Alexa, what medicine do I have to take before dinner?</p></div>
+          <div class="turn alexa"><span class="speaker alexa">Alexa</span><p>In the evening: Amoxicillin at 8 PM, from line 5.</p></div>
+          <p class="why">Alexa reads back only what Maya approved, with its time and line. <strong>It says "before breakfast" because her prescription does</strong>, and nothing it doesn't. Sam's speaker never hears a medicine's name.</p>
+        </div>
+        <figure class="keeps">
+          <figcaption>On Maya's screen</figcaption>
+          <div class="device-show"><div class="ui">
+            <div><p class="ui-title">Care tasks</p><p class="ui-note"><svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 7V5a4 4 0 0 1 8 0v2M3 7h10v7H3z"/></svg>Private to this screen. Alexa won't read it aloud.</p></div>
+            <div class="ui-rows">
+              <div class="ui-row timed"><span class="ui-when">07:30</span><div><b>Medicine routine 2</b><span class="ui-meta">Medicine</span></div><span class="ui-status ok">Active</span></div>
+              <div class="ui-row timed"><span class="ui-when">08:00<br>14:00<br>20:00</span><div><b>Medicine routine 1</b><span class="ui-meta">Medicine</span></div><span class="ui-status ok">Active</span></div>
+            </div>
+            <div class="ui-slip"><span class="from">From Prescription</span><span class="ln">p1:L6</span><span><mark>2. Omeprazole 20 mg capsule: Take 1 capsule by mouth once daily before breakfast.</mark></span></div>
+          </div></div>
+        </figure>
+      </div>
+
       <div class="exchange" role="tabpanel" id="ex-notice" aria-labelledby="tab-notice" tabindex="0">
         <div>
           <p class="heard"><svg viewBox="0 0 22 18" aria-hidden="true"><circle cx="11" cy="9" r="7" fill="none" stroke="#1690a6" stroke-width="2.5"/></svg>Heard on Sam's Echo Dot, a shared speaker</p>
-          <div class="turn note"><span class="speaker"></span><p>Maya gives Sam her evening task. Sam's Dot says: "Maya gave you a new task."</p></div>
-          <div class="turn"><span class="speaker">Sam</span><p>Alexa, any CareLoop updates?</p></div>
-          <div class="turn alexa"><span class="speaker alexa">Alexa</span><p>You have 1 new task from Maya.</p></div>
-          <div class="turn"><span class="speaker">Sam</span><p>What are my tasks for Maya?</p></div>
-          <div class="turn alexa"><span class="speaker alexa">Alexa</span><p>You have 1 task to help Maya with: Change the dressing at 7 PM.</p></div>
-          <p class="why">A shared speaker hears that a task is waiting. <strong>What it is comes only when Sam asks</strong>, and asking clears the notice.</p>
+          <div class="turn note"><span class="speaker"></span><p>Maya gives Sam the dressing change. His Dot says "Maya gave you a new task.", and his phone shows the same sentence.</p></div>
+          <div class="turn"><span class="speaker">Sam</span><p>Alexa, show Maya's tasks.</p></div>
+          <div class="turn alexa"><span class="speaker alexa">Alexa</span><p>You have 5 active tasks and 1 active follow-up rule. CareLoop is not medical advice or emergency monitoring. I've sent the details to your phone.</p></div>
+          <div class="turn"><span class="speaker">Sam</span><p>Alexa, what are my tasks for Maya?</p></div>
+          <div class="turn alexa"><span class="speaker alexa">Alexa</span><p>You have 1 task to help Maya with: Evening dressing change at 9 PM.</p></div>
+          <p class="why">A shared speaker hears counts and that a task is waiting. <strong>The rest goes to Sam's own phone</strong>, and his own task only when he asks.</p>
         </div>
         <figure class="keeps">
-          <figcaption>What the new-task notice carries</figcaption>
+          <figcaption>What each place gets</figcaption>
           <div class="grant">
             <div class="grant-head"><b>New task for Sam</b><span>Expires after 7 days</span></div>
             <ul>
-              <li>That a task is waiting, and from whom<span class="allowed">Said</span></li>
-              <li>The task's name or time<span class="withheld">Only when Sam asks</span></li>
-              <li>Anything about Maya's health<span class="withheld">Never</span></li>
-              <li>Sam's light ring<span class="withheld">Stays off</span></li>
+              <li>That a task is waiting, and from whom<span class="allowed">Speaker and lock screen</span></li>
+              <li>The task's name and time<span class="withheld">His phone, once unlocked</span></li>
+              <li>Marking it done<span class="allowed">His task only</span></li>
+              <li>Anything about Maya's health<span class="withheld">Never spoken</span></li>
             </ul>
             <p class="grant-foot">Withdrawn if Maya takes the task back, gives it to someone else, or it is done first.</p>
           </div>
@@ -771,17 +901,21 @@
           <div class="turn"><span class="speaker">Maya</span><p>Alexa, let my brother Sam see my tasks and get updates for two weeks.</p></div>
           <div class="turn alexa"><span class="speaker alexa">Alexa</span><p>Sam will be able to see your tasks and get update alerts, for 14 days. Is that right?</p></div>
           <div class="turn"><span class="speaker">Maya</span><p>Yes.</p></div>
-          <div class="turn note"><span class="speaker"></span><p>Sam's Echo Dot: "Maya invited you to help with her care in CareLoop. Open the invitation in your Alexa app to accept."</p></div>
-          <p class="why">The assistant can get permissions wrong. <strong>CareLoop reads them back</strong> and creates nothing without a yes.</p>
+          <div class="turn note"><span class="speaker"></span><p>Sam's Echo Dot: "Maya invited you to help with her care in CareLoop. Open the invitation in your Alexa app to accept." Later:</p></div>
+          <div class="turn"><span class="speaker">Maya</span><p>Alexa, remove Sam.</p></div>
+          <div class="turn alexa"><span class="speaker alexa">Alexa</span><p>This will remove this caregiver's CareLoop access. Say confirm to continue, or cancel.</p></div>
+          <div class="turn"><span class="speaker">Maya</span><p>Confirm.</p></div>
+          <div class="turn alexa"><span class="speaker alexa">Alexa</span><p>Caregiver access revoked. It stops on their next request.</p></div>
+          <p class="why">The assistant can get permissions wrong. <strong>CareLoop reads them back</strong>, creates nothing without a yes, and takes them away the same way.</p>
         </div>
         <figure class="keeps">
-          <figcaption>On Maya's screen</figcaption>
+          <figcaption>On Maya's screen, after she removes Sam</figcaption>
           <div class="device-show"><div class="ui">
             <div><p class="ui-title">Care circle</p><p class="ui-note"><svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 7V5a4 4 0 0 1 8 0v2M3 7h10v7H3z"/></svg>Private to this screen. Alexa won't read it aloud.</p></div>
             <p class="ui-h">People with access</p>
-            <div class="ui-rows"><div class="ui-row"><div><b>Sam</b><span class="ui-meta">Acknowledge alerts, read tasks, receive alerts. Until Nov 3, 2026</span></div><span class="ui-status warn">Pending</span><span class="ui-btn danger">Remove</span></div></div>
+            <div class="ui-rows"><div class="ui-row"><div><b>Sam</b><span class="ui-meta">Acknowledge alerts, perform tasks, read tasks, receive alerts.</span></div><span class="ui-status bad">Revoked</span></div></div>
             <p class="ui-h">Who looked at your care data</p>
-            <div class="ui-rows"><div class="ui-row"><span class="ui-meta">No one else opened your care data.</span></div></div>
+            <div class="ui-rows"><div class="ui-row"><div><b>Sam</b><span class="ui-meta">Accepted your invitation, completed a task, acknowledged an update.</span></div></div></div>
           </div></div>
         </figure>
       </div>
@@ -842,9 +976,9 @@
           <p class="heard"><svg viewBox="0 0 22 18" aria-hidden="true"><rect x="1" y="1" width="20" height="13" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M7 17h8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>Heard on Maya's Echo Show</p>
           <div class="turn note"><span class="speaker"></span><p>Maya shares a scanned prescription in the Alexa app.</p></div>
           <div class="turn alexa"><span class="speaker alexa">Alexa</span><p>Your document is ready. 8 items need your approval, and 2 are flagged for a closer look. Medicine items are approved on your screen.</p></div>
-          <div class="turn"><span class="speaker">Maya</span><p>Alexa, should I double my medication?</p></div>
-          <div class="turn alexa"><span class="speaker alexa">Alexa</span><p>I can't give medical advice. Please contact your clinician, or emergency services in an emergency.</p></div>
-          <p class="why">A model proposes the items; <strong>code checks every number against the source</strong>, and the patient decides.</p>
+          <div class="turn note"><span class="speaker"></span><p>Later, not sure it went through, Maya shares the same prescription again.</p></div>
+          <div class="turn alexa"><span class="speaker alexa">Alexa</span><p>Your document is ready. Everything in it is already in your plan, so nothing new was added.</p></div>
+          <p class="why">A model proposes the items; <strong>code checks every number against the source</strong>, the patient decides, and the same page shared twice adds nothing twice.</p>
         </div>
         <figure class="keeps">
           <figcaption>On Maya's screen</figcaption>
@@ -864,7 +998,7 @@
     </div>
   </section>
 
-  <section id="safety" aria-labelledby="safety-title">
+  <section id="safety" class="sheet" aria-labelledby="safety-title">
     <div class="wrap">
       <h2 id="safety-title">What CareLoop never does</h2>
       <p class="intro">The limits are part of the product. They are what make it safe to put on a kitchen speaker.</p>
@@ -873,7 +1007,8 @@
         <li>Explain a medicine during a teach-back. It reads the approved line back, and nothing else.</li>
         <li>Raise a suggestion it can't trace to one of the patient's own records.</li>
         <li>Invent an instruction, a number, or an alert threshold.</li>
-        <li>Read a symptom, a value, or a medicine aloud on a shared speaker.</li>
+        <li>Read a symptom, a value, or a medicine aloud on a shared speaker, or put one on a lock screen.</li>
+        <li>Add an instruction twice because the same page was shared twice.</li>
         <li>Treat a missed check-in as "fine". The summary says it wasn't recorded.</li>
         <li>Claim to monitor for emergencies. Crisis words get the emergency number, 988 in the US.</li>
         <li>Share anything without the patient's confirmed consent, which she can withdraw at any time.</li>
@@ -881,37 +1016,37 @@
     </div>
   </section>
 
-  <section id="see-it" class="sheet" aria-labelledby="see-title">
+  <section id="see-it" aria-labelledby="see-title">
     <div class="wrap">
       <h2 id="see-title">See it running</h2>
-      <p class="intro">Without Alexa+ preview access, we built a browser simulator that behaves like Alexa+ in front of the same MCP server: two devices, account linking, local voice, and a live MCP inspector.</p>
+      <p class="intro">Without Alexa+ preview access, we built a browser simulator that behaves like Alexa+ in front of the same MCP server: two devices, Sam's phone, account linking, local voice, and a live MCP inspector.</p>
       <div class="seeit">
         <div>
-          <div class="screen-shot"><img src="assets/simulator.png" alt="The CareLoop simulator: Maya's Echo Show with the plan review on its screen, Sam's Echo Dot, the Alexa app on a phone, and the MCP inspector" width="1440" height="900" loading="lazy"></div>
+          <a class="screen-shot" href="assets/simulator.png" style="display:block"><picture><source media="(max-width: 520px)" srcset="assets/simulator-phone.png" width="360" height="560"><img src="assets/simulator.png" alt="The CareLoop simulator, with Sam's phone unlocked to his evening dressing change: Mark done, and its source line p1:L10. Opens the full screenshot" width="1440" height="900" loading="lazy"></picture></a>
         </div>
         <ul class="facts" aria-label="Evidence">
           <li><b>100%</b> of expected items found when reading the synthetic prescriptions (typed, scanned and photographed, 3 runs each), with <b>0</b> invented numbers.</li>
           <li><b>70</b> spoken scenarios, run 3 times each with a hosted model as the planner: <b>207 of 210</b> passed, and the one scenario that failed had an out-of-date expectation. It now passes.</li>
-          <li><b>410</b> automated tests, including complete conversations against a running server, and a check that every card on the patient's screen carries its source.</li>
+          <li><b>420</b> automated tests, including complete conversations against a running server, a check that every card on the patient's screen carries its source, and Sam's phone end to end.</li>
           <li><b>32</b> MCP tools covering plans, documents, check-ins, teach-back, suggestions, family, consent, handoffs and data rights.</li>
         </ul>
       </div>
     </div>
   </section>
 
-  <section id="developers" aria-labelledby="dev-title">
+  <section id="developers" class="sheet" aria-labelledby="dev-title">
     <div class="wrap">
       <h2 id="dev-title">For developers</h2>
       <p class="intro">A standard MCP server over Streamable HTTP. Any MCP client can use it; in production, Alexa+ brings its own model.</p>
       <div class="dev">
-<pre><span class="c"># Python 3.12+, uv, and optionally Ollama</span>
+<div class="code"><pre tabindex="0" aria-label="Commands to run CareLoop; scrolls sideways"><span class="c"># Python 3.12+, uv, and optionally Ollama</span>
 git clone https://github.com/Ghost-141/CareLoop.git
 cd CareLoop
 uv sync --extra dev --extra alexa-sim --extra voice \
         --extra intake --extra ocr
 cp .env.example .env   # optional: local model and voice
 uv run pytest -q
-scripts/run_alexa_demo.sh</pre>
+scripts/run_alexa_demo.sh</pre></div>
         <ul class="stack">
           <li><strong>Voice-safe results.</strong> Every tool returns one sentence safe to say aloud, plus opaque references. Private detail goes to a sandboxed MCP Apps screen.</li>
           <li><strong>MCP elicitation.</strong> Check-ins, guided reviews, consent and teach-back ask their own follow-up questions mid-call. Teach-back answers are checked by the server, not the model.</li>
@@ -922,12 +1057,12 @@ scripts/run_alexa_demo.sh</pre>
     </div>
   </section>
 
-  <section class="sheet" aria-labelledby="next-title">
+  <section aria-labelledby="next-title">
     <div class="wrap">
       <h2 id="next-title">What comes next</h2>
       <ul class="next">
         <li><h3>Real Alexa+ deployment</h3><p>Account linking with OAuth 2.1 and the same server deployed with the Alexa AI CLI, once preview access is available.</p></li>
-        <li><h3>Delivery you can count on</h3><p>Alerts by text, email or push, with escalation when nobody acknowledges.</p></li>
+        <li><h3>A real phone app</h3><p>The CareLoop app the simulator shows on Sam's phone, with push through Apple and Google, and escalation when nobody acknowledges.</p></li>
         <li><h3>More of the plan</h3><p>Sleep, mood and mobility check-ins, and seeing what changed when a new plan arrives.</p></li>
         <li><h3>The clinician's side</h3><p>A time-limited share link for the handoff, and export in a format records systems understand.</p></li>
         <li><h3>Families of all shapes</h3><p>One helper supporting several people, like a son caring for both parents.</p></li>
@@ -1022,6 +1157,18 @@ scripts/run_alexa_demo.sh</pre>
     if (entries.some((e) => e.isIntersecting)) { seen.disconnect(); if (!touched) play(); }
   }, { threshold: 0.4 });
   seen.observe(root);
+})();
+</script>
+<script>
+(() => {
+  // One update, three levels: the speaker speaks, the lock screen lights, the phone opens. Played once, on arrival.
+  const levels = document.getElementById("levels");
+  if (!levels || matchMedia("(prefers-reduced-motion: reduce)").matches || !("IntersectionObserver" in window)) return;
+  levels.classList.add("armed");
+  const seen = new IntersectionObserver((entries) => {
+    if (entries.some((e) => e.isIntersecting)) { seen.disconnect(); levels.classList.replace("armed", "run"); }
+  }, { threshold: 0.35 });
+  seen.observe(levels);
 })();
 </script>
 <script>

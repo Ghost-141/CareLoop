@@ -67,6 +67,8 @@ rounded:
   button: "10px"
   surface: "14px"
   device: "22px"
+  device-phone: "34px"
+  device-phone-screen: "26px"
   pill: "999px"
 spacing:
   xs: "4px"
@@ -220,11 +222,12 @@ The simulator is a three-column stage (Echo Show 2fr, Echo Dot 1fr, Alexa app an
 
 ## Elevation & Depth
 
-The system is flat. Depth comes from tonal layering (white Sheet on Ward White) and 1px hairlines, never from shadows on UI surfaces. Shadows are reserved for objects that exist physically: the Echo Show bezel, the Echo Dot, and the product page's paper slip.
+The system is flat. Depth comes from tonal layering (white Sheet on Ward White) and 1px hairlines, never from shadows on UI surfaces. Shadows are reserved for objects that exist physically: the Echo Show bezel, the Echo Dot, the product page's drawn phone, and the product page's paper slip.
 
 ### Shadow Vocabulary
 - **Device drop** (`box-shadow: 0 1px 0 #ffffff14 inset, 0 24px 40px -18px #1c2b4566`): the Echo Show bezel in the simulator.
 - **Dot drop** (`box-shadow: 0 10px 22px -8px #1c2b4580`): the Echo Dot body.
+- **Phone drop** (`box-shadow: 0 24px 40px -22px rgba(28, 43, 69, .55)`): the product page's drawn phone. The same device-drop family the product page's Echo Show uses, without the inset highlight.
 - **Paper slip** (`box-shadow: 0 1px 0 var(--rule), 0 18px 40px -28px rgba(28, 43, 69, .45)`): the product page's source slip, which is also rotated -0.6deg.
 
 ### Named Rules
@@ -232,7 +235,7 @@ The system is flat. Depth comes from tonal layering (white Sheet on Ward White) 
 
 ## Shapes
 
-Corners follow hierarchy rather than one radius everywhere. Surfaces (lists, review cards, charts, empty states) use 14px; buttons 10px; inputs and prompt chips 8px; device frames 18–22px. Status dots and switch tracks are fully round.
+Corners follow hierarchy rather than one radius everywhere. Surfaces (lists, review cards, charts, empty states) use 14px; buttons 10px; inputs and prompt chips 8px; device frames 18–22px. The drawn phone keeps its own, larger radii: 34px on the frame, 26px on the screen, and 15px on a lock-screen notification card. Status dots and switch tracks are fully round.
 
 The source slip has its own silhouette: a nearly square top (4px) with softer bottom corners (10px), and a perforated top edge drawn as a dashed hairline, like a strip torn from a page.
 
@@ -273,9 +276,10 @@ The one block that stands alone, because it asks the patient for a decision.
 ### Prompt Chips (simulator)
 - **Style:** transparent, 1px Hairline border, 8px radius, ink text in sentence case; the border darkens to ink on hover.
 
-### Devices (simulator)
+### Devices (simulator and product page)
 - **Echo Show:** a charcoal bezel (#22262b) with a camera dot, the screen in Ward White, and a 4px light bar that glows Alexa Cyan when listening, sweeps while thinking, and pulses while speaking. It shows only the latest exchange: the user's words small, italic and quoted; Alexa's reply large.
-- **Echo Dot:** seen from above, a dotted fabric top inside a light ring: cyan for listening, spinning while thinking, yellow pulsing when a notification waits.
+- **Echo Dot:** seen from above, a dotted fabric top inside a light ring: cyan for listening, spinning while thinking, yellow pulsing only when a care alert waits. A new-task notice is told once in words ("Maya gave you a new task.") and the ring stays unlit.
+- **Phone (product page):** stands in for Sam's simulated CareLoop companion app. A charcoal bezel (#22262b) with 9px padding, a 34px frame and a 26px screen, lifted by the phone drop. Locked, the screen is Night Sheet (#18212d) with Night Ink (#e6ebf2) text: a large tabular clock, the date, and one Ward White notification card (15px radius) that says only that a task is waiting. Unlocked, the app opens under a Prescription Ink bar ("Signed in as Sam") onto the same task rows the private screens use.
 - **Backstage:** demo tooling sits in its own dark column (#141a22), clearly labeled as not part of the product.
 
 ## Do's and Don'ts

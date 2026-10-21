@@ -347,6 +347,11 @@
         "purpose": "Echo Dot body in the simulator."
       },
       {
+        "name": "phone-drop",
+        "value": "0 24px 40px -22px rgba(28, 43, 69, .55)",
+        "purpose": "Product page drawn phone (Sam's simulated CareLoop app); same family as the page's Echo Show."
+      },
+      {
         "name": "paper-slip",
         "value": "0 1px 0 #d3dbe1, 0 18px 40px -28px rgba(28, 43, 69, .45)",
         "purpose": "Product page source slip, rotated -0.6deg."

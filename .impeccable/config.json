@@ -44,6 +44,15 @@
         ],
         "createdAt": "2026-10-20T10:18:20.594Z",
         "reason": "Repeating gradients draw the text lines on the document icon and the slip's perforated edge (DESIGN.md Shapes)"
+      },
+      {
+        "rule": "dark-glow",
+        "value": "*",
+        "files": [
+          "site/index.html"
+        ],
+        "createdAt": "2026-10-21T16:58:30.540Z",
+        "reason": "Claude, from DESIGN.md: the ink-tinted, 24px-offset device drop shadow on a light page is the documented shadow for drawn physical devices (Echo Show, phone), not a zero-offset glow"
       }
     ]
   }
