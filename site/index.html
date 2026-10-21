@@ -241,10 +241,28 @@
   .grant .withheld::before { background: none; border: 1.5px solid currentColor; width: 7px; height: 7px; }
   .grant-foot { margin: 0; padding: .9rem 1.25rem; border-top: 1px solid var(--rule); background: var(--paper); font-size: .95rem; color: #2c3a52; }
 
-  @media (prefers-reduced-motion: no-preference) {
-    .exchange.entering .turn, .exchange.entering .keeps { animation: arrive 360ms cubic-bezier(.2, .7, .2, 1) both; animation-delay: calc(var(--i, 0) * 70ms); }
-    @keyframes arrive { from { opacity: 0; transform: translateY(6px); } }
-  }
+  /* ---- conversations: a list of moments, each played line by line --------------------- */
+  .convo { display: grid; grid-template-columns: 14.5rem minmax(0, 1fr); gap: 2rem 3.5rem; align-items: start; }
+  .convo .tabs { display: grid; grid-template-columns: 1fr; gap: 0; margin: 0; border-bottom: 0; border-left: 1px solid var(--rule); position: sticky; top: 1.5rem; }
+  .convo .tabs button { padding: .7rem 0 .7rem 1.1rem; margin: 0 0 0 -1px; border-bottom: 0; border-left: 3px solid transparent; }
+  .convo .tabs button span { display: none; }
+  .convo .tabs button[aria-selected="true"] { border-left-color: var(--ink); }
+  .convo .tabs button[aria-selected="true"] span { display: block; color: var(--muted); }
+  .player { display: flex; align-items: center; gap: 1rem; margin: 1.25rem 0 0; }
+  .player button { font: 700 .95rem var(--sans); color: var(--ink); background: none; border: 1.5px solid var(--ink); border-radius: 999px; padding: .45rem 1.1rem; cursor: pointer; }
+  .player button:hover { background: var(--sheet); }
+  .player .dots { display: flex; gap: .4rem; }
+  .player .dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--rule); transition: background .3s; }
+  .player .dots i.on { background: var(--ink); }
+  .turn, .turn p, .why, .keeps { transition: opacity .5s cubic-bezier(.16, 1, .3, 1), transform .5s cubic-bezier(.16, 1, .3, 1), filter .6s ease-out; }
+  .exchange.playing .turn.pending, .exchange.playing .why.pending { opacity: 0; transform: translateY(6px); }
+  .exchange.playing .turn.speaking p { opacity: 0; }
+  .exchange.playing .keeps.pending { opacity: .2; filter: grayscale(1); }
+  /* While Alexa answers, a teal sweep runs under her name once, like the Echo's light bar. */
+  .turn .speaker.alexa { position: relative; }
+  .turn.speaking .speaker.alexa::after { content: ""; position: absolute; left: 0; width: 2.6rem; bottom: -.3rem; height: 2px; border-radius: 2px;
+    background: var(--voice); transform-origin: left; animation: speak .7s cubic-bezier(.16, 1, .3, 1) both; }
+  @keyframes speak { from { transform: scaleX(0); } }
 
   /* ---- teach-back: what Maya was asked, what she said, what the code decided ---------- */
   .tb { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 2.5rem 3.5rem; align-items: start; }
@@ -461,6 +479,14 @@
     .pair-row p:first-child::before { content: "Alexa+"; }
     .pair-row p:last-child::before { content: "CareLoop adds"; margin-top: .4rem; }
     .tabs { gap: 0 1.5rem; }
+    .convo { grid-template-columns: 1fr; gap: 1.75rem; }
+    .convo .tabs { display: flex; flex-wrap: nowrap; gap: 1.4rem; overflow-x: auto; scroll-snap-type: x proximity; position: static;
+      border-left: 0; border-bottom: 1px solid var(--rule); scrollbar-width: none; }
+    .convo .tabs::-webkit-scrollbar { display: none; }
+    .convo .tabs button { flex: none; white-space: nowrap; scroll-snap-align: start; margin: 0 0 -1px; padding: .7rem 0 .65rem;
+      border-left: 0; border-bottom: 3px solid transparent; }
+    .convo .tabs button[aria-selected="true"] { border-bottom-color: var(--ink); }
+    .convo .tabs button[aria-selected="true"] span { display: none; }
   }
   @media (max-width: 640px) {
     .check-row { grid-template-columns: minmax(0, 1fr) auto; gap: .35rem 1rem; }
@@ -809,8 +835,9 @@
   <section id="conversations" aria-labelledby="talk-title">
     <div class="wrap">
       <h2 id="talk-title">What Alexa says, and what CareLoop keeps</h2>
-      <p class="intro">Alexa says as little as it needs to. The detail goes to Maya's private screen and into CareLoop's record. These exchanges come from CareLoop's end-to-end tests and demo runs against the real server.</p>
-      <div class="tabs" role="tablist" aria-label="Exchanges">
+      <p class="intro">Pick a moment and watch it play: what Alexa says out loud, and what CareLoop keeps on the screen. Every line comes from runs against the real server.</p>
+      <div class="convo">
+      <div class="tabs" role="tablist" aria-label="Exchanges" aria-orientation="vertical">
         <button role="tab" id="tab-suggest" aria-controls="ex-suggest" aria-selected="true">Anything I should know?<span>Raised from her records</span></button>
         <button role="tab" id="tab-meds" aria-controls="ex-meds" aria-selected="false" tabindex="-1">Asking about medicines<span>Answered with its line</span></button>
         <button role="tab" id="tab-notice" aria-controls="ex-notice" aria-selected="false" tabindex="-1">A new task for Sam<span>Detail on his phone</span></button>
@@ -819,6 +846,7 @@
         <button role="tab" id="tab-review" aria-controls="ex-review" aria-selected="false" tabindex="-1">Reviewing by voice<span>Pause and pick up later</span></button>
         <button role="tab" id="tab-intake" aria-controls="ex-intake" aria-selected="false" tabindex="-1">Reading a prescription<span>Every item cited</span></button>
       </div>
+      <div class="panels">
 
       <div class="exchange" role="tabpanel" id="ex-suggest" aria-labelledby="tab-suggest" tabindex="0">
         <div>
@@ -994,6 +1022,8 @@
             </div>
           </div></div>
         </figure>
+      </div>
+      </div>
       </div>
     </div>
   </section>
@@ -1173,31 +1203,92 @@ scripts/run_alexa_demo.sh</pre></div>
 </script>
 <script>
 (() => {
-  // Exchanges: tabs that show what Alexa says beside what CareLoop keeps.
+  // Conversations: pick a moment and it plays line by line. What CareLoop keeps comes alive when Alexa first answers.
   const tabs = [...document.querySelectorAll('#conversations [role="tab"]')];
   const panels = tabs.map((t) => document.getElementById(t.getAttribute("aria-controls")));
+  const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let timers = [], current = 0;
+
+  panels.forEach((panel) => {
+    const lines = panel.querySelectorAll(".turn");
+    const bar = document.createElement("div");
+    bar.className = "player";
+    bar.innerHTML = `<button type="button">Replay</button><span class="dots" aria-hidden="true">${"<i></i>".repeat(lines.length)}</span>`;
+    const why = panel.querySelector(".why");
+    why.parentNode.insertBefore(bar, why);
+    bar.querySelector("button").addEventListener("click", (e) => (e.currentTarget.textContent === "Skip" ? finish(panel) : play(panel)));
+  });
+
+  const clear = () => { timers.forEach(clearTimeout); timers = []; };
+  const later = (fn, ms) => timers.push(setTimeout(fn, ms));
+  const parts = (panel) => ({ lines: [...panel.querySelectorAll(".turn")], keeps: panel.querySelector(".keeps"), why: panel.querySelector(".why"),
+    dots: [...panel.querySelectorAll(".player .dots i")], button: panel.querySelector(".player button") });
+
+  function finish(panel) {
+    clear();
+    const { lines, keeps, why, dots, button } = parts(panel);
+    panel.classList.remove("playing");
+    [...lines, keeps, why].forEach((el) => el.classList.remove("pending", "speaking"));
+    dots.forEach((d) => d.classList.add("on"));
+    button.textContent = "Replay";
+  }
+  function play(panel) {
+    clear();
+    if (still) { finish(panel); return; }
+    const { lines, keeps, why, dots, button } = parts(panel);
+    panel.classList.add("playing");
+    [...lines, keeps, why].forEach((el) => { el.classList.add("pending"); el.classList.remove("speaking"); });
+    dots.forEach((d) => d.classList.remove("on"));
+    button.textContent = "Skip";
+    let t = 350;
+    lines.forEach((line, i) => {
+      const alexa = line.classList.contains("alexa");
+      if (alexa) {
+        later(() => { line.classList.remove("pending"); line.classList.add("speaking"); }, t);
+        t += 700;
+      }
+      later(() => {
+        line.classList.remove("pending", "speaking");
+        dots[i].classList.add("on");
+        if (alexa) keeps.classList.remove("pending");
+      }, t);
+      t += alexa ? 1100 + line.textContent.length * 14 : 950;
+    });
+    later(() => { keeps.classList.remove("pending"); why.classList.remove("pending"); panel.classList.remove("playing"); button.textContent = "Replay"; }, t);
+  }
+
   function select(index, focus) {
+    current = index;
     tabs.forEach((t, i) => {
       const on = i === index;
       t.setAttribute("aria-selected", String(on));
       t.tabIndex = on ? 0 : -1;
       panels[i].hidden = !on;
     });
-    const panel = panels[index];
-    panel.querySelectorAll(".turn, .keeps").forEach((el, i) => el.style.setProperty("--i", i));
-    panel.classList.remove("entering"); void panel.offsetWidth; panel.classList.add("entering");
     if (focus) tabs[index].focus();
+    play(panels[index]);
   }
   tabs.forEach((t, i) => {
     t.addEventListener("click", () => select(i));
     t.addEventListener("keydown", (e) => {
-      const step = { ArrowRight: 1, ArrowLeft: -1 }[e.key];
+      const step = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[e.key];
       if (step) { e.preventDefault(); select((i + step + tabs.length) % tabs.length, true); }
       else if (e.key === "Home") { e.preventDefault(); select(0, true); }
       else if (e.key === "End") { e.preventDefault(); select(tabs.length - 1, true); }
     });
   });
   panels.forEach((p, i) => { p.hidden = i !== 0; });
+
+  // The first moment waits, ready, and plays when the section comes into view. Without script it stays complete.
+  if (still || !("IntersectionObserver" in window)) { finish(panels[0]); return; }
+  const first = parts(panels[0]);
+  panels[0].classList.add("playing");
+  [...first.lines, first.keeps, first.why].forEach((el) => el.classList.add("pending"));
+  first.button.textContent = "Play";
+  const seen = new IntersectionObserver((entries) => {
+    if (entries.some((e) => e.isIntersecting)) { seen.disconnect(); if (current === 0) play(panels[0]); }
+  }, { threshold: 0.45 });
+  seen.observe(document.getElementById("conversations"));
 })();
 </script>
 </body>
