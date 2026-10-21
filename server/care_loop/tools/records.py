@@ -600,8 +600,14 @@ def register(mcp: MCPServer, deps) -> None:
                            view="plan-review", surface="glance", refs=refs)
         pending = [i for i in deps.service.list_care_tasks(identity)
                    if i.get("intake_job_id") == job["id"] and i.get("status") in {"draft", "needs_review"}]
+        repeated = counts.get("already_in_plan", 0)
+        if not pending and repeated:
+            return _result("Your document is ready. Everything in it is already in your plan, so nothing new was added.",
+                           view="plan-review", refs=refs)
         speakable = f"Your document is ready. {_plural(len(pending), 'item')} {'needs' if len(pending) == 1 else 'need'} your approval"
         speakable += f", and {flagged} {'is' if flagged == 1 else 'are'} flagged for a closer look." if flagged else "."
+        if repeated:
+            speakable += f" {_plural(repeated, 'item')} {'was' if repeated == 1 else 'were'} already in your plan, so I didn't add {'it' if repeated == 1 else 'them'} again."
         if counts.get("medication_items"):
             speakable += " Medicine items are approved on your screen."
         return _result(speakable, view="plan-review", refs=refs + _plan_refs(pending),

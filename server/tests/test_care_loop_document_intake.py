@@ -240,7 +240,7 @@ def test_family_member_needs_upload_permission_and_sees_only_a_summary() -> None
 def test_review_gating_edits_and_rejection() -> None:
     svc = service(FakeModel(good_extraction()))
     job = run_job(svc, PATIENT, make_pdf([PRESCRIPTION]))
-    assert job["counts"] == {"items": 3, "needs_review": 1, "medication_items": 1}
+    assert job["counts"] == {"items": 3, "already_in_plan": 0, "needs_review": 1, "medication_items": 1}
     drafts = {d["item_kind"]: d for d in svc.list_care_tasks(PATIENT)}
     med, walk, rule = drafts["medication_task"], drafts["care_task"], drafts["rule_candidate"]
     assert med["source"][0]["text"].startswith("1. Amoxicillin") and med["times"] == ["08:00", "14:00", "20:00"]
@@ -271,6 +271,33 @@ def test_rejected_items_disappear_and_jobs_expire_after_a_day() -> None:
     assert walk["id"] not in {d["id"] for d in svc.list_care_tasks(PATIENT)}
     clock[0] += 24 * 3600 + 1
     assert svc.intake_jobs(PATIENT) == []  # raw lines are gone; approved items keep only their citations
+
+
+def test_sharing_the_same_prescription_again_adds_no_second_copy() -> None:
+    svc = service(FakeModel(good_extraction()))
+    pdf = make_pdf([PRESCRIPTION])
+    assert run_job(svc, PATIENT, pdf)["counts"]["items"] == 3
+    again = run_job(svc, PATIENT, pdf)  # shared again while the first drafts are still waiting
+    assert again["counts"] == {"items": 0, "already_in_plan": 3, "needs_review": 0, "medication_items": 0}
+    assert "3 items were already in your plan, so they weren't added again." in again["notes"]
+    assert len(svc.list_care_tasks(PATIENT)) == 3
+
+    # Approved with an edited time, it still counts as the same item. A rejected one may come back.
+    drafts = {d["item_kind"]: d for d in svc.list_care_tasks(PATIENT)}
+    svc.approve_plan_item(PATIENT, drafts["medication_task"]["id"], on_screen=True, edits={"times": ["07:00", "15:00", "23:00"]})
+    svc.reject_plan_item(PATIENT, drafts["care_task"]["id"])
+    third = run_job(svc, PATIENT, pdf)
+    assert third["counts"]["items"] == 1 and third["counts"]["already_in_plan"] == 2
+    kinds = sorted(d["item_kind"] for d in svc.list_care_tasks(PATIENT))
+    assert kinds == ["care_task", "medication_task", "rule_candidate"]
+
+
+def test_a_model_listing_one_line_twice_gives_one_item() -> None:
+    items = good_extraction().items
+    svc = service(FakeModel(Extraction(items=items + [items[0]])))
+    job = run_job(svc, PATIENT, make_pdf([PRESCRIPTION]))
+    assert job["counts"]["items"] == 3 and job["counts"]["already_in_plan"] == 1
+    assert sum(d["item_kind"] == "medication_task" for d in svc.list_care_tasks(PATIENT)) == 1
 
 
 def test_prompt_injection_document_activates_nothing() -> None:

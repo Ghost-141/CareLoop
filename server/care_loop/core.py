@@ -326,12 +326,23 @@ class CareLoopService:
         excerpts = [{"page": line["page"], "excerpt": line["text"], "line_id": line_id, "method": line["method"],
                      "confidence_pct": line["confidence_pct"]} for line_id, line in cited.items()]
         draft_ids: list[str] = []
+        kept: list[Any] = []
         document = None
+        # Sharing the same prescription again must not add a second copy of anything already waiting for
+        # review or approved; a model listing one line twice is caught the same way.
+        in_plan = {self._plan_key(row["type"], row.get("item_kind"), row.get("source"), row.get("text"))
+                   for row in self.storage.list(patient) if row["type"] in PLAN_TYPES
+                   and row.get("status", "active") in {"draft", "needs_review", "pending_review", "active"}}
         if excerpts:
             document = self.create_document(owner, job["title"], excerpts, extracted.source_hash, reviewed=True)
             document = self.storage.put(patient, document["id"], "DOCUMENT", document | {
                 "uploaded_by": job["uploaded_by"], "intake_job_id": job["id"], "extraction": {str(k): v for k, v in extracted.page_methods.items()}})
             for position, item in enumerate(structured.items, start=1):
+                key = self._plan_key(item.record_type, item.kind, item.source, item.instruction)
+                if key in in_plan:
+                    continue
+                in_plan.add(key)
+                kept.append(item)
                 payload: dict[str, Any] = {
                     "order": position,
                     "text": item.instruction, "label": item.label, "item_kind": item.kind, "status": item.status,
@@ -354,14 +365,26 @@ class CareLoopService:
                         payload["due_date"] = due
                 draft = self.write(owner, item.record_type, payload, source_id=document["id"], reviewed=False)
                 draft_ids.append(draft["id"])
-        counts = {"items": len(structured.items),
-                  "needs_review": sum(i.status == "needs_review" for i in structured.items),
-                  "medication_items": sum(i.kind == "medication_task" for i in structured.items)}
+        repeated = len(structured.items) - len(kept) if document else 0
+        counts = {"items": len(kept), "already_in_plan": repeated,
+                  "needs_review": sum(i.status == "needs_review" for i in kept),
+                  "medication_items": sum(i.kind == "medication_task" for i in kept)}
+        notes = list(structured.notes)
+        if repeated:
+            notes.append(f"{repeated} {'item was' if repeated == 1 else 'items were'} already in your plan, "
+                         f"so {'it wasn' if repeated == 1 else 'they weren'}'t added again.")
         return self._finish_job(patient, job, status="ready", document_id=document["id"] if document else None,
                                 draft_ids=draft_ids, counts=counts, engine=structured.engine,
-                                notes=structured.notes, unused_lines=structured.unused_lines,
+                                notes=notes, unused_lines=structured.unused_lines,
                                 follow_up_date=structured.follow_up_date,
                                 pages={str(k): v for k, v in extracted.page_methods.items()})
+
+    @staticmethod
+    def _plan_key(record_type: str, kind: str | None, source: list[dict[str, Any]] | None, text: str | None) -> tuple:
+        """What makes two plan items the same: the type, the cited wording and the instruction. Not the line ids,
+        which differ between two uploads of one prescription, and not the times, which the patient may edit."""
+        words = [line.get("text") for line in source or []] + [text]
+        return (record_type, kind, tuple(" ".join(str(w or "").split()).casefold() for w in words))
 
     def _finish_job(self, patient: str, job: dict[str, Any], **fields: Any) -> dict[str, Any]:
         job = dict(job) | fields | {"updated_at": self._now()}
