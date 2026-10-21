@@ -59,7 +59,6 @@ uv run pytest -q       # 410 tests, including live runs against a real server
 | [Safety, privacy and security](docs/CARELOOP_SECURITY.md) | What CareLoop never does, and the MCP security decisions |
 | [Features](docs/CARELOOP_FEATURES.md) | Every capability, and how it fits Alexa+ |
 | [UI guide](docs/CARELOOP_UI_GUIDE.md) | Every screen and control |
-| [Simulator walkthrough](docs/CARELOOP_SIMULATOR_WALKTHROUGH.md) | Driving the simulator end to end |
 | [Evals](docs/CARELOOP_EVALS.md) | Document-reading and live-model voice evaluations |
 | [Friction log](docs/FRICTION_LOG.md) | What was hard building for Alexa+, and open questions for the Alexa+ team |
 

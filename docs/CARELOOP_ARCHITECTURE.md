@@ -138,5 +138,4 @@ Key documents:
 
 - [Friction log](FRICTION_LOG.md)
 - [Evals](CARELOOP_EVALS.md)
-- [Driving the simulator end to end](CARELOOP_SIMULATOR_WALKTHROUGH.md)
 - [UI guide](CARELOOP_UI_GUIDE.md)
