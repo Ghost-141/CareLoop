@@ -1,7 +1,5 @@
 # CareLoop
 
-**Every care instruction Alexa says can be traced back to the page it came from.**
-
 CareLoop is an MCP add-on for Alexa+. It turns a clinician's plan into tasks the patient approves and understands, family members can help with, and a clinician can trust. Every step is an auditable MCP tool call.
 
 Built for the **Amazon Developer Hackathon 2026, Alexa+ track**. The repository includes an Alexa+ behavior simulator (`alexa_sim/`), which is **not an Amazon product**. All data is synthetic. CareLoop is not medical advice and does not monitor for emergencies.

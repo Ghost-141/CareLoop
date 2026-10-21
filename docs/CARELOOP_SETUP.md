@@ -8,7 +8,6 @@ Everything needed to install CareLoop, run the Alexa+ demo, and test it. For set
 | --- | --- | --- |
 | [uv](https://docs.astral.sh/uv/getting-started/installation/) | Everything | `uv --version` |
 | Python 3.12+ (uv can install it) | Everything | `uv python list` |
-| Git | Cloning | `git --version` |
 | A model *(optional)*: any OpenAI-compatible API, or [Ollama](https://ollama.com) with a tool-calling model | Voice planner and document reading | — |
 | Any 64-bit Mac, Windows or Linux machine *(optional)* | Local speech: Kokoro and Whisper. Apple Silicon uses MLX Whisper, everything else uses faster-whisper (CPU, or an NVIDIA GPU if present). Models download on first use. | `uv run python -c "import platform; print(platform.machine())"` |
 | Chrome *(recommended)* | Microphone input and browser speech fallback | — |
