@@ -1,6 +1,6 @@
 # Setup, running and testing
 
-How to install CareLoop, run the Alexa+ demo, and test it. For settings, see [CARELOOP_CONFIGURATION.md](CARELOOP_CONFIGURATION.md); for the screens, see [CARELOOP_UI_GUIDE.md](CARELOOP_UI_GUIDE.md).
+How to install CareLoop, run the Alexa+ demo, and test it. For settings, see [CARELOOP_CONFIGURATION.md](CARELOOP_CONFIGURATION.md); for the demo steps and screens, see [CARELOOP_UI_AND_DEMO_GUIDE.md](CARELOOP_UI_AND_DEMO_GUIDE.md).
 
 ## Prerequisites
 

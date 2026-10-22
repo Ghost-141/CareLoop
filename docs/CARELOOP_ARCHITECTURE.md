@@ -102,5 +102,5 @@ alexa_sim/               the one simulator folder: Alexa+ behavior simulator and
 evals/                   standalone eval cases; evals/intake/ synthetic documents + intake eval
 samples/                 synthetic prescription PDF, scan, photo and prompt-injection documents
 scripts/                 run, seed, and end-to-end scripts
-docs/                    setup, configuration, architecture, security, features, UI guide, evals, friction log
+docs/                    setup, configuration, architecture, security, features, UI and demo guide, evals, friction log
 ```

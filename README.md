@@ -51,7 +51,7 @@ To start on day four at home (suggestions, teach-back, the rule firing, the hand
 | [Architecture](docs/CARELOOP_ARCHITECTURE.md) | Components, the MCP tools and voice-safe results, document intake, repository layout |
 | [Safety, privacy and security](docs/CARELOOP_SECURITY.md) | What CareLoop never does, and the MCP security decisions |
 | [Features](docs/CARELOOP_FEATURES.md) | Every capability |
-| [UI guide](docs/CARELOOP_UI_GUIDE.md) | Every screen and control |
+| [UI and demo guide](docs/CARELOOP_UI_AND_DEMO_GUIDE.md) | What the demo shows, steps to reproduce it, and every screen |
 | [Evals](docs/CARELOOP_EVALS.md) | Document-reading and live-model voice evaluations |
 | [Friction log](docs/FRICTION_LOG.md) | What was hard building for Alexa+, and open questions for the Alexa+ team |
 
