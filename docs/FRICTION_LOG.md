@@ -4,7 +4,7 @@ A running record of where building CareLoop for the Alexa+ track was harder than
 
 **Project:** CareLoop, an MCP add-on for accountable care coordination, plus an Alexa+ behavior simulator (`alexa_sim`)
 **Track:** Alexa+ (self-hosted MCP server over Streamable HTTP and a simulated Alexa+ web app)
-**Environment:** macOS 26.5 on Apple Silicon (arm64), Python 3.13.15, `mcp` 2.1.1, FastAPI 0.143.1, Starlette 1.8.0, uvicorn 0.54.0, pydantic 2.14.1, kokoro-onnx 0.6.1, mlx-whisper 0.4.3, Ollama `qwen3.5:4b-mlx`
+**Environment:** macOS 26.5 on Apple Silicon (arm64), Python 3.13.15, `mcp` 2.1.1, FastAPI 0.143.1, Starlette 1.8.0, uvicorn 0.54.0, pydantic 2.14.1, kokoro-onnx 0.6.1, mlx-whisper 0.4.3, Ollama `gemma4:e4b` (earlier `qwen3.5:4b`), and a hosted OpenAI-compatible model
 **Developer location:** Dhaka, Bangladesh (GMT+6). No Echo device and no Alexa+ developer access.
 
 Severity: **Blocker** (stopped a goal), **High** (broke the build or demo until fixed), **Medium** (cost real time or forced a workaround), **Low** (papercut).
@@ -37,6 +37,7 @@ Status: **Resolved**, **Workaround** (we went around it), **Open** (still a prob
 | F-21 | Alexa+ add-ons, files | Medium | Workaround | No documented way for Alexa+ to pass a user's uploaded file to an add-on |
 | F-22 | Alexa+ policy, dosage | Medium | Open | Unclear whether storing a prescriber's own instruction counts as "drug dosage content" |
 | F-23 | Document intake | Medium | Resolved | Small local models mislabelled the pain rule and frequencies; a fixed-pattern safety net was needed |
+| F-24 | PDF/OCR tooling | Low | Resolved | `pypdf` can't render pages for OCR; PaddleOCR's first run downloads models; storage rejects floats |
 | F-25 | Local LLM planner | Medium | Resolved | A 4B model picked the wrong task ID in multi-turn chats; tools now accept names, and gemma4 replaced qwen as planner |
 | F-26 | Local LLM planner | High | Resolved | The model invented plan text, a past expiry date, and extra permissions; the server now refuses or reads back |
 | F-27 | Alexa+ policy | Medium | Resolved | Policy requirements (disclosure before first use, crisis redirect, privacy/terms URLs) had to be built as product features |
@@ -57,7 +58,6 @@ Status: **Resolved**, **Workaround** (we went around it), **Open** (still a prob
 | F-42 | Hosted LLM planner | Low | Resolved | "What medicines do I take?" went to history search, which answered "No matching record found." |
 | F-43 | Suggestions | Medium | Resolved | When the first suggestion had no question, a later one's question (the teach-back) was dropped, so "yes" did nothing |
 | F-44 | Hosted LLM planner, privacy | Medium | Resolved | Sam's "what was Maya's pain score?" got "Found 1 matching record." because the pain rule's text matched; no value leaked, but it sounded like one |
-| F-24 | PDF/OCR tooling | Low | Resolved | `pypdf` can't render pages for OCR; PaddleOCR's first run downloads models; storage rejects floats |
 
 ---
 
@@ -162,7 +162,7 @@ Status: **Resolved**, **Workaround** (we went around it), **Open** (still a prob
 - **Expected:** every tool to behave as under the initialize handshake.
 - **Got:** discovery, the 30-tool listing (all titled and annotated) and plain tool calls work. `start_daily_checkin`, `review_plan_by_voice` and the confirm step of `invite_caregiver` return `The check-in couldn't be completed. Nothing was recorded.` because `ctx.elicit()` needs a server-to-client request on an open session. The 2026-07-28 revision is stateless and delivers elicitation as multi round-trip requests (an input-required result that the client answers by retrying the call).
 - **Impact:** none for the demo. The Alexa+ MCP client and our simulator use the initialize handshake (2025-03-26 to 2025-11-25), which is covered by the existing tests. Clients that speak only 2026-07-28 would lose the follow-up-question tools.
-- **Resolution / Workaround:** the README claims 2025-11-25 as the supported revision for elicitation. `test_care_loop_mcp_guidelines.py` pins the current behavior so it is noticed when it changes.
+- **Resolution / Workaround:** the architecture doc names 2025-11-25 as the supported revision for elicitation. `test_care_loop_mcp_guidelines.py` pins the current behavior so it is noticed when it changes.
 - **Suggestion:** move the elicitation tools to the SDK's input-required pattern (`mcp/server/mcpserver/resolve.py`) once Alexa+ announces 2026-07-28 support.
 
 ## CareLoop design problems we caused and fixed
@@ -249,8 +249,6 @@ Status: **Resolved**, **Workaround** (we went around it), **Open** (still a prob
   - **Pages:** `/privacy` and `/terms` describe what this server actually stores, and for how long.
 - **Suggestion:** a toolkit pattern for "first-use consent" and a standard crisis-handling hook would save every health add-on from reinventing them.
 
----
-
 ### F-29: The model asks the person for an idempotency key · Medium · Resolved
 - **Doing:** running `evals/run_llm_planner.py` with `gemma4:e4b-mlx` (3 runs per scenario, a live CareLoop server per run).
 - **Expected:** "record a pain level of four" records a 4, as "my pain is 6 today" does.
@@ -263,7 +261,7 @@ Status: **Resolved**, **Workaround** (we went around it), **Open** (still a prob
 - **Doing:** "Alexa, remove Sam", then "yes", with the same live-model runner.
 - **Expected:** the model calls `revoke_caregiver`, the simulator holds it and asks "Say confirm to continue", and the next "confirm" runs it.
 - **Got:** 3 of 3 runs made no tool call and answered `I cannot remove a caregiver without confirmation. Do you want to revoke Sam's access to your care data?` The person's "yes" got `Okay.` and nothing changed. The held-confirmation flow was never reached.
-- **Impact:** with the real model the demo's revocation step (steps 14 and 15) fails. The scripted planner hides this. A person is told something will happen and it doesn't. The test world had no active grant for Sam, so the model may also have lacked a caregiver id; it never called `list_care_circle` to find out.
+- **Impact:** with the real model the demo's revocation step fails. The scripted planner hides this. A person is told something will happen and it doesn't. The test world had no active grant for Sam, so the model may also have lacked a caregiver id; it never called `list_care_circle` to find out.
 - **Resolution:**
   - The descriptions of `revoke_caregiver` and `delete_care_record` no longer say "Confirm with the patient first", which is what made the model confirm in its own words. They now say the host confirms and to call the tool directly.
   - `revoke_caregiver` takes a `caregiver` name ("Sam"); two people with the same name are refused rather than guessed (`CareLoopService.grant_by_name`).
@@ -289,7 +287,7 @@ Status: **Resolved**, **Workaround** (we went around it), **Open** (still a prob
 
 ### F-33: The built-in evals can't see model failures · Medium · Resolved
 - **Got:** `evals/run_careloop.py` reports `"model": "deterministic-mock"`; its 16 cases test server rules and runner mechanics, as documented. The simulator also falls back to the scripted planner whenever the model errors, which hides model mistakes in the demo.
-- **Resolution:** `evals/run_llm_planner.py` runs 36 spoken scenarios through the simulator's real orchestrator and `OllamaPlanner` against a fresh live server each time, with the fallback disabled. It checks tool choice, arguments, whether the server accepted the call, held confirmations, and forbidden words in replies. First run, `gemma4:e4b-mlx`: 96 of 108 runs passed (36 scenarios, 3 runs each); the four scenarios above failed every time and nothing was flaky (`evals/results/llm-planner-gemma4-e4b-mlx.json`). After the first fixes, with 6 more scenarios (a seeded caregiver, a seeded pain record, more spoken numbers): 126 of 126 passed (`evals/results/llm-planner-gemma4-e4b-mlx-after.json`). After the long-conversation fixes (F-34 to F-37) the set grew to 52 scenarios and 156 of 156 runs passed (`evals/results/llm-planner-gemma4-e4b-mlx-final.json`). The full 19-step demo story also runs clean on gemma with the scripted fallback off. The document intake eval also passed on gemma: recall 100%, no invented numbers, planted instruction not followed (2 runs per document type).
+- **Resolution:** `evals/run_llm_planner.py` runs 36 spoken scenarios through the simulator's real orchestrator and `OllamaPlanner` against a fresh live server each time, with the fallback disabled. It checks tool choice, arguments, whether the server accepted the call, held confirmations, and forbidden words in replies. First run, `gemma4:e4b-mlx`: 96 of 108 runs passed (36 scenarios, 3 runs each); the four scenarios above failed every time and nothing was flaky (`evals/results/llm-planner-gemma4-e4b-mlx.json`). After the first fixes, with 6 more scenarios (a seeded caregiver, a seeded pain record, more spoken numbers): 126 of 126 passed (`evals/results/llm-planner-gemma4-e4b-mlx-after.json`). After the long-conversation fixes (F-34 to F-37) the set grew to 52 scenarios and 156 of 156 runs passed (`evals/results/llm-planner-gemma4-e4b-mlx-final.json`). The full demo story also runs clean on gemma with the scripted fallback off. The document intake eval also passed on gemma: recall 100%, no invented numbers, planted instruction not followed (2 runs per document type).
 - **Not covered:** the model never sees tool results that hold private data, so injection through results can't be tested here. An earlier injection scenario was removed because the injected sentence sat in the patient's own request.
 
 ### F-34: A visit handoff request exported all the data · High · Resolved
@@ -366,19 +364,3 @@ Status: **Resolved**, **Workaround** (we went around it), **Open** (still a prob
 7. Can a user hand a file they shared with Alexa+ to an add-on, with consent? (F-21)
 8. Does a patient's own transcribed prescription count as "drug dosage content"? (F-22)
 9. Does Alexa+ fill a free-text elicitation field from speech, and pass the words through unchanged? (F-41)
-
-## Adding a new entry
-
-Write it when it happens, and copy the exact error text.
-
-```markdown
-### F-NN: <short title> · <Blocker|High|Medium|Low> · <Resolved|Workaround|Open>
-- **Doing:** what we were trying to do, and the tool or doc involved (with link)
-- **Expected:** what the docs or tool suggested would happen
-- **Got:** what actually happened, with exact error text or quote
-- **Impact:** what it blocked or cost
-- **Resolution / Workaround:** what we changed (file paths), or "none yet"
-- **Suggestion:** one concrete change that would have prevented it
-```
-
-Then add a row to the summary table.

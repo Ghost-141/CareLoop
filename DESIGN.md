@@ -284,19 +284,8 @@ The one block that stands alone, because it asks the patient for a decision.
 
 ## Do's and Don'ts
 
-### Do:
-- **Do** trace every plan item back to its source line with a source slip, and show only the lines that item came from.
-- **Do** lead task rows with the time, in tabular figures.
-- **Do** keep primary actions at least 44px tall and body text at least 16px; patients read the Echo Show at arm's length.
-- **Do** express state as a dot plus a sentence-case word in the state color.
-- **Do** define colors as tokens on `:root` with a matching `[data-theme="dark"]` set, and let the host's theme choose.
-- **Do** use system font stacks inside MCP Apps views; they cannot load web fonts.
+The rules above (highlighter, colors, hairlines, type, status, schedule rows) are the Do's and Don'ts. Three more:
 
-### Don't:
-- **Don't** use the highlighter for decoration, buttons, or anything the patient has already settled.
-- **Don't** use pure black, a tinted near-black, or a warm cream background.
-- **Don't** put shadows on UI surfaces; use hairlines and tonal layers.
+- **Do** define colors as tokens on `:root` with a matching `[data-theme="dark"]` set, and let the host's theme choose.
+- **Do** keep body text at least 16px; patients read the Echo Show at arm's length.
 - **Don't** stack records as identical cards; use a ruled list, and save standalone cards for decisions.
-- **Don't** use all-caps labels, tracked-out eyebrows, or middle-dot meta strings.
-- **Don't** set UI copy in the print serif; it belongs to quoted source text.
-- **Don't** use Alexa Cyan outside device lights, or Voice Teal for anything but Alexa's voice.

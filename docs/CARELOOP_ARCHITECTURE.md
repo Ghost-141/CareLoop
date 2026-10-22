@@ -12,7 +12,7 @@ How CareLoop is built: the components, the MCP tools and their result contract, 
 | Identity | Credential-derived patient/caregiver identities; no caller-supplied patient scope |
 | Privacy | Voice-safe tool results, patient-owned expiring grants, generic caregiver notifications, deletion and purge |
 | Document intake | Prescription/plan upload: PDF text first, PaddleOCR fallback, local LLM proposes items, deterministic checks, patient approves each item |
-| Tests | 410 tests, including live end-to-end runs against a real server; an intake eval against the configured model |
+| Tests | 423 tests, including live end-to-end runs against a real server; evals in [CARELOOP_EVALS.md](CARELOOP_EVALS.md) |
 
 ## Components
 
@@ -84,11 +84,7 @@ Patients, or family members the patient grants `upload_documents`, upload a pres
    - If the model is unavailable, a pattern fallback runs and flags every item.
 5. **Patient review** on screen: approve, edit the spoken name or times, or reject. Medicine and flagged items cannot be approved by voice. Raw extracted text expires after 24 h.
 
-```bash
-uv run python evals/intake/run_intake.py --model gemma4:e4b --repeat 3
-```
-
-On the synthetic set (typed, scanned, photo, injection), 3 runs each: recall 100%, invented numbers 0, citations valid, injection never followed. Median time per document: 8 s typed, 28 s photo, 41 s scanned (CPU OCR).
+How well this works is measured in [CARELOOP_EVALS.md](CARELOOP_EVALS.md#document-reading).
 
 ## Repository layout
 
@@ -106,11 +102,5 @@ alexa_sim/               the one simulator folder: Alexa+ behavior simulator and
 evals/                   standalone eval cases; evals/intake/ synthetic documents + intake eval
 samples/                 synthetic prescription PDF, scan, photo and prompt-injection documents
 scripts/                 run, seed, and end-to-end scripts
-docs/                    setup, configuration, architecture, security, features, demo guides, evals, friction log
+docs/                    setup, configuration, architecture, security, features, UI guide, evals, friction log
 ```
-
-Key documents:
-
-- [Friction log](FRICTION_LOG.md)
-- [Evals](CARELOOP_EVALS.md)
-- [UI guide](CARELOOP_UI_GUIDE.md)

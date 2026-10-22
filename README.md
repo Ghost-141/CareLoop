@@ -37,25 +37,20 @@ It runs with no settings: a scripted planner, pattern matching for documents, an
 Run the tests:
 
 ```bash
-uv run pytest -q       # 410 tests, including live runs against a real server
+uv run pytest -q       # 423 tests, including live runs against a real server
 ```
 
-## Try the demo
-
-| Start with | Command | What it shows |
-| --- | --- | --- |
-| The first visit | `scripts/run_alexa_demo.sh --reset` | Share the prescription, review and approve it, then everything that follows |
-| Day four at home | `scripts/run_alexa_demo.sh --reset --story=history` | Three days of history: suggestions, teach-back, the rule firing, the handoff |
+To start on day four at home (suggestions, teach-back, the rule firing, the handoff), run `scripts/run_alexa_demo.sh --reset --story=history`. Other variants are in the [setup guide](docs/CARELOOP_SETUP.md#run-the-alexa-demo).
 
 ## Documentation
 
 | Document | What's in it |
 | --- | --- |
-| [Setup, running and testing](docs/CARELOOP_SETUP.md) | Prerequisites, install, demo variants, the simulator, tests, troubleshooting |
+| [Setup, running and testing](docs/CARELOOP_SETUP.md) | Prerequisites, install, demo variants, tests, troubleshooting |
 | [Configuration](docs/CARELOOP_CONFIGURATION.md) | Every environment variable and its default |
 | [Architecture](docs/CARELOOP_ARCHITECTURE.md) | Components, the MCP tools and voice-safe results, document intake, repository layout |
 | [Safety, privacy and security](docs/CARELOOP_SECURITY.md) | What CareLoop never does, and the MCP security decisions |
-| [Features](docs/CARELOOP_FEATURES.md) | Every capability, and how it fits Alexa+ |
+| [Features](docs/CARELOOP_FEATURES.md) | Every capability |
 | [UI guide](docs/CARELOOP_UI_GUIDE.md) | Every screen and control |
 | [Evals](docs/CARELOOP_EVALS.md) | Document-reading and live-model voice evaluations |
 | [Friction log](docs/FRICTION_LOG.md) | What was hard building for Alexa+, and open questions for the Alexa+ team |

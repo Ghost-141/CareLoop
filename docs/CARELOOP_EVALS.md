@@ -38,13 +38,22 @@ excerpts, record values, tool arguments, credentials, identities, alert details,
 and handoff content.
 
 Direct product contract tests remain under `server/tests/`; the evaluator does
-not replace those tests. Browser walkthrough coverage belongs to the separately
-scripted synthetic demo phase.
+not replace those tests.
+
+## Document reading
+
+```bash
+uv run python evals/intake/run_intake.py --model gemma4:e4b --repeat 3
+```
+
+On the synthetic set (typed, scanned, photo, injection), 3 runs each: recall 100%, invented numbers 0,
+citations valid, injection never followed. Median time per document: 8 s typed, 28 s photo, 41 s scanned (CPU OCR).
 
 ## Evaluating the voice planner with a real model
 
 `run_careloop.py` uses a scripted planner, so it can't show model mistakes. To test the Alexa+-style
-tool selection with a local Ollama model:
+tool selection with a real model (local Ollama, or `--planner openai` for any OpenAI-compatible endpoint
+configured in `.env`):
 
 ```bash
 uv run python evals/run_llm_planner.py --model gemma4:e4b --repeat 3
@@ -56,4 +65,7 @@ utterances through the simulator's real orchestrator and planner. The scripted f
 A scenario can require or forbid tools, check arguments, require that the server accepted a call,
 require a held confirmation, and match or reject patterns in the spoken reply. Reports go to
 `evals/results/llm-planner-*.json` and include tool names, arguments and replies (all synthetic).
-Seeded worlds (`world=["sam", "pain"]`) add a caregiver grant or a pain record straight through the service, and end-state checks (`state=["sam_revoked"]`) read the database afterwards. Failures are tracked in `docs/FRICTION_LOG.md` (F-29 to F-33).
+Seeded worlds (`world=["sam", "pain"]`) add a caregiver grant or a pain record straight through the service, and end-state checks (`state=["sam_revoked"]`) read the database afterwards. Failures are tracked in `docs/FRICTION_LOG.md`.
+
+Results so far: 96/108, then 126/126 after fixes with a local model; latest 207/210 across 70 scenarios with
+a hosted model (the one failing scenario had an out-of-date expectation and now passes 3/3).
