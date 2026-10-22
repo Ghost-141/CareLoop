@@ -1292,6 +1292,37 @@ class CareLoopService:
                      and alert.get("assignee_id") == identity.subject_id]
         return rows
 
+    def notification_details(self, identity: Identity) -> list[dict[str, Any]]:
+        """For the family member's own private screen only, never a spoken result: what each update is about.
+
+        A fired rule shows the rule's own words; a missed task shows its name and due time. Both only when
+        the grant already lets this person read the plan; otherwise just the kind of update. Never a value,
+        and never which check-ins fired it.
+        """
+        rows = self.notifications(identity)
+        try:
+            patient, can_read = self.patient_for(identity, "read_tasks"), True
+        except AccessDenied:
+            patient, can_read = identity.patient, False
+        name = self.patient_name(patient)
+        details: list[dict[str, Any]] = []
+        for row in rows:
+            detail: dict[str, Any] = dict(row)
+            alert = self.storage.get(patient, row["case_id"]) or {}
+            kind = alert.get("kind", "rule")
+            if kind == "missed_task":
+                detail["about"] = "missed_task"
+                detail["title"] = f"{alert.get('task_label') or 'A task'} was missed" if can_read else f"A task in {name}'s plan was missed"
+                if can_read:
+                    detail |= {"due_at": alert.get("due_at"), "task_id": alert.get("task_id")}
+            elif kind != "task_assigned":
+                rule = self.storage.get(patient, alert["rule_id"]) if alert.get("rule_id") else None
+                detail |= {"about": "rule", "title": f"{name}'s follow-up rule was met"}
+                if can_read and rule:
+                    detail |= {"rule_text": rule.get("text"), "rule_id": rule["id"]}
+            details.append(detail)
+        return details
+
     def acknowledge_alert(self, identity: Identity, alert_id: str) -> dict[str, Any]:
         try:
             patient, via_alert_scope = self.patient_for(identity, "acknowledge_alerts"), True

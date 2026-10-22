@@ -163,7 +163,13 @@ def view_details(deps: Any, identity: Any, view: str, record_ids: list[str]) -> 
                   for person in service.access_summary(identity, now - 7 * 86_400, now)]
         return {"grants": service.list_grants(identity), "access": access}
     if view == "notifications":
-        return {"updates": service.notifications(identity)}
+        updates = service.notification_details(identity)
+        for update in updates:  # the line the rule or task came from, when the grant lets this person read the plan
+            source_id = update.get("rule_id") or update.get("task_id")
+            record = service.storage.get(identity.patient, source_id) if source_id else None
+            if record:
+                update["citation"] = _citation(service, identity, record)
+        return {"updates": updates}
     if view == "records":
         return {"records": service.list_records(identity)}
     if view == "history":

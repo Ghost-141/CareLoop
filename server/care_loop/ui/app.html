@@ -314,13 +314,23 @@
       root.replaceChildren(...parts);
     },
     "notifications": (d) => {
-      const updates = d.updates || [];
+      // What still needs action comes first; something already seen keeps its card but loses the button.
+      const updates = (d.updates || []).slice().sort((a, b) => (a.status === "action_required" ? 0 : 1) - (b.status === "action_required" ? 0 : 1));
       if (!updates.length) return empty("You're all caught up", "New CareLoop updates will show here.");
+      const seen = (u) => u.status !== "action_required" ? null
+        : action("Mark as seen", "small", () => callTool("acknowledge_alert", { alert_id: u.case_id }));
       root.replaceChildren(section(null, [rows(updates.map((u, i) => u.kind === "task_assigned"
-        ? card("New task", u.status, "Ask for your tasks to see the details.",
-            action("Mark as seen", "small", () => callTool("acknowledge_alert", { alert_id: u.case_id })))
-        : card("Update " + (i + 1), u.status, "Details stay in the patient's private record.",
-        action("Mark as seen", "small", () => callTool("acknowledge_alert", { alert_id: u.case_id })))))]));
+        ? card("New task", u.status, "Ask for your tasks to see the details.", seen(u))
+        : updateCard(u, i)))]));
+      // What an update is about, for a family member: the rule's own words or the task, never a value.
+      function updateCard(u, i) {
+        const meta = u.about === "missed_task" ? (u.due_at ? "Was due " + when(u.due_at) : "A task in the plan")
+          : u.about === "rule" ? "From the approved plan. Check-ins and scores stay private." : "Details stay in the patient's private record.";
+        const c = card(u.title || "Update " + (i + 1), u.status, meta, seen(u));
+        if (u.citation) provenance({ citation: u.citation, text: u.rule_text }, c);
+        else if (u.rule_text) c.querySelector(".item-main").append(el("div", "detail", u.rule_text));
+        return c;
+      }
     },
     "check-in-trend": renderTrend,
     "teach-back": (d) => {

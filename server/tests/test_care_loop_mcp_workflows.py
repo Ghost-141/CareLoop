@@ -424,3 +424,36 @@ def test_patient_hears_their_medicines_with_time_meal_and_line_but_family_hears_
     assert family.startswith("You have 3 active tasks") and "Omeprazole" not in family
     # On his own screen Sam sees the plan his grant allows, but can mark done only what is assigned to him.
     assert not any(i["can_complete"] for i in mcp.tools["get_private_view"]("tasks", FakeContext())["data"]["items"])
+
+
+def test_family_member_screen_says_what_an_update_is_about_but_never_a_value() -> None:
+    now = [1_791_936_000]
+    mcp, deps = build(now, patient())
+    service = deps.service
+    service.accept_data_use(patient())
+    service.default_patient_name = "Maya"
+    rule_line = "Contact the clinic if your pain score is 7 or higher for 2 consecutive days."
+    document = service.create_document(patient(), "Prescription", [{"page": 1, "excerpt": rule_line, "line_id": "p1:L11"}], reviewed=True)
+    rule = service.write(patient(), "PLAN_RULE", {"text": rule_line, "status": "active", "source": [
+        {"id": "p1:L11", "page": 1, "text": rule_line, "method": "text", "confidence_pct": 100}]}, source_id=document["id"])
+    service.write(patient(), "ALERT", {"rule_id": rule["id"], "observation_ids": ["obs-1"], "status": "active", "acknowledgements": []})
+    service.write(patient(), "ALERT", {"kind": "missed_task", "task_label": "Evening dressing change", "due_at": 1_791_925_200,
+                                       "status": "active", "acknowledgements": []})
+
+    service.grant(patient(), "caregiver", ["receive_alerts", "read_tasks"])
+    deps.local_identity = caregiver()
+    spoken = mcp.tools["list_generic_notifications"](FakeContext())
+    assert spoken["speakable"] == "You have 2 new CareLoop updates." and "clinic" not in str(spoken) and "dressing" not in str(spoken)
+    updates = {u["about"]: u for u in mcp.tools["get_private_view"]("notifications", FakeContext())["data"]["updates"]}
+    assert updates["rule"]["title"] == "Maya's follow-up rule was met" and updates["rule"]["rule_text"] == rule_line
+    assert updates["rule"]["citation"]["excerpts"][0]["line_id"] == "p1:L11"
+    assert updates["missed_task"]["title"] == "Evening dressing change was missed" and updates["missed_task"]["due_at"] == 1_791_925_200
+    assert "obs-1" not in str(updates) and "observation" not in str(updates)  # never which check-ins fired it
+
+    deps.local_identity = patient()
+    service.revoke(patient(), "caregiver")
+    service.grant(patient(), "caregiver", ["receive_alerts"])  # updates, but not the plan
+    deps.local_identity = caregiver()
+    updates = {u["about"]: u for u in mcp.tools["get_private_view"]("notifications", FakeContext())["data"]["updates"]}
+    assert updates["rule"]["title"] == "Maya's follow-up rule was met" and "rule_text" not in updates["rule"]
+    assert updates["missed_task"]["title"] == "A task in Maya's plan was missed" and "due_at" not in updates["missed_task"]
