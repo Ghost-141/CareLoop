@@ -51,8 +51,19 @@ export CARELOOP_DEMO_RESET="${CARELOOP_DEMO_RESET:-true}"
 uv sync --inexact --extra alexa-sim --extra voice --extra intake --extra ocr >/dev/null
 [ -f samples/prescription_typed.pdf ] || uv run python evals/intake/documents.py >/dev/null
 uv run python scripts/seed_careloop_demo.py ${seed_args[@]+"${seed_args[@]}"}
+careloop_pid="" sim_pid=""
+stop() {  # each server runs under "uv run": stop the Python process first, then uv, so neither outlives the terminal
+  for pid in "$sim_pid" "$careloop_pid"; do
+    [ -n "$pid" ] || continue
+    pkill -TERM -P "$pid" 2>/dev/null || true
+    kill "$pid" 2>/dev/null || true
+  done
+}
+trap stop EXIT
+trap 'exit 129' HUP   # closing the terminal window
+trap 'exit 130' INT   # Ctrl+C
+trap 'exit 143' TERM
 uv run careloop & careloop_pid=$!
-trap 'kill "$careloop_pid" 2>/dev/null || true' EXIT
 for _ in $(seq 1 50); do
   curl -sf "http://127.0.0.1:${server_port}/healthz" >/dev/null && break
   kill -0 "$careloop_pid" 2>/dev/null || { echo "CareLoop exited during startup" >&2; exit 1; }
@@ -60,4 +71,5 @@ for _ in $(seq 1 50); do
 done
 curl -sf "http://127.0.0.1:${server_port}/healthz" >/dev/null || { echo "CareLoop did not start on :${server_port}" >&2; exit 1; }
 echo "Open http://127.0.0.1:${sim_port}  (enable Maya and Sam in the Alexa app panel, or press Reset demo data)"
-uv run careloop-alexa-sim
+uv run careloop-alexa-sim & sim_pid=$!
+wait "$sim_pid"
