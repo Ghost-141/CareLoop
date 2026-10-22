@@ -114,4 +114,17 @@ class WhisperListener:
         # An optional initial prompt biases recognition toward demo vocabulary (wake word, names).
         with self.lock:
             self._load()
-            return " ".join(self._run(audio).split())
+            text = " ".join(self._run(audio).split())
+        return "" if prompt_echo(text, self.prompt) else text
+
+
+def _words(text: str) -> list[str]:
+    return "".join(c if c.isalnum() or c in "'-" else " " for c in text.lower()).split()
+
+
+def prompt_echo(text: str, prompt: str | None) -> bool:
+    """Whisper on silence or noise often returns its own initial prompt ("Alexa, CareLoop, check-in, care plan…").
+    Three or more words, all from the prompt, is that echo, not speech: sending it on would read as a new
+    "Alexa, …" request and interrupt whatever was waiting for an answer."""
+    words, vocabulary = _words(text), set(_words(prompt or ""))
+    return len(words) >= 3 and all(word in vocabulary for word in words)

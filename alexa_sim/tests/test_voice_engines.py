@@ -92,3 +92,18 @@ def test_silence_is_not_sent_to_any_engine(monkeypatch) -> None:
     monkeypatch.setitem(sys.modules, "faster_whisper", None)  # would raise if an engine were loaded
     monkeypatch.setitem(sys.modules, "mlx_whisper", None)
     assert WhisperListener("small.en").transcribe(np.zeros(16_000, dtype="<i2").tobytes()) == ""
+
+
+def test_an_echo_of_the_vocabulary_prompt_is_dropped_but_real_speech_is_kept() -> None:
+    from alexa_sim.voice import WHISPER_PROMPT
+    listener = WhisperListener("small.en", WHISPER_PROMPT)
+    heard = {"text": ""}
+    listener._engine = types.SimpleNamespace(
+        transcribe=lambda audio, **kwargs: (iter([types.SimpleNamespace(text=heard["text"])]), None))
+    listener.backend = "faster"
+    for echo in ("Alexa, CareLoop, check-in, care plan, pain score.", "CareLoop, Maya, Sam."):
+        heard["text"] = echo
+        assert listener.transcribe(loud_pcm()) == "", echo
+    for speech in ("7:30 in the morning", "Alexa, do my check-in", "Sam", "Alexa, show my tasks"):
+        heard["text"] = speech
+        assert listener.transcribe(loud_pcm()) == speech, speech
