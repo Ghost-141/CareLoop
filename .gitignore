@@ -17,3 +17,6 @@ evals/results/
 
 # Local planning notes, not part of the published repository
 plans/
+
+# Impeccable design-skill state (local only)
+.impeccable/
