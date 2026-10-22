@@ -300,6 +300,10 @@
 
   /* see it */
   .seeit { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 3rem; align-items: start; }
+  .media { display: grid; gap: 1rem; min-width: 0; }
+  .video { aspect-ratio: 16 / 9; border-radius: 14px; overflow: hidden; background: var(--ink); max-width: 100%; }
+  .video iframe { display: block; width: 100%; height: 100%; border: 0; }
+  .video-link { margin: -.25rem 0 .75rem; font-size: .95rem; color: var(--muted); }
   .screen-shot { border-radius: 14px; overflow: hidden; box-shadow: 0 1px 0 var(--rule), 0 30px 60px -40px rgba(28, 43, 69, .6); background: var(--sheet); }
   .facts { margin: 0; padding: 0; list-style: none; }
   .facts li { padding: .9rem 0; border-top: 1px solid var(--rule); }
@@ -1051,7 +1055,10 @@
       <h2 id="see-title">See it running</h2>
       <p class="intro">Without Alexa+ preview access, we built a browser simulator that behaves like Alexa+ in front of the same MCP server: two devices, Sam's phone, account linking, local voice, and a live MCP inspector.</p>
       <div class="seeit">
-        <div>
+        <div class="media">
+          <div class="video"><iframe src="https://www.youtube-nocookie.com/embed/5dQXPPjE09s" title="CareLoop demo video, about 3 minutes" loading="lazy"
+            allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe></div>
+          <p class="video-link"><a href="https://youtu.be/5dQXPPjE09s">Watch the demo on YouTube</a></p>
           <a class="screen-shot" href="assets/simulator.png" style="display:block"><picture><source media="(max-width: 520px)" srcset="assets/simulator-phone.png" width="360" height="560"><img src="assets/simulator.png" alt="The CareLoop simulator, with Sam's phone unlocked to his evening dressing change: Mark done, and its source line p1:L10. Opens the full screenshot" width="1440" height="900" loading="lazy"></picture></a>
         </div>
         <ul class="facts" aria-label="Evidence">
