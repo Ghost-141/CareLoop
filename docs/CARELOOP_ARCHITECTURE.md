@@ -16,32 +16,7 @@ How CareLoop is built: the components, the MCP tools and their result contract, 
 
 ## Components
 
-```mermaid
-flowchart LR
-  subgraph browser["Browser: assistant simulator"]
-    show["Maya's Echo Show<br/>voice · screen · MCP App iframe"]
-    dot["Sam's Echo Dot<br/>voice only"]
-    app["Alexa app panel<br/>account linking"]
-    insp["MCP inspector"]
-  end
-  subgraph host["alexa_sim host :8021"]
-    orch["Turn loop<br/>planner · confirmations · elicitation"]
-    pool["MCP client pool<br/>1 session per account"]
-    voice["Kokoro TTS · Whisper STT"]
-  end
-  llm[("Stand-in for Alexa+'s model<br/>OpenAI-compatible API or Ollama")]
-  subgraph careloop["CareLoop MCP server :8010"]
-    mcp["/mcp tools · ui:// views"]
-    core["Approval · consent · rules · handoff"]
-    db[("SQLite/WAL")]
-  end
-  show & dot <--> orch
-  orch --> llm
-  orch --> pool --> mcp --> core --> db
-  show <-. MCP Apps bridge .-> pool
-  app --> pool
-  voice --- show & dot
-```
+![CareLoop architecture: the browser assistant simulator (Maya's Echo Show, Sam's Echo Dot, the Alexa app panel, the MCP inspector) talks to the alexa_sim host (turn loop, MCP client pool, Kokoro TTS and Whisper STT), which calls a stand-in for Alexa+'s model and the CareLoop MCP server (/mcp tools and ui:// views; approval, consent, rules and handoff; SQLite/WAL), with an MCP Apps bridge from the Echo Show's screen to the server](careloop_architecture_animated.gif)
 
 The simulator does what Alexa+ does for an MCP add-on:
 
