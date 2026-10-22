@@ -270,7 +270,14 @@ class Orchestrator:
                 prompt = self._confirmation_prompt(action.tool)
                 device.pending = PendingAction(action.tool, arguments, prompt)
                 device.remember(text, prompt)
-                return Turn(prompt, [n for n, *_ in steps], screen_payload(self._screen(steps), device),
+                screen = screen_payload(self._screen(steps), device)
+                uri = ((tool.get("_meta") or {}).get("ui") or {}).get("resourceUri")
+                if screen is None and device.has_screen and uri:
+                    # Show what is about to change (the care circle before removing someone) while the person
+                    # decides. The view loads its own detail with their credential; nothing has run yet.
+                    screen = {"tool": action.tool, "resource_uri": uri,
+                              "result": {"structuredContent": {"view": uri, "refs": []}, "isError": False}}
+                return Turn(prompt, [n for n, *_ in steps], screen,
                             needs_confirmation=True, planner=planner.name, expects_reply=True)
             step = await self._call(device, account, action.tool, arguments)
             if isinstance(step, Question):

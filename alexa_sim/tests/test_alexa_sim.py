@@ -139,6 +139,26 @@ async def test_destructive_tool_waits_for_confirmation() -> None:
     assert confirmed.reply.startswith("Caregiver access revoked.")
 
 
+class DirectRevoke:
+    """Like a hosted model: calls the destructive tool at once, with no lookup first."""
+    name = "direct"
+
+    async def next(self, utterance, tools, history, steps, context=None):
+        from alexa_sim.planners import Action
+        return Action(say="Done.") if steps else Action(tool="revoke_caregiver", arguments={"caregiver": "Sam"})
+
+
+@pytest.mark.asyncio
+async def test_the_screen_shows_what_is_about_to_change_while_asking_to_confirm() -> None:
+    pool = FakePool(TOOLS, {"revoke_caregiver": ok("Caregiver access revoked.", view="ui://careloop/care-circle")})
+    show = Device("show", DeviceKind.SHOW, "maya", account="maya")
+    asked = await Orchestrator(pool, DirectRevoke()).respond(show, "remove Sam")
+    assert asked.needs_confirmation and pool.calls == []  # nothing has run yet
+    assert asked.screen["resource_uri"] == "ui://careloop/care-circle"  # Maya sees who she is about to remove
+    dot = Device("dot", DeviceKind.DOT, "sam", account="sam")
+    assert (await Orchestrator(pool, DirectRevoke()).respond(dot, "remove Sam")).screen is None  # never on a Dot
+
+
 @pytest.mark.asyncio
 async def test_medical_advice_is_refused_without_any_tool_call() -> None:
     pool = FakePool(TOOLS, {})
